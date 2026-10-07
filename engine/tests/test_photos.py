@@ -72,3 +72,11 @@ def test_photos_are_private_to_the_account(client: TestClient) -> None:
 
     assert client.get(f"/items/{item['id']}/photos/{photo['id']}").status_code == 404
     assert client.post(f"/items/{item['id']}/photos", json=encoded(JPEG)).status_code == 404
+
+
+def test_one_card_and_one_product_can_be_read(client: TestClient) -> None:
+    item = new_item(client)
+
+    assert client.get(f"/items/{item['id']}").json()["name"] == "Pikachu"
+    assert client.get("/items/999").status_code == 404
+    assert client.get("/cardmarket/products/999999").status_code == 404

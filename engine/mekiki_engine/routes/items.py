@@ -10,6 +10,11 @@ from mekiki_engine.services import photos, portfolio
 router = APIRouter(prefix="/items", tags=["items"])
 
 
+@router.get("/{item_id}")
+def read_item(item_id: int, session: SessionDep, user: UserDep, settings: SettingsDep) -> ItemOut:
+    return portfolio.item_detail(session, user.id, settings, item_id)
+
+
 @router.patch("/{item_id}")
 def update_item(
     item_id: int, payload: ItemUpdate, session: SessionDep, user: UserDep, settings: SettingsDep

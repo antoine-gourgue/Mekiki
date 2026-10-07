@@ -83,6 +83,13 @@ def search_products(
     return [market_price_out(p) for p in session.scalars(statement)]
 
 
+def product_detail(session: Session, id_product: int) -> MarketPriceOut:
+    product = session.get(CardmarketProduct, id_product)
+    if product is None:
+        raise NotFoundError(f"product {id_product} not found")
+    return market_price_out(product)
+
+
 def list_tracked_cards(
     session: Session, user_id: int, settings: AppSettings
 ) -> list[TrackedCardOut]:

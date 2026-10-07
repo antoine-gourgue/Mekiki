@@ -58,6 +58,7 @@ def test_cardmarket_refresh_imports_singles_and_prices(client: TestClient) -> No
     assert charizard["reference_cents"] == 9000
     assert charizard["reference_field"] == "avg30"
     assert charizard["url"].endswith("/Pokemon/Products?idProduct=719448")
+    assert client.get("/cardmarket/products/719448").json() == charizard
 
 
 def test_price_reference_falls_back_when_avg30_is_missing(client: TestClient) -> None:

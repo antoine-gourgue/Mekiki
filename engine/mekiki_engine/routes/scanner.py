@@ -86,6 +86,11 @@ def search_products(
     return service.search_products(session, game=game, query=q)
 
 
+@router.get("/cardmarket/products/{id_product}")
+def read_product(id_product: int, session: SessionDep, _user: UserDep) -> MarketPriceOut:
+    return service.product_detail(session, id_product)
+
+
 @router.get("/cardmarket/status")
 def cardmarket_status(session: SessionDep, _user: UserDep) -> list[CardmarketStatus]:
     return cardmarket.status(session)
