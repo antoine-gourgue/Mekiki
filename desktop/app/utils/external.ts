@@ -7,6 +7,8 @@ export async function openExternal(url: string): Promise<void> {
     const { openUrl } = await import('@tauri-apps/plugin-opener')
     await openUrl(url)
   } else {
-    window.open(url, '_blank', 'noopener')
+    // Without a referrer: sites such as Neokyo send visitors "back" to it when they cannot
+    // show a page, which brought users back to Mekiki instead of the listing.
+    window.open(url, '_blank', 'noopener,noreferrer')
   }
 }
