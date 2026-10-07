@@ -1,13 +1,13 @@
 <script setup lang="ts">
 import type { FormError } from '@nuxt/ui'
-import type { Item, ListingDraft, ListingSite, SalePlatform } from '~/types/engine'
+import type { Item, ItemPhoto, ListingDraft, ListingSite, SalePlatform } from '~/types/engine'
 
 /**
  * Puts `item` up for sale, changes its listing or withdraws it. For eBay and Vinted it also
  * prepares the listing text: the user pastes it on the site, adds photos and publishes.
  */
 const props = defineProps<{ item: Item | null }>()
-const emit = defineEmits<{ saved: [item: Item] }>()
+const emit = defineEmits<{ saved: [item: Item]; photosChanged: [] }>()
 const open = defineModel<boolean>('open', { default: false })
 
 const engine = useEngine()
@@ -19,10 +19,13 @@ const state = reactive<{ platform: SalePlatform; price_cents: number | null }>({
   price_cents: null,
 })
 
+const photos = ref<ItemPhoto[]>([])
+
 watch(open, (isOpen) => {
   if (!isOpen || !props.item) return
   state.platform = props.item.listing_platform ?? 'cardmarket'
   state.price_cents = props.item.listing_price_cents
+  photos.value = [...props.item.photos]
   showPrices.value = false
 })
 
@@ -96,6 +99,11 @@ const platformItems = selectItems(PLATFORM_LABELS)
     :ui="{ content: site ? 'sm:max-w-2xl' : undefined, footer: 'justify-between' }"
   >
     <template #body>
+      <div v-if="item" class="mb-6 space-y-2">
+        <h3 class="font-medium text-highlighted">Photos</h3>
+        <ItemPhotos v-model="photos" :item-id="item.id" @changed="emit('photosChanged')" />
+      </div>
+
       <UForm
         id="listing-form"
         :state="state"

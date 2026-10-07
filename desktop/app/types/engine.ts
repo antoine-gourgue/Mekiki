@@ -157,6 +157,7 @@ export interface Item extends ItemFields {
   /** What the current listing would leave once sold, shipping assumed neutral. */
   listing_projection: SaleBreakdown | null
   sale: Sale | null
+  photos: ItemPhoto[]
 }
 
 export interface SaleUpsert {
@@ -603,4 +604,11 @@ export interface ListingDraft {
   new_listing_url: string
   query: string
   links: ResaleLinks
+}
+
+export interface ItemPhoto {
+  id: number
+  content_type: string
+  /** 0 is the main photo, shown first in listings. */
+  position: number
 }

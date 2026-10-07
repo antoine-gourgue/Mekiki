@@ -241,7 +241,12 @@ const totals = computed(() => {
         </UTable>
       </template>
 
-      <ListingModal v-model:open="listingOpen" :item="selected" @saved="() => refresh()" />
+      <ListingModal
+        v-model:open="listingOpen"
+        :item="selected"
+        @saved="() => refresh()"
+        @photos-changed="() => refresh()"
+      />
       <SaleModal v-model:open="saleOpen" :item="selected" @saved="() => refresh()" />
       <ItemFormModal
         v-model:open="editOpen"

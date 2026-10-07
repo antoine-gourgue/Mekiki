@@ -16,6 +16,7 @@ import type {
   InventoryQuery,
   Item,
   ItemCreate,
+  ItemPhoto,
   ItemUpdate,
   LotCreate,
   LotDetail,
@@ -98,6 +99,19 @@ export function useEngine() {
     deleteItem: async (id: number): Promise<void> => {
       await request(`/items/${id}`, { method: 'DELETE' })
     },
+
+    addPhoto: (itemId: number, contentBase64: string) =>
+      request<ItemPhoto[]>(`/items/${itemId}/photos`, {
+        method: 'POST',
+        body: { content_base64: contentBase64 },
+        timeout: 60_000,
+      }),
+    photoBlob: (itemId: number, photoId: number) =>
+      request<Blob>(`/items/${itemId}/photos/${photoId}`, { responseType: 'blob' }),
+    movePhotoFirst: (itemId: number, photoId: number) =>
+      request<ItemPhoto[]>(`/items/${itemId}/photos/${photoId}/first`, { method: 'POST' }),
+    deletePhoto: (itemId: number, photoId: number) =>
+      request<ItemPhoto[]>(`/items/${itemId}/photos/${photoId}`, { method: 'DELETE' }),
 
     recordSale: (itemId: number, body: SaleUpsert) =>
       request<Item>(`/items/${itemId}/sale`, { method: 'PUT', body }),
