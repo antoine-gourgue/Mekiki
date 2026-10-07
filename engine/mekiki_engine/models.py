@@ -77,6 +77,25 @@ class Item(Base):
     sale: Mapped[Sale | None] = relationship(
         back_populates="item", cascade="all, delete-orphan", uselist=False
     )
+    photos: Mapped[list[ItemPhoto]] = relationship(
+        back_populates="item",
+        cascade="all, delete-orphan",
+        order_by="ItemPhoto.position",
+        lazy="selectin",
+    )
+
+
+class ItemPhoto(Base):
+    __tablename__ = "item_photos"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    item_id: Mapped[int] = mapped_column(ForeignKey("items.id", ondelete="CASCADE"))
+    file_name: Mapped[str]
+    content_type: Mapped[str]
+    position: Mapped[int] = mapped_column(default=0)
+    created_at: Mapped[str] = mapped_column(server_default=FetchedValue())
+
+    item: Mapped[Item] = relationship(back_populates="photos")
 
 
 class Sale(Base):

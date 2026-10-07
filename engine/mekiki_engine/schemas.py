@@ -296,6 +296,19 @@ class SaleOut(BaseModel):
     breakdown: SaleBreakdownOut
 
 
+class ItemPhotoOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    content_type: str
+    position: int
+
+
+class PhotoUpload(BaseModel):
+    # JSON rather than multipart: the engine only accepts JSON bodies (see app.py).
+    content_base64: Annotated[str, Field(min_length=4, max_length=12_000_000)]
+
+
 class ItemOut(ItemFields):
     model_config = ConfigDict(from_attributes=True)
 
@@ -309,6 +322,7 @@ class ItemOut(ItemFields):
     # What the current listing would leave once sold, shipping assumed neutral.
     listing_projection: SaleBreakdownOut | None
     sale: SaleOut | None
+    photos: list[ItemPhotoOut] = []
 
 
 class LotOut(LotFields):

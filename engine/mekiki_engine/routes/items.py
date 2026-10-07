@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, HTTPException, status
+from fastapi.responses import FileResponse
 
-from mekiki_engine.deps import SessionDep, SettingsDep, UserDep
-from mekiki_engine.schemas import ItemOut, ItemUpdate, SaleUpsert
-from mekiki_engine.services import portfolio
+from mekiki_engine.deps import DataDirDep, SessionDep, SettingsDep, UserDep
+from mekiki_engine.schemas import ItemOut, ItemPhotoOut, ItemUpdate, PhotoUpload, SaleUpsert
+from mekiki_engine.services import photos, portfolio
 
 router = APIRouter(prefix="/items", tags=["items"])
 
@@ -17,8 +18,43 @@ def update_item(
 
 
 @router.delete("/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_item(item_id: int, session: SessionDep, user: UserDep) -> None:
+def delete_item(item_id: int, session: SessionDep, user: UserDep, data_dir: DataDirDep) -> None:
     portfolio.delete_item(session, user.id, item_id)
+    photos.remove_item_files(data_dir, [item_id])
+
+
+@router.post("/{item_id}/photos", status_code=status.HTTP_201_CREATED)
+def add_photo(
+    item_id: int, payload: PhotoUpload, session: SessionDep, user: UserDep, data_dir: DataDirDep
+) -> list[ItemPhotoOut]:
+    try:
+        return photos.add_photo(session, data_dir, user.id, item_id, payload.content_base64)
+    except photos.PhotoError as error:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)) from error
+
+
+@router.get("/{item_id}/photos/{photo_id}")
+def read_photo(
+    item_id: int, photo_id: int, session: SessionDep, user: UserDep, data_dir: DataDirDep
+) -> FileResponse:
+    path, content_type = photos.photo_file(session, data_dir, user.id, item_id, photo_id)
+    if not path.is_file():
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="fichier de la photo introuvable")
+    return FileResponse(path, media_type=content_type)
+
+
+@router.post("/{item_id}/photos/{photo_id}/first")
+def move_photo_first(
+    item_id: int, photo_id: int, session: SessionDep, user: UserDep
+) -> list[ItemPhotoOut]:
+    return photos.move_to_front(session, user.id, item_id, photo_id)
+
+
+@router.delete("/{item_id}/photos/{photo_id}")
+def delete_photo(
+    item_id: int, photo_id: int, session: SessionDep, user: UserDep, data_dir: DataDirDep
+) -> list[ItemPhotoOut]:
+    return photos.delete_photo(session, data_dir, user.id, item_id, photo_id)
 
 
 @router.put("/{item_id}/sale")

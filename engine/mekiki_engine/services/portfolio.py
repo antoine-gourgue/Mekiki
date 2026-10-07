@@ -40,6 +40,7 @@ from mekiki_engine.schemas import (
     ItemCreate,
     ItemFields,
     ItemOut,
+    ItemPhotoOut,
     ItemUpdate,
     LandedCostOut,
     LotCreate,
@@ -189,6 +190,10 @@ def update_lot(
         setattr(lot, name, value)
     _commit(session)
     return lot_detail(session, user_id, settings, lot_id)
+
+
+def lot_item_ids(session: Session, user_id: int, lot_id: int) -> list[int]:
+    return [item.id for item in _get_lot(session, user_id, lot_id).items]
 
 
 def delete_lot(session: Session, user_id: int, lot_id: int) -> None:
@@ -523,6 +528,7 @@ def _item_out(item: Item, landed: ItemLandedCost, settings: AppSettings) -> Item
         landed_cost=_landed_out(landed),
         listing_projection=projection,
         sale=None if item.sale is None else _sale_out(item.sale, landed),
+        photos=[ItemPhotoOut.model_validate(photo) for photo in item.photos],
     )
 
 

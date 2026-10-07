@@ -13,6 +13,7 @@ from mekiki_engine.migrations import (
     m0002_scanner,
     m0003_favorites,
     m0004_accounts,
+    m0005_item_photos,
 )
 
 MIGRATIONS: tuple[tuple[int, str], ...] = (
@@ -20,6 +21,7 @@ MIGRATIONS: tuple[tuple[int, str], ...] = (
     (2, m0002_scanner.SQL),
     (3, m0003_favorites.SQL),
     (4, m0004_accounts.SQL),
+    (5, m0005_item_photos.SQL),
 )
 
 

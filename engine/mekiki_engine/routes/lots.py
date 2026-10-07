@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from fastapi import APIRouter, status
 
-from mekiki_engine.deps import SessionDep, SettingsDep, UserDep
+from mekiki_engine.deps import DataDirDep, SessionDep, SettingsDep, UserDep
 from mekiki_engine.schemas import ItemCreate, ItemOut, LotCreate, LotDetail, LotOut, LotUpdate
-from mekiki_engine.services import portfolio
+from mekiki_engine.services import photos, portfolio
 
 router = APIRouter(prefix="/lots", tags=["lots"])
 
@@ -34,8 +34,10 @@ def update_lot(
 
 
 @router.delete("/{lot_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_lot(lot_id: int, session: SessionDep, user: UserDep) -> None:
+def delete_lot(lot_id: int, session: SessionDep, user: UserDep, data_dir: DataDirDep) -> None:
+    item_ids = portfolio.lot_item_ids(session, user.id, lot_id)
     portfolio.delete_lot(session, user.id, lot_id)
+    photos.remove_item_files(data_dir, item_ids)
 
 
 @router.post("/{lot_id}/items", status_code=status.HTTP_201_CREATED)

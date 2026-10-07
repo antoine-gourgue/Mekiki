@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
+from pathlib import Path
 from typing import Annotated
 
 from fastapi import Depends, HTTPException, Request, status
@@ -20,6 +21,13 @@ def get_session(request: Request) -> Iterator[Session]:
 
 
 SessionDep = Annotated[Session, Depends(get_session)]
+
+
+def get_data_dir(request: Request) -> Path:
+    return request.app.state.config.data_dir
+
+
+DataDirDep = Annotated[Path, Depends(get_data_dir)]
 
 
 def get_token(request: Request) -> str:
