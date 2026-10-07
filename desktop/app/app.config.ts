@@ -1,7 +1,8 @@
 export default defineAppConfig({
   ui: {
     colors: {
-      primary: 'indigo',
+      // The red of the Mekiki seal (see main.css).
+      primary: 'vermilion',
       neutral: 'zinc',
     },
     dashboardPanel: {

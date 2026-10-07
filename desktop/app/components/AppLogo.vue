@@ -1,19 +1,16 @@
 <script setup lang="ts">
-/** The app's eye mark, with the name when there is room for it. */
+/** The Mekiki seal, with the name when there is room for it. */
 withDefaults(defineProps<{ collapsed?: boolean; to?: string }>(), { to: '/' })
 </script>
 
 <template>
-  <NuxtLink :to="to" class="flex min-w-0 items-center gap-2" aria-label="Mekiki, accueil">
-    <svg viewBox="0 0 1024 1024" class="size-7 shrink-0" aria-hidden="true">
-      <rect x="64" y="64" width="896" height="896" rx="200" fill="#4f46e5" />
-      <path d="M168 512 C 296 300, 728 300, 856 512 C 728 724, 296 724, 168 512 Z" fill="#ffffff" />
-      <circle cx="512" cy="512" r="150" fill="#6366f1" />
-      <circle cx="512" cy="512" r="72" fill="#1e1b4b" />
-      <circle cx="560" cy="462" r="30" fill="#ffffff" />
-    </svg>
-    <span v-if="!collapsed" class="truncate font-semibold text-highlighted">
-      Mekiki <span class="text-sm font-normal text-muted">目利き</span>
+  <NuxtLink :to="to" class="flex min-w-0 items-center gap-2.5" aria-label="Mekiki, accueil">
+    <img src="/brand/mekiki-seal.svg" alt="" class="size-7 shrink-0" />
+    <span v-if="!collapsed" class="flex min-w-0 items-baseline gap-2">
+      <span class="font-semibold tracking-[0.18em] whitespace-nowrap text-highlighted">MEKIKI</span>
+      <span class="hidden text-xs tracking-[0.3em] whitespace-nowrap text-muted sm:inline">
+        目利き
+      </span>
     </span>
   </NuxtLink>
 </template>

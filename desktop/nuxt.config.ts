@@ -10,7 +10,10 @@ export default defineNuxtConfig({
     head: {
       htmlAttrs: { lang: 'fr' },
       title: 'Mekiki',
-      link: [{ rel: 'icon', type: 'image/png', href: '/favicon.png' }],
+      link: [
+        { rel: 'icon', type: 'image/svg+xml', href: '/favicon.svg' },
+        { rel: 'icon', sizes: '32x32', href: '/favicon.ico' },
+      ],
     },
   },
 

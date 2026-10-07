@@ -4,3 +4,21 @@
 @theme {
   --font-sans: 'Public Sans', system-ui, sans-serif;
 }
+
+/*
+ * Vermilion, the red of the Mekiki seal: 500 is the logo's #C8372D. "static" keeps every
+ * shade in the CSS: Nuxt UI uses them through variables Tailwind cannot see.
+ */
+@theme static {
+  --color-vermilion-50: #fdf2f1;
+  --color-vermilion-100: #fbe2df;
+  --color-vermilion-200: #f6c3be;
+  --color-vermilion-300: #ee988f;
+  --color-vermilion-400: #e0645a;
+  --color-vermilion-500: #c8372d;
+  --color-vermilion-600: #ab2c23;
+  --color-vermilion-700: #8e251e;
+  --color-vermilion-800: #75221c;
+  --color-vermilion-900: #61211c;
+  --color-vermilion-950: #350d0a;
+}
