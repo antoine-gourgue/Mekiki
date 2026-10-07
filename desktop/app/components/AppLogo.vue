@@ -1,10 +1,10 @@
 <script setup lang="ts">
 /** The app's eye mark, with the name when there is room for it. */
-defineProps<{ collapsed?: boolean }>()
+withDefaults(defineProps<{ collapsed?: boolean; to?: string }>(), { to: '/' })
 </script>
 
 <template>
-  <NuxtLink to="/" class="flex min-w-0 items-center gap-2" aria-label="Mekiki, tableau de bord">
+  <NuxtLink :to="to" class="flex min-w-0 items-center gap-2" aria-label="Mekiki, accueil">
     <svg viewBox="0 0 1024 1024" class="size-7 shrink-0" aria-hidden="true">
       <rect x="64" y="64" width="896" height="896" rx="200" fill="#4f46e5" />
       <path d="M168 512 C 296 300, 728 300, 856 512 C 728 724, 296 724, 168 512 Z" fill="#ffffff" />

@@ -516,3 +516,34 @@ export interface Favorites {
   /** The cart priced as one parcel; `null` when it is empty. */
   cart: DiscoveryTotals | null
 }
+
+export interface User {
+  id: number
+  email: string
+  display_name: string
+  created_at: string
+}
+
+export interface AuthResponse {
+  /** Opaque session token, sent back as `Authorization: Bearer`. */
+  token: string
+  user: User
+}
+
+export interface RegisterRequest {
+  email: string
+  password: string
+  display_name: string
+}
+
+export interface LoginRequest {
+  email: string
+  password: string
+}
+
+export interface AccountUpdate {
+  display_name?: string
+  /** Required with `new_password`; changing it signs out the other devices. */
+  current_password?: string
+  new_password?: string
+}

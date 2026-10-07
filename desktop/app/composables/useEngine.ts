@@ -1,5 +1,7 @@
 import type {
+  AccountUpdate,
   AppSettings,
+  AuthResponse,
   CardmarketStatus,
   Dashboard,
   Deal,
@@ -20,7 +22,9 @@ import type {
   LotSummary,
   ListingTriage,
   LotUpdate,
+  LoginRequest,
   MarketPrice,
+  RegisterRequest,
   SaleUpsert,
   ScanStatus,
   SearchRequest,
@@ -30,6 +34,7 @@ import type {
   TrackedCard,
   TrackedCardCreate,
   TrackedCardUpdate,
+  User,
 } from '~/types/engine'
 
 /**
@@ -41,10 +46,34 @@ import type {
  */
 export function useEngine() {
   const { engineUrl } = useRuntimeConfig().public
-  const request = $fetch.create({ baseURL: engineUrl, retry: 0 })
+  const token = useSessionToken()
+  const endSession = useEndSession()
+  const request = $fetch.create({
+    baseURL: engineUrl,
+    retry: 0,
+    onRequest({ options }) {
+      if (token.value) options.headers.set('Authorization', `Bearer ${token.value}`)
+    },
+    async onResponseError({ response, options }) {
+      // A session refused while signed in has expired or was revoked (password changed
+      // elsewhere): back to the sign-in page, which says why.
+      if (response.status === 401 && options.headers.has('Authorization')) {
+        await endSession({ path: '/connexion', query: { session: 'expiree' } })
+      }
+    },
+  })
 
   return {
     health: () => request<{ status: string; version: string }>('/health', { timeout: 2000 }),
+
+    register: (body: RegisterRequest) =>
+      request<AuthResponse>('/auth/register', { method: 'POST', body }),
+    login: (body: LoginRequest) => request<AuthResponse>('/auth/login', { method: 'POST', body }),
+    logout: async (): Promise<void> => {
+      await request('/auth/logout', { method: 'POST' })
+    },
+    me: () => request<User>('/auth/me'),
+    updateMe: (body: AccountUpdate) => request<User>('/auth/me', { method: 'PATCH', body }),
 
     getSettings: () => request<AppSettings>('/settings'),
     saveSettings: (body: AppSettings) => request<AppSettings>('/settings', { method: 'PUT', body }),

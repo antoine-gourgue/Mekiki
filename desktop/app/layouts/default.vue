@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import type { NavigationMenuItem } from '@nuxt/ui'
+import type { DropdownMenuItem, NavigationMenuItem } from '@nuxt/ui'
 
 const engine = useEngine()
 const favorites = useFavorites()
+const auth = useAuth()
 
 // Good deals not looked at yet, shown as a badge; refreshed every 30 seconds.
 const unseenDeals = ref(0)
@@ -43,6 +44,12 @@ const links = computed<NavigationMenuItem[][]>(() => [
   ],
 ])
 
+const accountMenu = computed<DropdownMenuItem[][]>(() => [
+  [{ type: 'label', label: auth.user.value?.email ?? '' }],
+  [{ label: 'Mon compte', icon: 'i-lucide-user-round', to: '/compte' }],
+  [{ label: 'Se déconnecter', icon: 'i-lucide-log-out', onSelect: () => void auth.logout() }],
+])
+
 const { status, startPolling } = useEngineStatus()
 let stopPolling: (() => void) | undefined
 onMounted(() => (stopPolling = startPolling()))
@@ -57,6 +64,9 @@ watch(
     ready.value = true
     void refreshUnseenDeals()
     void favorites.refresh()
+    auth.loadUser().catch(() => {
+      // A refused session already sends the user back to the sign-in page.
+    })
     dealsTimer = setInterval(refreshUnseenDeals, 30_000)
   },
   { immediate: true },
@@ -81,24 +91,43 @@ onBeforeUnmount(() => clearInterval(dealsTimer))
       </template>
 
       <template #footer="{ collapsed }">
-        <div class="flex items-center gap-2 px-1 text-xs text-muted">
-          <span
-            class="size-2 shrink-0 rounded-full"
-            :class="{
-              'bg-success': status === 'online',
-              'bg-warning animate-pulse': status === 'connecting',
-              'bg-error': status === 'offline',
-            }"
-          />
-          <span v-if="!collapsed">
-            {{
-              status === 'online'
-                ? 'Moteur connecté'
-                : status === 'connecting'
-                  ? 'Connexion au moteur…'
-                  : 'Moteur injoignable'
-            }}
-          </span>
+        <div class="flex w-full flex-col gap-2">
+          <UDropdownMenu
+            :items="accountMenu"
+            :content="{ align: 'center', collisionPadding: 12 }"
+            :ui="{ content: collapsed ? 'w-48' : 'w-(--reka-dropdown-menu-trigger-width)' }"
+          >
+            <UButton
+              :avatar="{ alt: auth.user.value?.display_name ?? '?' }"
+              :label="collapsed ? undefined : (auth.user.value?.display_name ?? 'Mon compte')"
+              :trailing-icon="collapsed ? undefined : 'i-lucide-chevrons-up-down'"
+              color="neutral"
+              variant="ghost"
+              block
+              :square="collapsed"
+              class="data-[state=open]:bg-elevated"
+              :ui="{ trailingIcon: 'text-dimmed' }"
+            />
+          </UDropdownMenu>
+          <div class="flex items-center gap-2 px-1 text-xs text-muted">
+            <span
+              class="size-2 shrink-0 rounded-full"
+              :class="{
+                'bg-success': status === 'online',
+                'bg-warning animate-pulse': status === 'connecting',
+                'bg-error': status === 'offline',
+              }"
+            />
+            <span v-if="!collapsed">
+              {{
+                status === 'online'
+                  ? 'Moteur connecté'
+                  : status === 'connecting'
+                    ? 'Connexion au moteur…'
+                    : 'Moteur injoignable'
+              }}
+            </span>
+          </div>
         </div>
       </template>
     </UDashboardSidebar>
