@@ -1,0 +1,73 @@
+name: Release
+
+# Pushing a version tag (v0.2.0) builds the Windows installer, signs the update and
+# publishes both as a GitHub release: installed apps then offer the update, and the landing
+# page's download link points at the new installer.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      # Before the engine: its build script names the sidecar after the Rust target.
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri -> target
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: engine/uv.lock
+      - name: Build the engine sidecar
+        working-directory: engine
+        run: |
+          uv sync --locked --group bundle
+          uv run python scripts/build_sidecar.py
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+      - run: npm ci
+        working-directory: desktop
+
+      - name: Build the installer and publish the release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Signs the update so installed apps accept it (public key in tauri.conf.json).
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          projectPath: desktop
+          args: --config src-tauri/tauri.bundle.json
+          tagName: ${{ github.ref_name }}
+          releaseName: Mekiki ${{ github.ref_name }}
+          releaseBody: |
+            Téléchargez **Mekiki-Setup.exe** et lancez-le pour installer Mekiki sur Windows.
+            Les versions déjà installées proposent cette mise à jour au démarrage.
+          releaseDraft: false
+          prerelease: false
+          includeUpdaterJson: true
+
+      - name: Publish the installer under a fixed name for the download link
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $installer = Get-ChildItem desktop/src-tauri/target/release/bundle/nsis/*-setup.exe |
+            Select-Object -First 1
+          Copy-Item $installer.FullName Mekiki-Setup.exe
+          gh release upload "${{ github.ref_name }}" Mekiki-Setup.exe --clobber

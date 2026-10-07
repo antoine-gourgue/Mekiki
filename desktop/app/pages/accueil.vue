@@ -3,15 +3,34 @@ import type { ButtonProps, PageFeatureProps } from '@nuxt/ui'
 
 definePageMeta({ layout: 'public' })
 
-const links: ButtonProps[] = [
+// Built and signed by the release workflow (.github/workflows/release.yml).
+const INSTALLER_URL =
+  'https://github.com/antoine-gourgue/Mekiki/releases/latest/download/Mekiki-Setup.exe'
+
+// Inside the desktop app, offering to download it makes no sense.
+const inDesktopApp = import.meta.client && '__TAURI_INTERNALS__' in window
+
+const links = computed<ButtonProps[]>(() => [
+  ...(inDesktopApp
+    ? []
+    : [
+        {
+          label: 'Télécharger pour Windows',
+          icon: 'i-lucide-download',
+          to: INSTALLER_URL,
+          external: true,
+          size: 'xl' as const,
+        },
+      ]),
   {
     label: 'Créer un compte',
     to: '/inscription',
     size: 'xl',
     trailingIcon: 'i-lucide-arrow-right',
+    ...(inDesktopApp ? {} : { color: 'neutral' as const, variant: 'subtle' as const }),
   },
   { label: 'Se connecter', to: '/connexion', size: 'xl', color: 'neutral', variant: 'subtle' },
-]
+])
 
 const features: PageFeatureProps[] = [
   {

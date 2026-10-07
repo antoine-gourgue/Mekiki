@@ -15,13 +15,16 @@
     "typecheck": "nuxt typecheck",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build --config src-tauri/tauri.bundle.json"
+    "tauri:build": "tauri build --config src-tauri/tauri.bundle.json",
+    "version:set": "node scripts/set-version.mjs"
   },
   "dependencies": {
     "@iconify-json/lucide": "^1.2.140",
     "@nuxt/ui": "^4.11.3",
     "@tauri-apps/api": "^2.12.1",
     "@tauri-apps/plugin-opener": "^2.7.0",
+    "@tauri-apps/plugin-process": "^2.4.0",
+    "@tauri-apps/plugin-updater": "^2.13.1",
     "nuxt": "~4.5.2",
     "tailwindcss": "^4.3.3"
   },
