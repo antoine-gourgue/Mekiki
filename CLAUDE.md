@@ -3,7 +3,8 @@
 Application desktop d'achat-revente de cartes TCG (Pokémon, One Piece) achetées au Japon via
 Neokyo et revendues en Europe. `engine/` est le moteur Python (FastAPI + SQLite) ;
 `desktop/` est l'interface Nuxt 4 + Nuxt UI 4 empaquetée avec Tauri 2, qui lance le moteur
-comme sidecar en release seulement.
+comme sidecar en release seulement. Chaque revendeur a son compte (`auth.py`, jeton porteur) :
+toute donnée (lots, cartes suivies, favoris, paramètres) appartient à un `user_id`.
 
 ## Conventions
 
@@ -58,14 +59,39 @@ cd desktop && npm run lint && npm run format:check && npm run typecheck && npm r
 - Les tests n'accèdent jamais au réseau : `create_app(..., http_transport=..., source_factory=...)`
   et `background_jobs=False` (voir `engine/tests/conftest.py`).
 - Rester poli avec les sites : pas de requêtes en parallèle vers un même site, intervalles de
-  `PoliteClient`, jamais de compte ni de connexion.
+  `PoliteClient`, jamais de compte ni de connexion sur les sites japonais.
+- Cartes suivies (`tracking.py`) : liée à un produit Cardmarket japonais, une carte ne garde que
+  les annonces de son impression exacte ; `names.py` traduit les noms français et anglais en
+  japonais (PokéAPI pour les Pokémon, liste des personnages pour One Piece).
+
+## Revente (`engine/mekiki_engine/resale/`, `browser/`)
+
+- `verdict.py` juge une carte (produit, annonce japonaise, carte en stock) sur chaque
+  débouché : cote Cardmarket, eBay (API Browse si clés, sinon ventes lues dans Chrome), Vinted.
+- `browser/` pilote une fenêtre Chrome visible, profil propre à Mekiki, par le protocole
+  DevTools. **Exception voulue par l'utilisateur** à la règle « jamais de connexion » : il s'y
+  connecte lui-même à Vinted et eBay (Mekiki ne voit jamais de mot de passe). Chaque action part
+  d'un clic dans l'app, une page à la fois ; ne jamais contourner une vérification anti-robot.
+- Les secrets (clés eBay…) sont dans `engine/.env`, jamais dans le dépôt.
+
+## Releases
+
+- Un tag `vX.Y.Z` lance `.github/workflows/release.yml` : installateur NSIS signé pour la mise
+  à jour, `latest.json` pour le plugin updater, copie `Mekiki-Setup.exe` pour le lien de la
+  page d'accueil. `npm run version:set -- X.Y.Z` (dans `desktop/`) met la version partout.
+- La clé privée de signature des mises à jour ne quitte pas la machine (`~/.tauri/`) et le
+  secret GitHub `TAURI_SIGNING_PRIVATE_KEY` ; ne jamais la committer.
 
 ## Pièges connus (Windows, octobre 2026)
 
 - Smart App Control bloque les binaires récents sans réputation : le Python géré par uv,
-  les extensions Cython de SQLAlchemy 2.1, le lanceur `.venv/Scripts/mekiki-engine.exe`.
-  D'où le Python officiel signé (python.org), SQLAlchemy limité à `<2.1` (qui retombe en
-  Python pur), et `uv run python -m mekiki_engine` plutôt que `uv run mekiki-engine`.
+  les extensions Cython de SQLAlchemy 2.1, le lanceur `.venv/Scripts/mekiki-engine.exe`, et la
+  compilation Rust. D'où le Python officiel signé (python.org), SQLAlchemy limité à `<2.1` (qui
+  retombe en Python pur), et `uv run python -m mekiki_engine` plutôt que `uv run mekiki-engine`.
+  Sur la machine de développement, il est désactivé depuis le 7 octobre 2026 pour Tauri ; un
+  utilisateur qui l'a activé verra l'installateur non signé bloqué.
+- Lancer `chrome.exe --version` sous Windows ouvre une fenêtre au lieu d'afficher la version :
+  lire la version du fichier (`(Get-Item …chrome.exe).VersionInfo`).
 - Nuxt est bloqué en `~4.5.2` : en 4.6.0, `nuxt generate` échoue au prérendu sous Windows
   (le renderer est externalisé et ses imports virtuels ne sont pas résolus).
 - TypeScript reste en 6.x : `vue-tsc` dépend de l'API JavaScript de TypeScript, absente de

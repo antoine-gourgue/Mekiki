@@ -2,36 +2,50 @@
 
 > 目利き : « avoir l'œil », savoir juger la vraie valeur d'un objet.
 
-Application desktop perso pour l'achat-revente de cartes TCG **Pokémon** et **One Piece** :
-achat au Japon via le proxy Neokyo (Mercari, Rakuma, Yahoo Auctions, Yahoo Fleamarket), revente
-en Europe sur Cardmarket, eBay, Vinted et Leboncoin.
+Application desktop d'achat-revente de cartes TCG **Pokémon** et **One Piece** : achat au
+Japon via le proxy Neokyo (Mercari, Rakuma, Yahoo Auctions, Yahoo Fleamarket), revente en
+Europe sur Cardmarket, eBay, Vinted et Leboncoin. Chaque revendeur a son compte.
+
+**[Télécharger Mekiki pour Windows](https://github.com/antoine-gourgue/Mekiki/releases/latest/download/Mekiki-Setup.exe)**
+(installateur, mises à jour proposées dans l'app).
 
 - **Stock et rentabilité réelle** : coût de revient complet par carte (prix, frais Neokyo,
   envoi, TVA à l'import, douane, frais de dossier), net de vente par plateforme (commission,
-  envoi, emballage, cotisations URSSAF), marge et ROI.
-- **Trouver des cartes** : on choisit le jeu, le budget du colis et le nombre de cartes ;
-  l'app parcourt les annonces récentes de Mercari et Rakuma, reconnaît chaque carte dans son
-  titre japonais, la compare à sa cote Cardmarket et compose le colis le plus rentable, avec
-  le lien Neokyo de chaque annonce.
-- **Recherche et cartes suivies** : recherche ponctuelle, ou cartes surveillées par un scanner
-  automatique ; les annonces qui atteignent le ROI visé apparaissent dans « Bonnes affaires ».
-
-Plus tard : la détection de la hype (tendance des cotes, prix des boutiques japonaises).
+  envoi, emballage, cotisations URSSAF), marge et ROI. Photos de chaque carte.
+- **Trouver des cartes** : on choisit le jeu, le budget du colis, le nombre de cartes et la
+  profondeur de recherche ; l'app parcourt des milliers d'annonces Mercari et Rakuma, reconnaît
+  chaque carte dans son titre japonais, la compare à sa cote Cardmarket et compose le colis le
+  plus rentable, avec le lien Neokyo de chaque annonce. Favoris et panier pour préparer un colis.
+- **Recherche et cartes suivies** : un nom tapé en français ou en anglais (« Dracaufeu ex »,
+  « Luffy ») est cherché en japonais. Une carte suivie ne garde que les annonces de son
+  impression exacte (extension, numéro, miroir, version parallèle ou manga) ; le scanner les
+  cherche de plusieurs façons, sur plusieurs pages.
+- **Faut-il l'acheter ?** : Ctrl+K cherche partout (pages, stock, colis, favoris, catalogue
+  Cardmarket) ; chaque carte s'ouvre dans un panneau latéral avec un verdict, la revente sur
+  Cardmarket, eBay et Vinted, le prix maximum à payer au Japon et des signaux d'alerte.
+- **Vinted et eBay** : dans une fenêtre Chrome propre à Mekiki où l'utilisateur se connecte
+  lui-même, l'app lit les annonces Vinted et les ventes réussies eBay d'une carte. Une annonce
+  peut être préparée (titre, description, prix, photos) pour eBay et Vinted.
 
 ## Architecture
 
 | Dossier | Rôle |
 |---|---|
-| `engine/` | Moteur local en Python ≥ 3.12 (uv) : FastAPI + SQLite sur `127.0.0.1:18421` |
+| `engine/` | Moteur en Python ≥ 3.12 (uv) : FastAPI + SQLite, comptes et données par revendeur |
 | `desktop/` | Interface Nuxt 4 + Nuxt UI 4 en SPA, empaquetée avec Tauri 2 |
 
 En release, le moteur est compilé avec PyInstaller et lancé par Tauri comme sidecar ; sa base
 SQLite est stockée dans le dossier de données de l'app. En développement, on le lance à part.
 
+Le moteur peut aussi tourner sur un serveur pour plusieurs revendeurs : `MEKIKI_HOST=0.0.0.0`,
+`MEKIKI_ALLOWED_HOSTS` (noms de domaine acceptés) et `MEKIKI_ALLOWED_ORIGINS` (origines de
+l'interface). Les secrets se mettent dans `engine/.env` (ignoré par git, voir `.env.example`),
+par exemple les clés d'une application eBay pour les annonces eBay en direct.
+
 ## Développement
 
-Prérequis : [uv](https://docs.astral.sh/uv/), Node.js 24, et pour Tauri
-[Rust et les dépendances système](https://tauri.app/start/prerequisites/).
+Prérequis : [uv](https://docs.astral.sh/uv/), Node.js 24, Google Chrome (lecture des prix
+Vinted et eBay), et pour Tauri [Rust et les dépendances système](https://tauri.app/start/prerequisites/).
 
 ```bash
 # Terminal 1 : le moteur (données dans engine/.data)
@@ -48,7 +62,27 @@ npm run dev
 npm run tauri:dev
 ```
 
-## Build de l'application
+## Publier une version
+
+Un tag `vX.Y.Z` déclenche `.github/workflows/release.yml` : il construit le moteur et
+l'installateur Windows (NSIS, en français, sans droits administrateur), signe la mise à jour
+et publie la release. Les apps installées la proposent au démarrage.
+
+```bash
+cd desktop
+npm run version:set -- 0.2.0
+git commit -am "chore: release v0.2.0"
+git tag v0.2.0
+git push --follow-tags
+```
+
+Une fois pour toutes, le dépôt GitHub doit avoir le secret `TAURI_SIGNING_PRIVATE_KEY` : le
+contenu de la clé privée créée par `npx tauri signer generate` (sa clé publique est dans
+`desktop/src-tauri/tauri.conf.json`). Sans signature de code Windows, SmartScreen avertit au
+premier lancement de l'installateur (« Informations complémentaires » puis « Exécuter quand
+même »).
+
+Pour construire l'installateur en local :
 
 ```bash
 cd engine
@@ -56,7 +90,7 @@ uv sync --group bundle
 uv run python scripts/build_sidecar.py   # → desktop/src-tauri/binaries/
 
 cd ../desktop
-npm run tauri:build
+npm run tauri:build   # avec TAURI_SIGNING_PRIVATE_KEY dans l'environnement
 ```
 
 ## Vérifications avant chaque push
@@ -83,6 +117,15 @@ Yahoo! JAPAN (Auctions et Fleamarket) refuse les visiteurs de l'Union européenn
 ces deux sources ne fonctionnent que hors d'Europe et sont désactivées par défaut. La page
 Recherche propose la même recherche sur Neokyo, qui donne accès à Yahoo.
 
-Données utilisées : les fichiers publics de Cardmarket (catalogue et cotes) et la base
+## Vinted et eBay
+
+Ni Vinted ni eBay n'ouvrent leurs prix de vente aux logiciels, et leurs conditions
+d'utilisation interdisent les robots. À la demande de l'utilisateur, Mekiki pilote donc une
+fenêtre Chrome visible, avec un profil à part où il se connecte lui-même ; chaque lecture part
+d'un clic, une page à la fois. Une vérification anti-robot éventuelle est laissée à
+l'utilisateur. L'usage reste à ses risques vis-à-vis de ces sites.
+
+Données utilisées : les fichiers publics de Cardmarket (catalogue et cotes), la base
 [TCGdex](https://github.com/tcgdex/cards-database) (licence MIT), qui relie les cartes
-Pokémon japonaises (extension, numéro) à leur produit Cardmarket.
+Pokémon japonaises (extension, numéro) à leur produit Cardmarket, et les noms des Pokémon de
+[PokéAPI](https://github.com/PokeAPI/pokeapi).
