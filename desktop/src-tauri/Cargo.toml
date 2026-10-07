@@ -1,0 +1,20 @@
+[package]
+name = "mekiki"
+version = "0.1.0"
+description = "Achat-revente de cartes TCG importées du Japon"
+authors = ["Antoine Gourgue"]
+edition = "2021"
+rust-version = "1.77.2"
+
+[lib]
+# The `_lib` suffix avoids a name clash between the library and the binary on Windows.
+name = "mekiki_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
+tauri-plugin-shell = "2"
