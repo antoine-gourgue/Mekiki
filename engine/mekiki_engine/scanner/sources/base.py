@@ -67,7 +67,8 @@ EEA_BLOCK_MESSAGE = (
 
 # Seconds between two requests to the same host. Mercari's API gets the most room: it is
 # undocumented and its maintainers never published a limit.
-HOST_INTERVALS_S = {"api.mercari.jp": 6.0}
+# eBay's official API allows thousands of calls a day: no need to wait as long.
+HOST_INTERVALS_S = {"api.mercari.jp": 6.0, "api.ebay.com": 0.2}
 DEFAULT_INTERVAL_S = 3.0
 
 
@@ -116,9 +117,9 @@ class PoliteClient:
             response = self.http.request(method, url, **kwargs)  # type: ignore[arg-type]
         except httpx.HTTPError as error:
             raise SourceError(f"{host} : {error.__class__.__name__}") from error
-        if response.status_code == 429:
         if response.status_code in accept:
             return response
+        if response.status_code == 429:
             raise SiteBlocked(f"{host} limite les requêtes (429), réessayez plus tard")
         if response.status_code == 403 and EEA_BLOCK_MARKER in response.text:
             raise SiteBlocked(EEA_BLOCK_MESSAGE)

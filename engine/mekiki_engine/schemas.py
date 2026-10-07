@@ -733,3 +733,54 @@ class AccountUpdate(BaseModel):
     # Changing the password requires the current one, and signs out the other devices.
     current_password: str | None = None
     new_password: Password | None = None
+
+
+class ResaleLinks(BaseModel):
+    """Searches opened in the user's browser: the engine never fetches these pages."""
+
+    ebay_listings: str
+    ebay_sold: str
+    ebay_research: str
+    vinted: str
+
+
+class EbayListingOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    item_id: str
+    title: str
+    price_cents: int
+    shipping_cents: int | None
+    url: str
+    image_url: str | None
+    condition: str | None
+    country: str | None
+
+
+class EbayPrices(BaseModel):
+    # False when the engine has no eBay application keys: only the links work then.
+    configured: bool
+    error: str | None = None
+    total: int = 0
+    min_cents: int | None = None
+    median_cents: int | None = None
+    max_cents: int | None = None
+    listings: list[EbayListingOut] = []
+
+
+class ResalePrices(BaseModel):
+    query: str
+    links: ResaleLinks
+    ebay: EbayPrices
+
+
+class ListingDraftOut(BaseModel):
+    platform: Literal["ebay", "vinted"]
+    title: str
+    description: str
+    price_cents: int | None
+    # "listing" for the price already set, else the Cardmarket field it comes from.
+    price_source: str | None
+    new_listing_url: str
+    query: str
+    links: ResaleLinks

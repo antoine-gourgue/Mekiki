@@ -197,7 +197,7 @@ def delete_lot(session: Session, user_id: int, lot_id: int) -> None:
 
 
 def item_detail(session: Session, user_id: int, settings: AppSettings, item_id: int) -> ItemOut:
-    item = _get_item(session, user_id, item_id)
+    item = get_item(session, user_id, item_id)
     return _item_out(item, cost_lot(item.lot, settings).by_item[item.id], settings)
 
 
@@ -217,7 +217,7 @@ def add_item(
 def update_item(
     session: Session, user_id: int, settings: AppSettings, item_id: int, payload: ItemUpdate
 ) -> ItemOut:
-    item = _get_item(session, user_id, item_id)
+    item = get_item(session, user_id, item_id)
     values = _to_columns(payload.model_dump(exclude_unset=True))
     if "lot_id" in values:
         # Going through the relationship keeps both lots' item lists in sync.
@@ -229,14 +229,14 @@ def update_item(
 
 
 def delete_item(session: Session, user_id: int, item_id: int) -> None:
-    session.delete(_get_item(session, user_id, item_id))
+    session.delete(get_item(session, user_id, item_id))
     _commit(session)
 
 
 def record_sale(
     session: Session, user_id: int, settings: AppSettings, item_id: int, payload: SaleUpsert
 ) -> ItemOut:
-    item = _get_item(session, user_id, item_id)
+    item = get_item(session, user_id, item_id)
     platform_fee = payload.platform_fee_cents
     if platform_fee is None:
         platform_fee = compute_platform_fee(
@@ -262,7 +262,7 @@ def record_sale(
 
 
 def cancel_sale(session: Session, user_id: int, settings: AppSettings, item_id: int) -> ItemOut:
-    item = _get_item(session, user_id, item_id)
+    item = get_item(session, user_id, item_id)
     if item.sale is not None:
         item.sale = None
         _commit(session)
@@ -470,7 +470,7 @@ def _get_lot(session: Session, user_id: int, lot_id: int) -> Lot:
     return lot
 
 
-def _get_item(session: Session, user_id: int, item_id: int) -> Item:
+def get_item(session: Session, user_id: int, item_id: int) -> Item:
     item = session.get(Item, item_id)
     if item is None or item.lot.user_id != user_id:
         raise NotFoundError(f"item {item_id} not found")

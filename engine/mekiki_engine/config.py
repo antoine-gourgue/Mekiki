@@ -9,6 +9,7 @@ DEFAULT_PORT = 18421
 # listens on the network unless deployed as a server on purpose.
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_ALLOWED_HOSTS = ("127.0.0.1", "localhost")
+DEFAULT_EBAY_MARKETPLACE = "EBAY_FR"
 
 # Tauri serves the bundled UI from ``tauri://localhost`` on macOS/Linux and from
 # ``http://tauri.localhost`` on Windows; the Nuxt dev server runs on port 3000.
@@ -31,6 +32,10 @@ class EngineConfig:
     host: str = DEFAULT_HOST
     # Host headers accepted (see app.py); a server adds its public domain name.
     allowed_hosts: tuple[str, ...] = DEFAULT_ALLOWED_HOSTS
+    # Keys of an eBay developer application, for live eBay prices (see resale/ebay.py).
+    ebay_client_id: str | None = None
+    ebay_client_secret: str | None = None
+    ebay_marketplace: str = DEFAULT_EBAY_MARKETPLACE
 
     @property
     def database_url(self) -> str:
@@ -54,6 +59,9 @@ def load_config(
         background_jobs=background_jobs,
         host=host or os.environ.get("MEKIKI_HOST") or DEFAULT_HOST,
         allowed_hosts=DEFAULT_ALLOWED_HOSTS + _env_list("MEKIKI_ALLOWED_HOSTS"),
+        ebay_client_id=os.environ.get("MEKIKI_EBAY_CLIENT_ID") or None,
+        ebay_client_secret=os.environ.get("MEKIKI_EBAY_CLIENT_SECRET") or None,
+        ebay_marketplace=os.environ.get("MEKIKI_EBAY_MARKETPLACE") or DEFAULT_EBAY_MARKETPLACE,
     )
 
 
