@@ -183,8 +183,11 @@ class FakeSource:
         limit: int,
         price_min_jpy: int | None = None,
         price_max_jpy: int | None = None,
+        page: int = 0,
     ) -> list[FoundListing]:
         self.marketplace.queries.append((self.platform, query))
+        if page:
+            return []
         if self.platform in self.marketplace.failures:
             raise SourceError("bloqué (test)")
         return list(self.marketplace.listings.get(self.platform, []))[:limit]

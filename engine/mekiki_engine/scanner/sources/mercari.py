@@ -79,10 +79,13 @@ class MercariSource:
         limit: int = 60,
         price_min_jpy: int | None = None,
         price_max_jpy: int | None = None,
+        page: int = 0,
     ) -> list[FoundListing]:
         body = search_body(query, CATEGORY_IDS[self.game], limit, self.signer.device_uuid)
         body["searchCondition"]["priceMin"] = price_min_jpy or 0
         body["searchCondition"]["priceMax"] = price_max_jpy or 0
+        # The site pages with "v1:1", "v1:2"… after an empty first token.
+        body["pageToken"] = f"v1:{page}" if page else ""
         response = self.client.request(
             "POST",
             SEARCH_URL,

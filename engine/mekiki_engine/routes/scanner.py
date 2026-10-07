@@ -7,7 +7,7 @@ from fastapi import APIRouter, Query, Request, status
 
 from mekiki_engine.deps import SessionDep, SettingsDep
 from mekiki_engine.domain import Game, ListingTriage
-from mekiki_engine.scanner import card_index, cardmarket, service
+from mekiki_engine.scanner import card_index, cardmarket, favorites, service
 from mekiki_engine.scanner.discovery import DiscoveryJob
 from mekiki_engine.scanner.runner import ScannerWorker, search_once
 from mekiki_engine.scanner.sources.base import PoliteClient
@@ -17,6 +17,9 @@ from mekiki_engine.schemas import (
     DealUpdate,
     DiscoveryRequest,
     DiscoveryRun,
+    FavoriteCreate,
+    FavoritesOut,
+    FavoriteUpdate,
     MarketPriceOut,
     ScanStatus,
     SearchRequest,
@@ -159,5 +162,43 @@ def start_discovery(payload: DiscoveryRequest, request: Request) -> DiscoveryRun
     return _discovery(request).start(payload, background=background)
 
 
+@router.post("/discovery/stop")
+def stop_discovery(request: Request) -> DiscoveryRun:
+    return _discovery(request).stop()
+
+
 def _discovery(request: Request) -> DiscoveryJob:
     return request.app.state.discovery
+
+
+@router.get("/favorites")
+def list_favorites(session: SessionDep, settings: SettingsDep) -> FavoritesOut:
+    return favorites.list_favorites(session, settings)
+
+
+@router.post("/favorites", status_code=status.HTTP_201_CREATED)
+def add_favorite(
+    payload: FavoriteCreate, session: SessionDep, settings: SettingsDep
+) -> FavoritesOut:
+    favorites.add_favorite(session, payload)
+    return favorites.list_favorites(session, settings)
+
+
+@router.patch("/favorites/{favorite_id}")
+def update_favorite(
+    favorite_id: int, payload: FavoriteUpdate, session: SessionDep, settings: SettingsDep
+) -> FavoritesOut:
+    favorites.update_favorite(session, favorite_id, payload)
+    return favorites.list_favorites(session, settings)
+
+
+@router.delete("/favorites/{favorite_id}")
+def delete_favorite(favorite_id: int, session: SessionDep, settings: SettingsDep) -> FavoritesOut:
+    favorites.delete_favorite(session, favorite_id)
+    return favorites.list_favorites(session, settings)
+
+
+@router.post("/favorites/empty-cart")
+def empty_cart(session: SessionDep, settings: SettingsDep) -> FavoritesOut:
+    favorites.empty_cart(session)
+    return favorites.list_favorites(session, settings)

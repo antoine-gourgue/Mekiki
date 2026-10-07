@@ -200,3 +200,29 @@ class CardIndexEntry(Base):
     name: Mapped[str | None]
     # "normal", "holo", "reverse-masterball"…: mirror versions are separate products.
     variant: Mapped[str] = mapped_column(default="normal")
+
+
+class Favorite(Base):
+    """A listing kept for later; those ``in_cart`` are priced together as one parcel."""
+
+    __tablename__ = "favorites"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    game: Mapped[str]
+    source: Mapped[str]
+    external_id: Mapped[str]
+    title: Mapped[str]
+    price_jpy: Mapped[int]
+    shipping_included: Mapped[bool | None]
+    url: Mapped[str]
+    thumbnail_url: Mapped[str | None]
+    listed_at: Mapped[str | None]
+    ends_at: Mapped[str | None]
+    bids: Mapped[int | None]
+    card_label: Mapped[str | None]
+    cardmarket_product_id: Mapped[int | None]
+    # Resale price chosen by hand; left empty, the Cardmarket price of the product.
+    target_price_cents: Mapped[int | None]
+    in_cart: Mapped[bool] = mapped_column(default=False)
+    notes: Mapped[str | None]
+    created_at: Mapped[str] = mapped_column(server_default=FetchedValue())

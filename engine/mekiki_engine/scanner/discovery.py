@@ -8,26 +8,33 @@ priced as one card of the parcel being composed.
 
 from __future__ import annotations
 
+import re
 import threading
 from collections import Counter
 from collections.abc import Callable, Iterable
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from mekiki_engine.costing.landed_cost import (
-    ItemCostInput,
     ItemLandedCost,
-    LotCostInput,
-    allocate_lot,
 )
 from mekiki_engine.costing.money import percent_to_fraction
-from mekiki_engine.costing.sale import SaleBreakdown, roi
-from mekiki_engine.domain import Game
+from mekiki_engine.costing.sale import SaleBreakdown
+from mekiki_engine.domain import Game, SourcePlatform
+from mekiki_engine.models import CardIndexEntry, CardmarketProduct, SettingRow
 from mekiki_engine.scanner import card_index, links
 from mekiki_engine.scanner.identify import CardIdentity, identify
 from mekiki_engine.scanner.matching import MatchRule, match_title, split_keywords
-from mekiki_engine.scanner.pricing import DealEstimate, domestic_shipping_jpy, reference_price
+from mekiki_engine.scanner.pricing import (
+    DealEstimate,
+    domestic_shipping_jpy,
+    landed_costs_of_parcel,
+    parcel_totals,
+    reference_price,
+)
 from mekiki_engine.scanner.resolver import CatalogResolver, Resolution
 from mekiki_engine.scanner.runner import SOURCE_LABELS, SourceFactory
 from mekiki_engine.scanner.service import (
@@ -50,7 +57,7 @@ from mekiki_engine.schemas import (
     DiscoveryRun,
     DiscoveryTotals,
 )
-from mekiki_engine.services.portfolio import parcel_landed_cost, project_sale, vat_rate
+from mekiki_engine.services.portfolio import parcel_landed_cost, project_sale
 from mekiki_engine.services.settings_service import load_settings
 
 # Broad searches: the whole category, then the rarities worth importing.
@@ -59,8 +66,13 @@ DISCOVERY_QUERIES = {
     Game.ONE_PIECE: ("", "パラレル", "コミパラ", "SEC", "SR", "SP", "リーダー パラレル"),
 }
 RESULTS_PER_QUERY = 120
+# Per depth: pages of each broad search, number of set-code searches, pages of each.
+DEPTHS = {"quick": (1, 0, 1), "deep": (2, 15, 1), "max": (3, 40, 2)}
+# Sets whose cards are worth importing: the most products priced at 10 euros or more.
+VALUABLE_CENTS = 1000
 # Listings considered, relative to the average budget per card.
 PRICE_WINDOW = (0.15, 1.6)
+ONE_PIECE_SET = re.compile(r"\(\s*((?:OP|EB|PRB|ST)\d{2})-\d{3}\s*\)", re.IGNORECASE)
 MAX_SAME_PRODUCT = 2
 MAX_ALTERNATIVES = 30
 # Below this share of the market price, a listing is almost always a reproduction, an
@@ -95,6 +107,51 @@ class Candidate:
         return self.margin_cents / self.landed_cents if self.landed_cents else 0.0
 
 
+def search_plan(session: Session, game: Game, depth: str) -> list[tuple[str, int]]:
+    """(query, pages) to run on each site: broad searches, then the most valuable sets.
+
+    Set-code searches find listings whose title carries the set code, the ones the card
+    index recognises best.
+    """
+    broad_pages, set_count, set_pages = DEPTHS[depth]
+    plan = [(query, broad_pages) for query in DISCOVERY_QUERIES[game]]
+    if set_count:
+        plan += [(code, set_pages) for code in valuable_sets(session, game, set_count)]
+    return plan
+
+
+def valuable_sets(session: Session, game: Game, limit: int) -> list[str]:
+    """Set codes with the most cards priced at ``VALUABLE_CENTS`` or more."""
+    price = func.coalesce(
+        CardmarketProduct.avg30_cents,
+        CardmarketProduct.avg7_cents,
+        CardmarketProduct.avg_cents,
+        CardmarketProduct.trend_cents,
+    )
+    if game is Game.POKEMON:
+        rows = session.execute(
+            select(CardIndexEntry.set_code, func.count())
+            .join(CardmarketProduct, CardmarketProduct.id_product == CardIndexEntry.id_product)
+            .where(CardIndexEntry.game == game.value, price >= VALUABLE_CENTS)
+            .group_by(CardIndexEntry.set_code)
+            .order_by(func.count().desc())
+            .limit(limit)
+        ).all()
+        return [code for code, _count in rows]
+    codes: Counter[str] = Counter()
+    names = session.scalars(
+        select(CardmarketProduct.name).where(
+            CardmarketProduct.game == game.value,
+            price >= VALUABLE_CENTS,
+            CardmarketProduct.expansion_name.is_not(None),
+        )
+    )
+    for name in names:
+        if match := ONE_PIECE_SET.search(name or ""):
+            codes[match[1].upper()] += 1
+    return [code for code, _count in codes.most_common(limit)]
+
+
 def price_window_jpy(settings: AppSettings, request: DiscoveryRequest) -> tuple[int, int]:
     per_card_eur = request.budget_cents / request.card_count / 100
     fx = float(settings.fx_jpy_per_eur)
@@ -109,43 +166,62 @@ def discover(
     *,
     source_factory: SourceFactory = build_source,
     on_progress: Callable[[DiscoveryRun], None] = lambda _run: None,
+    should_stop: Callable[[], bool] = lambda: False,
 ) -> DiscoveryRun:
     settings = load_settings(session)
     platforms = request.sources or settings.scanner.sources
-    queries = DISCOVERY_QUERIES[request.game]
-    run = DiscoveryRun(
-        status="running",
-        request=request,
-        started_at=utc_now(),
-        searches_total=len(platforms) * len(queries),
-    )
+    run = DiscoveryRun(status="running", request=request, started_at=utc_now())
     on_progress(run)
 
     needs_index = request.game is Game.POKEMON and not card_index.indexed_count(session)
     if needs_index and (error := card_index.refresh(session, client)):
         run.errors.append(error)
+    plan = search_plan(session, request.game, request.depth)
+    run.searches_total = len(platforms) * sum(pages for _query, pages in plan)
+    on_progress(run)
 
     price_min, price_max = price_window_jpy(settings, request)
     found: dict[tuple[str, str], FoundListing] = {}
-    for platform in platforms:
+    lock = threading.Lock()
+
+    def browse(platform: SourcePlatform) -> None:
         source = source_factory(platform, client, request.game)
-        for query in queries:
-            try:
-                for item in search_safely(
-                    source,
-                    query,
-                    limit=RESULTS_PER_QUERY,
-                    price_min_jpy=price_min,
-                    price_max_jpy=price_max,
-                ):
-                    found.setdefault((item.source.value, item.external_id), item)
-            except SourceError as error:
-                run.errors.append(f"{SOURCE_LABELS[platform]} : {error}")
-                break
-            finally:
-                run.searches_done += 1
-                run.listings_seen = len(found)
-                on_progress(run)
+        remaining = sum(pages for _query, pages in plan)
+        for query, pages in plan:
+            for page in range(pages):
+                if should_stop():
+                    return
+                try:
+                    items = search_safely(
+                        source,
+                        query,
+                        limit=RESULTS_PER_QUERY,
+                        price_min_jpy=price_min,
+                        price_max_jpy=price_max,
+                        page=page,
+                    )
+                except SourceError as error:
+                    with lock:
+                        run.errors.append(f"{SOURCE_LABELS[platform]} : {error}")
+                        # A blocked site stays blocked: skip its remaining searches.
+                        run.searches_done += remaining
+                        on_progress(run)
+                    return
+                skipped = 0 if items else pages - page - 1
+                with lock:
+                    for item in items:
+                        found.setdefault((item.source.value, item.external_id), item)
+                    # An empty page ends this search: its next pages would be empty too.
+                    run.searches_done += 1 + skipped
+                    run.listings_seen = len(found)
+                    on_progress(run)
+                remaining -= 1 + skipped
+                if skipped:
+                    break
+
+    # Each site keeps its own pace (see PoliteClient), so sites are browsed side by side.
+    with ThreadPoolExecutor(max_workers=len(platforms) or 1) as pool:
+        list(pool.map(browse, platforms))
 
     candidates = evaluate(session, settings, request, found.values(), run)
     picked = compose_parcel(candidates, request.budget_cents, request.card_count)
@@ -167,6 +243,7 @@ def discover(
         for candidate in candidates
         if id(candidate) not in chosen
     ][:MAX_ALTERNATIVES]
+    run.stopped = should_stop()
     run.status = "done"
     run.finished_at = utc_now()
     return run
@@ -281,36 +358,17 @@ def price_parcel(
     """Prices the picks as one real lot: shared costs split by price, not evenly."""
     if not picked:
         return [], None
-    lot = LotCostInput(
-        fx_jpy_per_eur=settings.fx_jpy_per_eur,
-        packing_fee_jpy=settings.neokyo_packing_fee_jpy,
-        international_shipping_jpy=settings.scanner.lot_shipping_jpy,
-        handling_fee_cents=settings.default_handling_fee_cents,
+    landed_costs = landed_costs_of_parcel(
+        settings, [(c.listing.price_jpy, c.listing.shipping_included) for c in picked]
     )
-    items = [
-        ItemCostInput(
-            price_jpy=c.listing.price_jpy,
-            domestic_shipping_jpy=domestic_shipping_jpy(settings, c.listing.shipping_included),
-            service_fee_jpy=settings.neokyo_service_fee_jpy,
-        )
-        for c in picked
-    ]
-    landed_costs = allocate_lot(lot, items, vat_rate(settings))
     picks = [
         _pick(candidate, landed, candidate.estimate.sale)
         for candidate, landed in zip(picked, landed_costs, strict=True)
     ]
-    landed_total = sum(cost.total_cents for cost in landed_costs)
-    net_total = sum(c.estimate.sale.net_cents for c in picked if c.estimate.sale)
-    margin = net_total - landed_total
-    totals = DiscoveryTotals(
-        card_count=len(picks),
-        purchase_jpy=sum(c.listing.price_jpy for c in picked),
-        landed_cents=landed_total,
-        revenue_cents=sum(c.estimate.sale.revenue_cents for c in picked if c.estimate.sale),
-        net_cents=net_total,
-        margin_cents=margin,
-        roi=roi(margin, landed_total),
+    totals = parcel_totals(
+        [c.listing.price_jpy for c in picked],
+        landed_costs,
+        [c.estimate.sale for c in picked],
     )
     return picks, totals
 
@@ -358,7 +416,9 @@ class DiscoveryJob:
         self._client = client
         self._source_factory = source_factory
         self._lock = threading.Lock()
-        self.run = DiscoveryRun(status="idle")
+        self._stop = threading.Event()
+        with session_factory() as session:
+            self.run = load_last_run(session) or DiscoveryRun(status="idle")
 
     @property
     def running(self) -> bool:
@@ -369,12 +429,19 @@ class DiscoveryJob:
             if self.running:
                 return self.run
             self.run = DiscoveryRun(status="running", request=request, started_at=utc_now())
+            self._stop.clear()
         if background:
             threading.Thread(
                 target=self._execute, args=(request,), name="mekiki-discovery", daemon=True
             ).start()
         else:
             self._execute(request)
+        return self.run
+
+    def stop(self) -> DiscoveryRun:
+        """Stops browsing; the listings found so far are still evaluated."""
+        if self.running:
+            self._stop.set()
         return self.run
 
     def _execute(self, request: DiscoveryRequest) -> None:
@@ -389,6 +456,7 @@ class DiscoveryJob:
                     request,
                     source_factory=self._source_factory,
                     on_progress=publish,
+                    should_stop=self._stop.is_set,
                 )
         # A crash must still end the run, or the UI would wait forever.
         except Exception as error:
@@ -397,3 +465,30 @@ class DiscoveryJob:
             failed.finished_at = utc_now()
             failed.errors = [*failed.errors, f"Erreur inattendue : {error}"]
             self.run = failed
+        with self._session_factory() as session:
+            save_last_run(session, self.run)
+
+
+LAST_RUN_KEY = "discovery:last"
+
+
+def load_last_run(session: Session) -> DiscoveryRun | None:
+    """The last finished discovery, kept so the page shows it again after a restart."""
+    row = session.get(SettingRow, LAST_RUN_KEY)
+    if row is None:
+        return None
+    try:
+        run = DiscoveryRun.model_validate_json(row.value)
+    except ValueError:
+        return None
+    # A run cut short by a restart cannot resume.
+    return run if run.status != "running" else None
+
+
+def save_last_run(session: Session, run: DiscoveryRun) -> None:
+    row = session.get(SettingRow, LAST_RUN_KEY)
+    if row is None:
+        session.add(SettingRow(key=LAST_RUN_KEY, value=run.model_dump_json()))
+    else:
+        row.value = run.model_dump_json()
+    session.commit()

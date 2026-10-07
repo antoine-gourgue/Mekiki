@@ -2,17 +2,24 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 
-from mekiki_engine.costing.landed_cost import ItemLandedCost
+from mekiki_engine.costing.landed_cost import (
+    ItemCostInput,
+    ItemLandedCost,
+    LotCostInput,
+    allocate_lot,
+)
 from mekiki_engine.costing.money import percent_to_fraction
-from mekiki_engine.costing.sale import SaleBreakdown
+from mekiki_engine.costing.sale import SaleBreakdown, roi
 from mekiki_engine.models import CardmarketProduct
-from mekiki_engine.schemas import AppSettings
+from mekiki_engine.schemas import AppSettings, DiscoveryTotals
 from mekiki_engine.services.portfolio import (
     max_price_jpy_for_roi,
     parcel_landed_cost,
     project_sale,
+    vat_rate,
 )
 
 # Cardmarket's price guide ignores language and condition; averages of actual sales are the
@@ -103,3 +110,46 @@ def meets_target(settings: AppSettings, estimate: DealEstimate) -> bool:
         return False
     target = percent_to_fraction(settings.scanner.min_roi_percent)
     return margin >= target * estimate.landed.total_cents
+
+
+def landed_costs_of_parcel(
+    settings: AppSettings, listings: Sequence[tuple[int, bool | None]]
+) -> list[ItemLandedCost]:
+    """Listings bought together, as (price, shipping included): shared costs split by price."""
+    if not listings:
+        return []
+    lot = LotCostInput(
+        fx_jpy_per_eur=settings.fx_jpy_per_eur,
+        packing_fee_jpy=settings.neokyo_packing_fee_jpy,
+        international_shipping_jpy=settings.scanner.lot_shipping_jpy,
+        handling_fee_cents=settings.default_handling_fee_cents,
+    )
+    items = [
+        ItemCostInput(
+            price_jpy=price,
+            domestic_shipping_jpy=domestic_shipping_jpy(settings, shipping_included),
+            service_fee_jpy=settings.neokyo_service_fee_jpy,
+        )
+        for price, shipping_included in listings
+    ]
+    return allocate_lot(lot, items, vat_rate(settings))
+
+
+def parcel_totals(
+    prices_jpy: Sequence[int],
+    landed: Sequence[ItemLandedCost],
+    sales: Sequence[SaleBreakdown | None],
+) -> DiscoveryTotals:
+    landed_total = sum(cost.total_cents for cost in landed)
+    net_total = sum(sale.net_cents for sale in sales if sale)
+    margin = net_total - landed_total
+    return DiscoveryTotals(
+        card_count=len(landed),
+        purchase_jpy=sum(prices_jpy),
+        landed_cents=landed_total,
+        revenue_cents=sum(sale.revenue_cents for sale in sales if sale),
+        net_cents=net_total,
+        margin_cents=margin,
+        roi=roi(margin, landed_total),
+        unpriced_count=sum(1 for sale in sales if sale is None),
+    )

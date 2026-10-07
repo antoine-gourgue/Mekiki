@@ -54,12 +54,15 @@ class YahooAuctionsSource:
         limit: int = 60,
         price_min_jpy: int | None = None,
         price_max_jpy: int | None = None,
+        page: int = 0,
     ) -> list[FoundListing]:
         params: dict[str, str | int] = {
             "p": query,
             "s1": "new",
             "o1": "d",
-            "n": 100 if limit > 50 else 50,
+            "n": (per_page := 100 if limit > 50 else 50),
+            # 1-based offset of the first result.
+            "b": page * per_page + 1,
             **CATEGORY_PARAMS[self.game],
         }
         if price_min_jpy or price_max_jpy:

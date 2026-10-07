@@ -184,3 +184,41 @@ def test_listings_far_below_the_market_are_flagged_not_picked(
     assert "fake" not in [p["external_id"] for p in run["picks"]]
     [flagged] = [a for a in run["alternatives"] if a["external_id"] == "fake"]
     assert flagged["warning"].startswith("Prix à moins de 20 % de la cote")
+
+
+def test_deeper_searches_add_pages_and_valuable_sets(
+    client: TestClient, marketplace: FakeMarketplace
+) -> None:
+    index_pokemon_cards(client)
+    marketplace.listings[SourcePlatform.MERCARI] = LISTINGS
+
+    quick = discover(client, budget_cents=15000, card_count=2)
+    quick_queries = list(marketplace.queries)
+    marketplace.queries.clear()
+    deep = discover(client, budget_cents=15000, card_count=2, depth="deep")
+
+    assert (SourcePlatform.MERCARI, "sv2a") not in quick_queries
+    # The fake index has two SV2a cards priced over 10 €: the set gets its own search.
+    assert (SourcePlatform.MERCARI, "sv2a") in marketplace.queries
+    assert deep["searches_total"] > quick["searches_total"]
+    # Fake sources return nothing after the first page, which ends each search early.
+    assert deep["searches_done"] == deep["searches_total"]
+
+
+def test_a_stopped_discovery_keeps_what_it_found(client: TestClient) -> None:
+    from mekiki_engine.scanner.discovery import discover as run_discovery
+    from mekiki_engine.schemas import DiscoveryRequest
+
+    app = client.app  # type: ignore[attr-defined]
+    with app.state.session_factory() as session:
+        run = run_discovery(
+            session,
+            app.state.http,
+            DiscoveryRequest(budget_cents=15000, card_count=2, sources=[SourcePlatform.MERCARI]),
+            source_factory=app.state.source_factory,
+            should_stop=lambda: True,
+        )
+
+    assert run.status == "done"
+    assert run.stopped is True
+    assert run.listings_seen == 0

@@ -34,6 +34,7 @@ class RakumaSource:
         limit: int = 40,
         price_min_jpy: int | None = None,
         price_max_jpy: int | None = None,
+        page: int = 0,
     ) -> list[FoundListing]:
         params: dict[str, str | int] = {
             "query": f"{GAME_KEYWORDS[self.game]} {query}".strip(),
@@ -45,6 +46,8 @@ class RakumaSource:
             params["min"] = price_min_jpy
         if price_max_jpy:
             params["max"] = price_max_jpy
+        if page:
+            params["page"] = page + 1
         response = self.client.request("GET", SEARCH_URL, params=params)
         return parse_results(response.text)[:limit]
 

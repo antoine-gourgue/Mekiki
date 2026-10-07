@@ -472,6 +472,9 @@ class DealOut(BaseModel):
     id: int
     tracked_card_id: int
     card_name: str
+    game: Game
+    cardmarket_product_id: int | None
+    target_price_cents: int | None
     source: SourcePlatform
     external_id: str
     title: str
@@ -574,6 +577,8 @@ class DiscoveryRequest(BaseModel):
     # Left empty, the scanner's ROI target from the settings.
     min_roi_percent: Annotated[Rate, Field(ge=0, le=1000)] | None = None
     sources: list[SourcePlatform] | None = None
+    # quick: ~1 500 listings in 1-2 min; deep: ~5 000 in ~5 min; max: 10 000+ in ~15 min.
+    depth: Literal["quick", "deep", "max"] = "quick"
 
 
 class DiscoveryPick(BaseModel):
@@ -609,6 +614,8 @@ class DiscoveryTotals(BaseModel):
     net_cents: int
     margin_cents: int
     roi: Rate | None
+    # Cards without a resale price: their cost counts, their resale does not.
+    unpriced_count: int = 0
 
 
 class DiscoveryRun(BaseModel):
@@ -627,3 +634,54 @@ class DiscoveryRun(BaseModel):
     # Other listings reaching the ROI target, best first, to swap into the parcel.
     alternatives: list[DiscoveryPick] = Field(default_factory=list)
     errors: list[str] = Field(default_factory=list)
+    # Stopped by the user: the results cover the listings browsed until then.
+    stopped: bool = False
+
+
+class FavoriteFields(BaseModel):
+    game: Game
+    source: SourcePlatform
+    external_id: ShortText
+    title: Annotated[str, Field(max_length=500)]
+    price_jpy: Yen
+    shipping_included: bool | None = None
+    url: Annotated[str, Field(max_length=1000)]
+    thumbnail_url: str | None = None
+    listed_at: str | None = None
+    ends_at: str | None = None
+    bids: int | None = None
+    # What the listing was read as, e.g. "SV2a 201/165 · SAR".
+    card_label: str | None = None
+    cardmarket_product_id: int | None = None
+    target_price_cents: Cents | None = None
+    in_cart: bool = False
+    notes: str | None = None
+
+
+class FavoriteCreate(FavoriteFields):
+    """Saving a listing that is already a favorite refreshes it instead of failing."""
+
+
+class FavoriteUpdate(PartialUpdate):
+    NULLABLE = frozenset({"target_price_cents", "notes"})
+
+    in_cart: bool | None = None
+    target_price_cents: Cents | None = None
+    notes: str | None = None
+
+
+class FavoriteOut(FavoriteFields):
+    id: int
+    created_at: str
+    neokyo_url: str | None
+    product: MarketPriceOut | None
+    expected_sale_cents: int | None
+    # In the cart: its share of the cart parcel. Otherwise: one card of a typical parcel.
+    landed_cost: LandedCostOut
+    sale: SaleBreakdownOut | None
+
+
+class FavoritesOut(BaseModel):
+    items: list[FavoriteOut]
+    # The cart priced as one parcel; None when the cart is empty.
+    cart: DiscoveryTotals | None

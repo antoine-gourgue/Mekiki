@@ -31,11 +31,12 @@ class YahooFleamarketSource:
         limit: int = 60,
         price_min_jpy: int | None = None,
         price_max_jpy: int | None = None,
+        page: int = 0,
     ) -> list[FoundListing]:
         params: dict[str, str | int] = {
             "query": query,
             "results": min(limit, 100),
-            "offset": 0,
+            "offset": page * min(limit, 100),
             # The API defaults to sold items.
             "itemStatus": "open",
             "sort": "openTime",

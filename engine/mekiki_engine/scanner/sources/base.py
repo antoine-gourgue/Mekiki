@@ -45,8 +45,12 @@ class Source(Protocol):
         limit: int,
         price_min_jpy: int | None = None,
         price_max_jpy: int | None = None,
+        page: int = 0,
     ) -> list[FoundListing]:
-        """Newest listings first; an empty query lists the whole card category."""
+        """Newest listings first; an empty query lists the whole card category.
+
+        ``page`` 0 is the first page of results; a short page means there are no more.
+        """
         ...
 
 
@@ -121,6 +125,7 @@ def search_safely(
     limit: int,
     price_min_jpy: int | None = None,
     price_max_jpy: int | None = None,
+    page: int = 0,
 ) -> list[FoundListing]:
     """Runs ``source.search``, turning any unexpected failure into a ``SourceError``.
 
@@ -129,7 +134,11 @@ def search_safely(
     """
     try:
         return source.search(
-            query, limit=limit, price_min_jpy=price_min_jpy, price_max_jpy=price_max_jpy
+            query,
+            limit=limit,
+            price_min_jpy=price_min_jpy,
+            price_max_jpy=price_max_jpy,
+            page=page,
         )
     except SourceError:
         raise
