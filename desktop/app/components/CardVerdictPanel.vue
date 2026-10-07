@@ -1,6 +1,13 @@
 <script setup lang="ts">
 import type { AlertProps } from '@nuxt/ui'
-import type { CardVerdict, Verdict, VerdictQuery, VerdictSignal } from '~/types/engine'
+import type {
+  BrowserPrices,
+  BrowserSite,
+  CardVerdict,
+  Verdict,
+  VerdictQuery,
+  VerdictSignal,
+} from '~/types/engine'
 
 /**
  * "Faut-il l'acheter ?": the verdict on a card, its resale on each outlet with the most to
@@ -41,6 +48,40 @@ const SIGNAL_LOOKS: Record<VerdictSignal['tone'], { icon: string; class: string 
   warning: { icon: 'i-lucide-triangle-alert', class: 'text-warning' },
   negative: { icon: 'i-lucide-octagon-alert', class: 'text-error' },
   neutral: { icon: 'i-lucide-info', class: 'text-muted' },
+}
+
+// Vinted listings and eBay sold listings, read in Mekiki's Chrome window on demand.
+const SITE_LABELS: Record<BrowserSite, string> = {
+  vinted: 'Annonces Vinted',
+  ebay: 'Ventes réussies eBay',
+}
+const market = ref<BrowserPrices[]>([])
+const reading = ref(false)
+
+async function readMarket() {
+  const current = result.value
+  if (!current) return
+  reading.value = true
+  market.value = []
+  try {
+    for (const site of ['vinted', 'ebay'] as const) {
+      const query = current.market_queries[site]
+      if (!query) continue
+      market.value = [
+        ...market.value,
+        await engine.sitePrices(site, {
+          query,
+          card_number: current.card_number,
+          names: current.card_names,
+        }),
+      ]
+    }
+    await load()
+  } catch (error) {
+    failure.value = engineErrorMessage(error)
+  } finally {
+    reading.value = false
+  }
 }
 
 const costLine = computed(() => {
@@ -121,6 +162,63 @@ const costLine = computed(() => {
           <span>{{ signal.text }}</span>
         </li>
       </ul>
+
+      <div class="space-y-3 rounded-md border border-default p-3">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <p class="text-sm font-medium">Ce qui se vend vraiment</p>
+            <p class="text-xs text-muted">
+              Lu dans la fenêtre Chrome de Mekiki, connectée à vos comptes.
+            </p>
+          </div>
+          <UButton
+            icon="i-lucide-scan-search"
+            :label="market.length ? 'Relire' : 'Lire les prix Vinted et eBay'"
+            size="sm"
+            :loading="reading"
+            @click="readMarket"
+          />
+        </div>
+        <div v-for="read in market" :key="read.site" class="space-y-1">
+          <p class="text-sm">
+            <span class="font-medium">{{ SITE_LABELS[read.site] }}</span>
+            <template v-if="read.error"> : {{ read.error }}</template>
+            <template v-else-if="read.relevant_count">
+              : médiane {{ formatCents(read.median_cents) }} sur {{ read.relevant_count }} ({{
+                formatCents(read.min_cents)
+              }}
+              à {{ formatCents(read.max_cents) }})
+            </template>
+            <template v-else> : aucune annonce de cette carte</template>
+          </p>
+          <ul class="divide-y divide-default text-sm">
+            <li
+              v-for="listing in read.listings.filter((l) => l.relevant).slice(0, 6)"
+              :key="listing.external_id"
+            >
+              <button
+                type="button"
+                class="flex w-full items-center gap-2 py-1.5 text-left hover:bg-elevated/50"
+                @click="openExternal(listing.url)"
+              >
+                <span class="min-w-0 flex-1 truncate" :title="listing.title">
+                  {{ listing.title }}
+                </span>
+                <span class="shrink-0 text-xs text-muted">{{ listing.detail }}</span>
+                <span class="shrink-0 font-medium tabular-nums">
+                  {{ formatCents(listing.price_cents) }}{{ listing.best_offer ? '*' : '' }}
+                </span>
+              </button>
+            </li>
+          </ul>
+        </div>
+        <p
+          v-if="market.some((r) => r.listings.some((l) => l.best_offer))"
+          class="text-xs text-muted"
+        >
+          * Offre acceptée : le prix réel était plus bas.
+        </p>
+      </div>
 
       <ResalePanel :query="{ q: result.prices.query }" :initial="result.prices" />
     </template>

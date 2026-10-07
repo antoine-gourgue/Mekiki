@@ -166,6 +166,8 @@ async function changePassword() {
             />
           </UForm>
         </UCard>
+
+        <ConnectedAccounts />
       </div>
     </template>
   </UDashboardPanel>

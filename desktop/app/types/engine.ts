@@ -646,6 +646,12 @@ export interface CardVerdict {
   outlets: ResaleOutlet[]
   signals: VerdictSignal[]
   prices: ResalePrices
+  /** The number listings must name to count: "201/165", "OP05-119". */
+  card_number: string | null
+  /** The card's name in French, English and Japanese. */
+  card_names: string[]
+  /** What to search on each site in Chrome (French names on Vinted). */
+  market_queries: Partial<Record<BrowserSite, string>>
 }
 
 /** A card in stock, a Japanese listing (with its price) or a catalog product. */
@@ -670,4 +676,51 @@ export interface TrackedCardTemplate {
   label: string
   /** False for an English printing: Japanese listings sell another card. */
   japanese: boolean
+}
+
+export type BrowserSite = 'vinted' | 'ebay'
+
+export interface BrowserStatus {
+  chrome_installed: boolean
+  /** The Mekiki Chrome window is open. */
+  running: boolean
+}
+
+export interface SiteConnection {
+  site: BrowserSite
+  connected: boolean
+}
+
+export interface BrowserPricesRequest {
+  query: string
+  card_number?: string | null
+  names?: string[]
+}
+
+export interface MarketListing {
+  site: BrowserSite
+  external_id: string
+  title: string
+  price_cents: number
+  url: string
+  image_url: string | null
+  /** Vinted: the condition. eBay: the sale date. */
+  detail: string | null
+  shipping_cents: number | null
+  /** eBay: a lower offer was accepted, the real price is unknown. */
+  best_offer: boolean
+  /** Names the card's number and name, ungraded and alone: counts towards the median. */
+  relevant: boolean
+}
+
+export interface BrowserPrices {
+  site: BrowserSite
+  query: string
+  listings: MarketListing[]
+  relevant_count: number
+  median_cents: number | null
+  min_cents: number | null
+  max_cents: number | null
+  fetched_at: string
+  error: string | null
 }

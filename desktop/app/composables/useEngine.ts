@@ -2,6 +2,10 @@ import type {
   AccountUpdate,
   AppSettings,
   AuthResponse,
+  BrowserPrices,
+  BrowserPricesRequest,
+  BrowserSite,
+  BrowserStatus,
   CardVerdict,
   CardmarketStatus,
   Dashboard,
@@ -35,6 +39,7 @@ import type {
   ScanStatus,
   SearchRequest,
   SearchResponse,
+  SiteConnection,
   SimulationRequest,
   SimulationResult,
   TrackedCard,
@@ -171,6 +176,13 @@ export function useEngine() {
       request<CardVerdict>('/resale/verdict', { query, timeout: 30_000 }),
     listingDraft: (itemId: number, platform: ListingSite) =>
       request<ListingDraft>(`/items/${itemId}/listing-draft`, { query: { platform } }),
+    browserStatus: () => request<BrowserStatus>('/browser/status'),
+    openSite: (site: BrowserSite) =>
+      request<BrowserStatus>(`/browser/${site}/open`, { method: 'POST', timeout: 60_000 }),
+    checkSite: (site: BrowserSite) =>
+      request<SiteConnection>(`/browser/${site}/check`, { method: 'POST', timeout: 60_000 }),
+    sitePrices: (site: BrowserSite, body: BrowserPricesRequest) =>
+      request<BrowserPrices>(`/browser/${site}/prices`, { method: 'POST', body, timeout: 90_000 }),
     search: (body: SearchRequest) =>
       request<SearchResponse>('/search', { method: 'POST', body, timeout: 120_000 }),
   }
