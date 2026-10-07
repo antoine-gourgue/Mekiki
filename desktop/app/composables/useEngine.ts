@@ -32,6 +32,8 @@ import type {
   ListingSite,
   LoginRequest,
   MarketPrice,
+  PublishJob,
+  PublishRequest,
   RegisterRequest,
   ResalePrices,
   ResaleQuery,
@@ -183,6 +185,10 @@ export function useEngine() {
       request<SiteConnection>(`/browser/${site}/check`, { method: 'POST', timeout: 60_000 }),
     sitePrices: (site: BrowserSite, body: BrowserPricesRequest) =>
       request<BrowserPrices>(`/browser/${site}/prices`, { method: 'POST', body, timeout: 90_000 }),
+    publishListing: (site: BrowserSite, itemId: number, body: PublishRequest) =>
+      request<PublishJob>(`/browser/${site}/publish/${itemId}`, { method: 'POST', body }),
+    publishStatus: (site: BrowserSite, itemId: number) =>
+      request<PublishJob | null>(`/browser/${site}/publish/${itemId}`),
     search: (body: SearchRequest) =>
       request<SearchResponse>('/search', { method: 'POST', body, timeout: 120_000 }),
   }

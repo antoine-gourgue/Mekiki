@@ -1,6 +1,13 @@
 <script setup lang="ts">
 import type { FormError } from '@nuxt/ui'
-import type { Item, ItemPhoto, ListingDraft, ListingSite, SalePlatform } from '~/types/engine'
+import type {
+  Item,
+  ItemPhoto,
+  ListingDraft,
+  ListingSite,
+  PublishJob,
+  SalePlatform,
+} from '~/types/engine'
 
 /**
  * Puts `item` up for sale, changes its listing or withdraws it. For eBay and Vinted it also
@@ -63,6 +70,50 @@ async function copy(text: string, what: string) {
   } catch {
     toast.add({ title: 'Copie impossible', description: 'Sélectionnez le texte à la main.' })
   }
+}
+
+// Publishing in Mekiki's Chrome window: started here, followed until it ends.
+const job = ref<PublishJob | null>(null)
+let jobTimer: ReturnType<typeof setTimeout> | undefined
+onBeforeUnmount(() => clearTimeout(jobTimer))
+watch(open, (isOpen) => {
+  if (isOpen) job.value = null
+})
+
+async function publishNow() {
+  const current = site.value
+  if (!props.item || !current || !draft.value || state.price_cents == null) return
+  try {
+    job.value = await engine.publishListing(current, props.item.id, {
+      title: draft.value.title,
+      description: draft.value.description,
+      price_cents: state.price_cents,
+    })
+    followJob(current, props.item.id)
+  } catch (error) {
+    showError(error, 'Publication impossible')
+  }
+}
+
+function followJob(current: ListingSite, itemId: number) {
+  jobTimer = setTimeout(async () => {
+    try {
+      job.value = await engine.publishStatus(current, itemId)
+    } catch {
+      // A missed poll is retried on the next tick.
+    }
+    if (job.value?.status === 'running') return followJob(current, itemId)
+    if (job.value?.status === 'done' && props.item) {
+      toast.add({
+        title: `Annonce publiée sur ${SITES[current]}`,
+        color: 'success',
+        actions: job.value.url
+          ? [{ label: 'Voir l’annonce', onClick: () => void openExternal(job.value!.url!) }]
+          : [],
+      })
+      emit('saved', await engine.getItem(props.item.id))
+    }
+  }, 2000)
 }
 
 function validate(form: typeof state): FormError[] {
@@ -180,8 +231,62 @@ const platformItems = selectItems(PLATFORM_LABELS)
             <span class="flex-1" />
             <UButton
               icon="i-lucide-external-link"
-              :label="`Créer l’annonce sur ${SITES[site]}`"
+              color="neutral"
+              variant="subtle"
+              :label="`Ouvrir ${SITES[site]}`"
               @click="openExternal(draft.new_listing_url)"
+            />
+          </div>
+
+          <div class="space-y-2 rounded-md border border-default p-3">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <div class="min-w-0">
+                <p class="text-sm font-medium">Publier automatiquement</p>
+                <p class="text-xs text-muted">
+                  Mekiki remplit le formulaire {{ SITES[site] }} dans sa fenêtre Chrome, avec
+                  {{ photos.length }} photo{{ photos.length > 1 ? 's' : '' }}, et publie.
+                </p>
+              </div>
+              <UButton
+                icon="i-lucide-send"
+                :label="`Publier sur ${SITES[site]}`"
+                :loading="job?.status === 'running'"
+                :disabled="!photos.length || state.price_cents == null || job?.status === 'done'"
+                @click="publishNow"
+              />
+            </div>
+            <p v-if="!photos.length" class="text-xs text-warning">
+              Ajoutez au moins une photo : {{ SITES[site] }} n’accepte pas d’annonce sans photo.
+            </p>
+            <UAlert
+              v-if="job?.status === 'running'"
+              color="info"
+              variant="subtle"
+              icon="i-lucide-loader-circle"
+              title="Publication en cours dans Chrome…"
+              description="Laissez la fenêtre Chrome de Mekiki ouverte jusqu’à la fin."
+              :ui="{ icon: 'animate-spin' }"
+            />
+            <UAlert
+              v-else-if="job?.status === 'done'"
+              color="success"
+              variant="subtle"
+              icon="i-lucide-badge-check"
+              title="Annonce publiée"
+              :description="
+                job.error ?? 'La carte apparaît désormais comme en vente dans le stock.'
+              "
+              :actions="
+                job.url ? [{ label: 'Voir l’annonce', onClick: () => openExternal(job!.url!) }] : []
+              "
+            />
+            <UAlert
+              v-else-if="job?.status === 'failed'"
+              color="error"
+              variant="subtle"
+              icon="i-lucide-circle-alert"
+              title="La publication n’est pas allée au bout"
+              :description="`${job.error}. Le formulaire est resté ouvert dans Chrome : vérifiez-le et terminez la publication à la main.`"
             />
           </div>
           <ResalePanel v-if="showPrices" :query="{ q: draft.query }" />

@@ -724,3 +724,20 @@ export interface BrowserPrices {
   fetched_at: string
   error: string | null
 }
+
+export interface PublishRequest {
+  title: string
+  description: string
+  price_cents: number
+}
+
+/** A listing being published in Mekiki's Chrome window, and how it ended. */
+export interface PublishJob {
+  site: BrowserSite
+  item_id: number
+  started_at: string
+  status: 'running' | 'done' | 'failed'
+  /** The published listing, once done. */
+  url: string | null
+  error: string | null
+}
