@@ -29,6 +29,7 @@ async function save() {
 }
 
 const platforms = Object.keys(PLATFORM_LABELS) as SalePlatform[]
+const platformItems = selectItems(PLATFORM_LABELS)
 const fxFormat: Intl.NumberFormatOptions = { maximumFractionDigits: 4 }
 </script>
 
@@ -60,6 +61,76 @@ const fxFormat: Intl.NumberFormatOptions = { maximumFractionDigits: 4 }
       />
 
       <div v-else-if="state" class="mx-auto w-full max-w-3xl space-y-6">
+        <UCard>
+          <template #header>
+            <h2 class="font-medium text-highlighted">Scanner de bonnes affaires</h2>
+            <p class="text-sm text-muted">
+              Cherche les cartes suivies sur les sites japonais et chiffre chaque annonce comme une
+              carte d’un colis type.
+            </p>
+          </template>
+          <div class="space-y-4">
+            <USwitch
+              v-model="state.scanner.enabled"
+              label="Scanner automatiquement"
+              description="Tant que l’application est ouverte, à l’intervalle choisi."
+            />
+            <div class="grid gap-4 sm:grid-cols-3">
+              <UFormField label="Intervalle" hint="minutes">
+                <UInputNumber
+                  v-model="state.scanner.interval_minutes"
+                  :min="10"
+                  :max="1440"
+                  :step="5"
+                  class="w-full"
+                />
+              </UFormField>
+              <UFormField label="ROI visé">
+                <PercentInput v-model="state.scanner.min_roi_percent" :max="1000" />
+              </UFormField>
+              <UFormField label="Revente sur">
+                <USelect
+                  v-model="state.scanner.resale_platform"
+                  :items="platformItems"
+                  class="w-full"
+                />
+              </UFormField>
+              <UFormField label="Cartes par colis">
+                <UInputNumber
+                  v-model="state.scanner.cards_per_lot"
+                  :min="1"
+                  :max="500"
+                  class="w-full"
+                />
+              </UFormField>
+              <UFormField label="Envoi du colis">
+                <MoneyInput v-model="state.scanner.lot_shipping_jpy" currency="JPY" />
+              </UFormField>
+              <UFormField label="Port au Japon" hint="si non compris">
+                <MoneyInput v-model="state.scanner.domestic_shipping_jpy" currency="JPY" />
+              </UFormField>
+            </div>
+            <UFormField label="Sites">
+              <UCheckboxGroup
+                v-model="state.scanner.sources"
+                :items="SCANNABLE_SOURCE_ITEMS"
+                orientation="horizontal"
+              />
+            </UFormField>
+            <UFormField
+              label="Mots exclus partout"
+              help="Lots, accessoires, contrefaçons, éditions étrangères… séparés par des espaces."
+            >
+              <UTextarea
+                v-model="state.scanner.excluded_keywords"
+                :rows="2"
+                autoresize
+                class="w-full"
+              />
+            </UFormField>
+          </div>
+        </UCard>
+
         <UCard>
           <template #header>
             <h2 class="font-medium text-highlighted">Achat au Japon</h2>

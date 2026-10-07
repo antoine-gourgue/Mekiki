@@ -2,11 +2,15 @@
 import type { FormError } from '@nuxt/ui'
 import type { Game, Item, ItemCreate, LotSummary, SourcePlatform } from '~/types/engine'
 
-/** Adds a card to `lotId`, or edits `item` when given (including moving it to another lot). */
+/**
+ * Adds a card to `lotId` (or to a lot picked among `lots`), or edits `item` when given,
+ * including moving it to another lot. `initial` pre-fills a new card, e.g. from a deal.
+ */
 const props = defineProps<{
   lotId?: number
   item?: Item | null
   lots?: LotSummary[]
+  initial?: Partial<ItemCreate> | null
 }>()
 const emit = defineEmits<{ saved: [item: Item] }>()
 const open = defineModel<boolean>('open', { default: false })
@@ -34,25 +38,28 @@ interface ItemForm {
   notes: string
 }
 
-function initialState(item = props.item): ItemForm {
+function initialState(): ItemForm {
+  const values = props.item ?? props.initial ?? {}
+  // A new card from a deal goes by default into the lot being bought.
+  const buyingLot = props.lots?.find((lot) => lot.status === 'purchasing')?.id
   return {
-    lot_id: item?.lot_id ?? props.lotId,
-    game: item?.game ?? 'pokemon',
-    name: item?.name ?? '',
-    set_code: item?.set_code ?? '',
-    card_number: item?.card_number ?? '',
-    rarity: item?.rarity ?? '',
-    language: item?.language ?? 'ja',
-    condition: item?.condition ?? '',
-    grading: item?.grading ?? '',
-    source_platform: item?.source_platform ?? 'mercari',
-    source_url: item?.source_url ?? '',
-    price_jpy: item?.price_jpy ?? null,
-    domestic_shipping_jpy: item?.domestic_shipping_jpy ?? 0,
+    lot_id: props.item?.lot_id ?? props.lotId ?? buyingLot,
+    game: values.game ?? 'pokemon',
+    name: values.name ?? '',
+    set_code: values.set_code ?? '',
+    card_number: values.card_number ?? '',
+    rarity: values.rarity ?? '',
+    language: values.language ?? 'ja',
+    condition: values.condition ?? '',
+    grading: values.grading ?? '',
+    source_platform: values.source_platform ?? 'mercari',
+    source_url: values.source_url ?? '',
+    price_jpy: values.price_jpy ?? null,
+    domestic_shipping_jpy: values.domestic_shipping_jpy ?? 0,
     // Left empty on creation, takes the proxy service fee from the settings.
-    service_fee_jpy: item?.service_fee_jpy ?? null,
-    cardmarket_product_id: item?.cardmarket_product_id ?? null,
-    notes: item?.notes ?? '',
+    service_fee_jpy: props.item?.service_fee_jpy ?? props.initial?.service_fee_jpy ?? null,
+    cardmarket_product_id: values.cardmarket_product_id ?? null,
+    notes: values.notes ?? '',
   }
 }
 
@@ -63,6 +70,7 @@ function validate(form: ItemForm): FormError[] {
   const errors: FormError[] = []
   if (!form.name.trim()) errors.push({ name: 'name', message: 'Nom obligatoire.' })
   if (form.price_jpy == null) errors.push({ name: 'price_jpy', message: 'Prix obligatoire.' })
+  if (form.lot_id == null) errors.push({ name: 'lot_id', message: 'Choisissez un lot.' })
   return errors
 }
 

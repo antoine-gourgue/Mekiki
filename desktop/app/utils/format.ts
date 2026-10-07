@@ -34,6 +34,13 @@ export function formatDate(iso: string | null | undefined): string {
   return longDate.format(new Date(year!, month! - 1, day))
 }
 
+const dateTime = new Intl.DateTimeFormat('fr-FR', { dateStyle: 'short', timeStyle: 'short' })
+
+/** Formats a UTC timestamp (2026-10-07T14:03:00Z) in local time. */
+export function formatDateTime(iso: string | null | undefined): string {
+  return iso ? dateTime.format(new Date(iso)) : EMPTY
+}
+
 /** Formats a `YYYY-MM` key as a short month label (oct. 26). */
 export function formatMonth(key: string): string {
   const [year, month] = key.split('-').map(Number)

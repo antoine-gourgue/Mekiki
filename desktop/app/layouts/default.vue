@@ -1,14 +1,40 @@
 <script setup lang="ts">
 import type { NavigationMenuItem } from '@nuxt/ui'
 
-const links: NavigationMenuItem[] = [
-  { label: 'Tableau de bord', icon: 'i-lucide-layout-dashboard', to: '/' },
-  { label: 'Simulateur', icon: 'i-lucide-calculator', to: '/simulateur' },
-  { label: 'Lots', icon: 'i-lucide-package', to: '/lots' },
-  { label: 'Stock', icon: 'i-lucide-layers', to: '/stock' },
-  { label: 'Ventes', icon: 'i-lucide-receipt-euro', to: '/ventes' },
-  { label: 'Paramètres', icon: 'i-lucide-settings', to: '/parametres' },
-]
+const engine = useEngine()
+
+// Good deals not looked at yet, shown as a badge; refreshed every 30 seconds.
+const unseenDeals = ref(0)
+let dealsTimer: ReturnType<typeof setInterval> | undefined
+async function refreshUnseenDeals() {
+  try {
+    unseenDeals.value = (await engine.scanStatus()).unseen_deals
+  } catch {
+    // The engine status dot already says when the engine is unreachable.
+  }
+}
+
+const links = computed<NavigationMenuItem[][]>(() => [
+  [
+    { label: 'Tableau de bord', icon: 'i-lucide-layout-dashboard', to: '/' },
+    { label: 'Trouver des cartes', icon: 'i-lucide-wand-sparkles', to: '/decouverte' },
+    {
+      label: 'Bonnes affaires',
+      icon: 'i-lucide-sparkles',
+      to: '/affaires',
+      badge: unseenDeals.value ? String(unseenDeals.value) : undefined,
+    },
+    { label: 'Recherche', icon: 'i-lucide-search', to: '/recherche' },
+    { label: 'Cartes suivies', icon: 'i-lucide-eye', to: '/suivi' },
+    { label: 'Simulateur', icon: 'i-lucide-calculator', to: '/simulateur' },
+  ],
+  [
+    { label: 'Lots', icon: 'i-lucide-package', to: '/lots' },
+    { label: 'Stock', icon: 'i-lucide-layers', to: '/stock' },
+    { label: 'Ventes', icon: 'i-lucide-receipt-euro', to: '/ventes' },
+    { label: 'Paramètres', icon: 'i-lucide-settings', to: '/parametres' },
+  ],
+])
 
 const { status, startPolling } = useEngineStatus()
 let stopPolling: (() => void) | undefined
@@ -17,7 +43,17 @@ onBeforeUnmount(() => stopPolling?.())
 
 // Pages load their data on mount, so they wait until the engine has answered once.
 const ready = ref(false)
-watch(status, (value) => value === 'online' && (ready.value = true), { immediate: true })
+watch(
+  status,
+  (value) => {
+    if (value !== 'online' || ready.value) return
+    ready.value = true
+    void refreshUnseenDeals()
+    dealsTimer = setInterval(refreshUnseenDeals, 30_000)
+  },
+  { immediate: true },
+)
+onBeforeUnmount(() => clearInterval(dealsTimer))
 </script>
 
 <template>

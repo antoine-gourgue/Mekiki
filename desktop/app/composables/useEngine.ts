@@ -1,6 +1,12 @@
 import type {
   AppSettings,
+  CardmarketStatus,
   Dashboard,
+  Deal,
+  DealQuery,
+  DiscoveryRequest,
+  DiscoveryRun,
+  Game,
   DashboardQuery,
   InventoryQuery,
   Item,
@@ -9,10 +15,18 @@ import type {
   LotCreate,
   LotDetail,
   LotSummary,
+  ListingTriage,
   LotUpdate,
+  MarketPrice,
   SaleUpsert,
+  ScanStatus,
+  SearchRequest,
+  SearchResponse,
   SimulationRequest,
   SimulationResult,
+  TrackedCard,
+  TrackedCardCreate,
+  TrackedCardUpdate,
 } from '~/types/engine'
 
 /**
@@ -57,6 +71,35 @@ export function useEngine() {
     dashboard: (query: DashboardQuery = {}) => request<Dashboard>('/dashboard', { query }),
     simulate: (body: SimulationRequest) =>
       request<SimulationResult>('/simulate', { method: 'POST', body }),
+
+    listTrackedCards: () => request<TrackedCard[]>('/tracked-cards'),
+    createTrackedCard: (body: TrackedCardCreate) =>
+      request<TrackedCard>('/tracked-cards', { method: 'POST', body }),
+    updateTrackedCard: (id: number, body: TrackedCardUpdate) =>
+      request<TrackedCard>(`/tracked-cards/${id}`, { method: 'PATCH', body }),
+    deleteTrackedCard: async (id: number): Promise<void> => {
+      await request(`/tracked-cards/${id}`, { method: 'DELETE' })
+    },
+
+    searchProducts: (game: Game, q: string) =>
+      request<MarketPrice[]>('/cardmarket/products', { query: { game, q } }),
+    cardmarketStatus: () => request<CardmarketStatus[]>('/cardmarket/status'),
+    refreshCardmarket: () =>
+      request<CardmarketStatus[]>('/cardmarket/refresh', { method: 'POST', body: {} }),
+
+    listDeals: (query: DealQuery = {}) => request<Deal[]>('/deals', { query }),
+    updateDeal: (id: number, triage: ListingTriage) =>
+      request<Deal>(`/deals/${id}`, { method: 'PATCH', body: { triage } }),
+    markDealsSeen: () =>
+      request<{ updated: number }>('/deals/mark-seen', { method: 'POST', body: {} }),
+
+    scanStatus: () => request<ScanStatus>('/scanner/status'),
+    runScan: () => request<ScanStatus>('/scanner/run', { method: 'POST', body: {} }),
+    discovery: () => request<DiscoveryRun>('/discovery'),
+    startDiscovery: (body: DiscoveryRequest) =>
+      request<DiscoveryRun>('/discovery', { method: 'POST', body }),
+    search: (body: SearchRequest) =>
+      request<SearchResponse>('/search', { method: 'POST', body, timeout: 120_000 }),
   }
 }
 

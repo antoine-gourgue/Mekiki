@@ -27,6 +27,7 @@ export interface AppSettings {
   income_tax_rate_percent: number
   default_packaging_cents: number
   platform_fees: Record<SalePlatform, PlatformFeeSettings>
+  scanner: ScannerSettings
 }
 
 export interface LotFields {
@@ -223,4 +224,239 @@ export interface InventoryQuery {
 export interface DashboardQuery {
   since?: string
   until?: string
+}
+
+export type ListingTriage = 'new' | 'seen' | 'dismissed' | 'bought'
+export type ScannableSource = Extract<
+  SourcePlatform,
+  'mercari' | 'rakuma' | 'yahoo_auctions' | 'yahoo_fleamarket'
+>
+
+export interface ScannerSettings {
+  enabled: boolean
+  interval_minutes: number
+  sources: ScannableSource[]
+  min_roi_percent: number
+  cards_per_lot: number
+  lot_shipping_jpy: number
+  resale_platform: SalePlatform
+  /** Added when the buyer pays the Japanese shipping. */
+  domestic_shipping_jpy: number
+  /** Space-separated words that disqualify a listing title. */
+  excluded_keywords: string
+}
+
+export interface TrackedCardFields {
+  game: Game
+  name: string
+  set_code: string | null
+  card_number: string | null
+  rarity: string | null
+  grading: string | null
+  cardmarket_product_id: number | null
+  /** Keywords sent to the marketplaces, in Japanese or as a card number. */
+  search_query: string
+  required_keywords: string | null
+  excluded_keywords: string | null
+  /** Expected resale price; `null` uses the Cardmarket price. */
+  target_price_cents: number | null
+  min_price_jpy: number | null
+  max_price_jpy: number | null
+  active: boolean
+  notes: string | null
+}
+
+export interface TrackedCardCreate extends Partial<Omit<TrackedCardFields, 'search_query'>> {
+  game: Game
+  name: string
+  /** Left empty, built from the card number (or the name). */
+  search_query?: string | null
+}
+
+export type TrackedCardUpdate = Partial<TrackedCardFields>
+
+export interface MarketPrice {
+  id_product: number
+  game: Game
+  name: string | null
+  /** Guessed from Cardmarket's sealed products; unknown for some expansions. */
+  expansion_name: string | null
+  url: string
+  avg_cents: number | null
+  low_cents: number | null
+  trend_cents: number | null
+  avg1_cents: number | null
+  avg7_cents: number | null
+  avg30_cents: number | null
+  prices_date: string | null
+  /** avg30, else avg7, avg, avg1, trend; never low. */
+  reference_cents: number | null
+  reference_field: string | null
+}
+
+export interface TrackedCard extends TrackedCardFields {
+  id: number
+  last_scanned_at: string | null
+  market: MarketPrice | null
+  expected_sale_cents: number | null
+  /** Highest asking price that still reaches the scanner's ROI target. */
+  max_buy_price_jpy: number | null
+  listing_count: number
+  best_roi: number | null
+}
+
+export interface Deal {
+  id: number
+  tracked_card_id: number
+  card_name: string
+  source: SourcePlatform
+  external_id: string
+  title: string
+  price_jpy: number
+  shipping_included: boolean | null
+  url: string
+  neokyo_url: string | null
+  thumbnail_url: string | null
+  listed_at: string | null
+  ends_at: string | null
+  bids: number | null
+  triage: ListingTriage
+  first_seen_at: string
+  last_seen_at: string
+  /** False once the last scan no longer found the listing. */
+  online: boolean
+  expected_sale_cents: number | null
+  landed_cost: LandedCost
+  sale: SaleBreakdown | null
+}
+
+export interface DealQuery {
+  triage?: ListingTriage
+  tracked_card_id?: number
+  min_roi_percent?: number
+  include_offline?: boolean
+}
+
+export interface ScanStatus {
+  running: boolean
+  enabled: boolean
+  last_started_at: string | null
+  last_finished_at: string | null
+  last_error: string | null
+  next_run_at: string | null
+  cards_scanned: number
+  new_listings: number
+  new_deals: number
+  /** Online listings not looked at yet that reach the ROI target. */
+  unseen_deals: number
+}
+
+export interface CardmarketStatus {
+  game: Game
+  products: number
+  priced_products: number
+  prices_date: string | null
+  fetched_at: string | null
+  last_error: string | null
+}
+
+export interface SearchRequest {
+  query: string
+  game?: Game
+  sources?: ScannableSource[] | null
+  card_number?: string | null
+  required_keywords?: string | null
+  excluded_keywords?: string | null
+  grading?: string | null
+  cardmarket_product_id?: number | null
+  expected_sale_cents?: number | null
+}
+
+export interface SearchResult {
+  source: SourcePlatform
+  external_id: string
+  title: string
+  price_jpy: number
+  shipping_included: boolean | null
+  url: string
+  neokyo_url: string | null
+  thumbnail_url: string | null
+  listed_at: string | null
+  ends_at: string | null
+  bids: number | null
+  matched: boolean
+  reject_reason: string | null
+  landed_cost: LandedCost
+  sale: SaleBreakdown | null
+}
+
+export interface SearchResponse {
+  expected_sale_cents: number | null
+  results: SearchResult[]
+  /** Sources that failed, with the reason. */
+  errors: Record<string, string>
+  /** The same search on Neokyo's site, per marketplace (Yahoo stays reachable through it). */
+  neokyo_search_urls: Record<string, string>
+}
+
+export interface DiscoveryRequest {
+  game: Game
+  /** Everything included: cards, proxy fees, parcel shipping, estimated import taxes. */
+  budget_cents: number
+  card_count: number
+  /** Left `null`, the scanner's ROI target from the settings. */
+  min_roi_percent?: number | null
+  sources?: ScannableSource[] | null
+}
+
+export interface DiscoveryPick {
+  source: SourcePlatform
+  external_id: string
+  title: string
+  price_jpy: number
+  shipping_included: boolean | null
+  url: string
+  neokyo_url: string | null
+  thumbnail_url: string | null
+  listed_at: string | null
+  ends_at: string | null
+  bids: number | null
+  /** What the title was read as, e.g. "SV2A 201/165 · SAR". */
+  card_label: string
+  product: MarketPrice
+  /** "medium": several Cardmarket versions share the number, check the price. */
+  confidence: 'high' | 'medium'
+  confidence_note: string | null
+  /** Set when the price is too far below the market to be the real card. */
+  warning: string | null
+  landed_cost: LandedCost
+  sale: SaleBreakdown
+}
+
+export interface DiscoveryTotals {
+  card_count: number
+  purchase_jpy: number
+  landed_cents: number
+  revenue_cents: number
+  net_cents: number
+  margin_cents: number
+  roi: number | null
+}
+
+export interface DiscoveryRun {
+  status: 'idle' | 'running' | 'done' | 'failed'
+  request: DiscoveryRequest | null
+  started_at: string | null
+  finished_at: string | null
+  searches_done: number
+  searches_total: number
+  listings_seen: number
+  listings_identified: number
+  listings_priced: number
+  /** The parcel, priced as one real lot. */
+  picks: DiscoveryPick[]
+  totals: DiscoveryTotals | null
+  /** Other listings reaching the ROI target, best first. */
+  alternatives: DiscoveryPick[]
+  errors: string[]
 }
