@@ -119,6 +119,7 @@ def test_last_discovery_survives_a_restart(
         source_factory=marketplace.factory(),
     )
     with TestClient(restarted, base_url="http://127.0.0.1:18421") as again:
+        again.headers["Authorization"] = client.headers["Authorization"]
         run = again.get("/discovery").json()
 
     assert run["status"] == "done"

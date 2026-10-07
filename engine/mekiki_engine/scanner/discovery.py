@@ -135,9 +135,8 @@ def valuable_sets(session: Session, game: Game, limit: int) -> list[str]:
             .where(CardIndexEntry.game == game.value, price >= VALUABLE_CENTS)
             .group_by(CardIndexEntry.set_code)
             .order_by(func.count().desc())
-            .limit(limit)
         ).all()
-        return [code for code, _count in rows]
+        return [code for code, _count in rows if _searchable_set_code(code)][:limit]
     codes: Counter[str] = Counter()
     names = session.scalars(
         select(CardmarketProduct.name).where(
@@ -152,6 +151,12 @@ def valuable_sets(session: Session, game: Game, limit: int) -> list[str]:
     return [code for code, _count in codes.most_common(limit)]
 
 
+def _searchable_set_code(code: str) -> bool:
+    # Promo sets ("s-p", "sv-p") and two-letter codes ("mc") never appear as such in
+    # listing titles: searching them only brings unrelated listings.
+    return len(code) >= 3 and not code.endswith("-p")
+
+
 def price_window_jpy(settings: AppSettings, request: DiscoveryRequest) -> tuple[int, int]:
     per_card_eur = request.budget_cents / request.card_count / 100
     fx = float(settings.fx_jpy_per_eur)
@@ -162,13 +167,14 @@ def price_window_jpy(settings: AppSettings, request: DiscoveryRequest) -> tuple[
 def discover(
     session: Session,
     client: PoliteClient,
+    user_id: int,
     request: DiscoveryRequest,
     *,
     source_factory: SourceFactory = build_source,
     on_progress: Callable[[DiscoveryRun], None] = lambda _run: None,
     should_stop: Callable[[], bool] = lambda: False,
 ) -> DiscoveryRun:
-    settings = load_settings(session)
+    settings = load_settings(session, user_id)
     platforms = request.sources or settings.scanner.sources
     run = DiscoveryRun(status="running", request=request, started_at=utc_now())
     on_progress(run)
@@ -409,16 +415,18 @@ class DiscoveryJob:
         self,
         session_factory: sessionmaker[Session],
         client: PoliteClient,
+        user_id: int,
         *,
         source_factory: SourceFactory = build_source,
     ) -> None:
         self._session_factory = session_factory
         self._client = client
+        self._user_id = user_id
         self._source_factory = source_factory
         self._lock = threading.Lock()
         self._stop = threading.Event()
         with session_factory() as session:
-            self.run = load_last_run(session) or DiscoveryRun(status="idle")
+            self.run = load_last_run(session, user_id) or DiscoveryRun(status="idle")
 
     @property
     def running(self) -> bool:
@@ -453,6 +461,7 @@ class DiscoveryJob:
                 self.run = discover(
                     session,
                     self._client,
+                    self._user_id,
                     request,
                     source_factory=self._source_factory,
                     on_progress=publish,
@@ -466,15 +475,16 @@ class DiscoveryJob:
             failed.errors = [*failed.errors, f"Erreur inattendue : {error}"]
             self.run = failed
         with self._session_factory() as session:
-            save_last_run(session, self.run)
+            save_last_run(session, self._user_id, self.run)
 
 
-LAST_RUN_KEY = "discovery:last"
+def last_run_key(user_id: int) -> str:
+    return f"discovery:last:{user_id}"
 
 
-def load_last_run(session: Session) -> DiscoveryRun | None:
+def load_last_run(session: Session, user_id: int) -> DiscoveryRun | None:
     """The last finished discovery, kept so the page shows it again after a restart."""
-    row = session.get(SettingRow, LAST_RUN_KEY)
+    row = session.get(SettingRow, last_run_key(user_id))
     if row is None:
         return None
     try:
@@ -485,10 +495,38 @@ def load_last_run(session: Session) -> DiscoveryRun | None:
     return run if run.status != "running" else None
 
 
-def save_last_run(session: Session, run: DiscoveryRun) -> None:
-    row = session.get(SettingRow, LAST_RUN_KEY)
+def save_last_run(session: Session, user_id: int, run: DiscoveryRun) -> None:
+    row = session.get(SettingRow, last_run_key(user_id))
     if row is None:
-        session.add(SettingRow(key=LAST_RUN_KEY, value=run.model_dump_json()))
+        session.add(SettingRow(key=last_run_key(user_id), value=run.model_dump_json()))
     else:
         row.value = run.model_dump_json()
     session.commit()
+
+
+class DiscoveryJobs:
+    """One discovery job per account, created on first use."""
+
+    def __init__(
+        self,
+        session_factory: sessionmaker[Session],
+        client: PoliteClient,
+        *,
+        source_factory: SourceFactory = build_source,
+    ) -> None:
+        self._session_factory = session_factory
+        self._client = client
+        self._source_factory = source_factory
+        self._jobs: dict[int, DiscoveryJob] = {}
+        self._lock = threading.Lock()
+
+    def for_user(self, user_id: int) -> DiscoveryJob:
+        with self._lock:
+            if user_id not in self._jobs:
+                self._jobs[user_id] = DiscoveryJob(
+                    self._session_factory,
+                    self._client,
+                    user_id,
+                    source_factory=self._source_factory,
+                )
+            return self._jobs[user_id]

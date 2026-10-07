@@ -21,15 +21,19 @@ def main(argv: list[str] | None = None) -> None:
         "--data-dir", help="folder holding the SQLite database (MEKIKI_DATA_DIR, default .data)"
     )
     parser.add_argument(
+        "--host",
+        help="address to listen on (MEKIKI_HOST, default 127.0.0.1; a server needs 0.0.0.0)",
+    )
+    parser.add_argument(
         "--exit-with-parent",
         action="store_true",
         help="stop when stdin reaches end of file, i.e. when the desktop app is gone",
     )
     args = parser.parse_args(argv)
 
-    config = load_config(data_dir=args.data_dir, port=args.port)
-    # Loopback only: the engine trusts whoever can reach it.
-    server = uvicorn.Server(uvicorn.Config(create_app(config), host="127.0.0.1", port=config.port))
+    config = load_config(data_dir=args.data_dir, port=args.port, host=args.host)
+    # Loopback unless deployed as a server (see config.DEFAULT_HOST).
+    server = uvicorn.Server(uvicorn.Config(create_app(config), host=config.host, port=config.port))
     if args.exit_with_parent and sys.stdin is not None:
         threading.Thread(target=_stop_on_stdin_eof, args=(server,), daemon=True).start()
     server.run()

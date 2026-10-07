@@ -11,6 +11,7 @@ from pydantic import (
     ConfigDict,
     Field,
     PlainSerializer,
+    StringConstraints,
     field_validator,
     model_validator,
 )
@@ -685,3 +686,50 @@ class FavoritesOut(BaseModel):
     items: list[FavoriteOut]
     # The cart priced as one parcel; None when the cart is empty.
     cart: DiscoveryTotals | None
+
+
+# Trimmed and lowercased before checking: one account per address, however it is typed.
+Email = Annotated[
+    str,
+    StringConstraints(
+        strip_whitespace=True,
+        to_lower=True,
+        min_length=3,
+        max_length=254,
+        pattern=r"^[^@\s]+@[^@\s]+\.[^@\s]+$",
+    ),
+]
+Password = Annotated[str, Field(min_length=8, max_length=128)]
+
+
+class RegisterRequest(BaseModel):
+    email: Email
+    password: Password
+    display_name: Annotated[str, Field(min_length=1, max_length=80)]
+
+
+class LoginRequest(BaseModel):
+    email: Email
+    password: Annotated[str, Field(min_length=1, max_length=128)]
+
+
+class UserOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    email: str
+    display_name: str
+    created_at: str
+
+
+class AuthResponse(BaseModel):
+    # Sent as "Authorization: Bearer <token>"; valid 30 days, revoked at sign-out.
+    token: str
+    user: UserOut
+
+
+class AccountUpdate(BaseModel):
+    display_name: Annotated[str, Field(min_length=1, max_length=80)] | None = None
+    # Changing the password requires the current one, and signs out the other devices.
+    current_password: str | None = None
+    new_password: Password | None = None

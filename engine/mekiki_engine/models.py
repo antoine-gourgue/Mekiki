@@ -21,6 +21,8 @@ class Lot(Base):
     __tablename__ = "lots"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    # Owner; NULL only for data created before accounts existed, claimed by the first user.
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
     label: Mapped[str]
     proxy: Mapped[str] = mapped_column(default="neokyo")
     status: Mapped[str] = mapped_column(default="purchasing")
@@ -137,6 +139,7 @@ class TrackedCard(Base):
     __tablename__ = "tracked_cards"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
     game: Mapped[str]
     name: Mapped[str]
     set_code: Mapped[str | None]
@@ -208,6 +211,7 @@ class Favorite(Base):
     __tablename__ = "favorites"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
     game: Mapped[str]
     source: Mapped[str]
     external_id: Mapped[str]
@@ -226,3 +230,26 @@ class Favorite(Base):
     in_cart: Mapped[bool] = mapped_column(default=False)
     notes: Mapped[str | None]
     created_at: Mapped[str] = mapped_column(server_default=FetchedValue())
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    # Stored lowercased: one account per address whatever the case typed.
+    email: Mapped[str] = mapped_column(unique=True)
+    password_hash: Mapped[str]
+    display_name: Mapped[str]
+    created_at: Mapped[str] = mapped_column(server_default=FetchedValue())
+
+
+class AuthSession(Base):
+    """A signed-in device. Only a hash of its token is stored, so a leaked database
+    does not hand out working tokens."""
+
+    __tablename__ = "auth_sessions"
+
+    token_hash: Mapped[str] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    created_at: Mapped[str] = mapped_column(server_default=FetchedValue())
+    expires_at: Mapped[str]

@@ -1,4 +1,4 @@
-"""App settings, stored as a single JSON document so new fields need no migration."""
+"""Per-account app settings, stored as one JSON document so new fields need no migration."""
 
 from __future__ import annotations
 
@@ -7,22 +7,24 @@ from sqlalchemy.orm import Session
 from mekiki_engine.models import SettingRow
 from mekiki_engine.schemas import AppSettings
 
-SETTINGS_KEY = "app"
+
+def settings_key(user_id: int) -> str:
+    return f"app:{user_id}"
 
 
-def load_settings(session: Session) -> AppSettings:
-    """Saved settings, or the defaults when nothing has been saved yet."""
-    row = session.get(SettingRow, SETTINGS_KEY)
+def load_settings(session: Session, user_id: int) -> AppSettings:
+    """Saved settings of the account, or the defaults when nothing has been saved yet."""
+    row = session.get(SettingRow, settings_key(user_id))
     if row is None:
         return AppSettings()
     return AppSettings.model_validate_json(row.value)
 
 
-def save_settings(session: Session, settings: AppSettings) -> AppSettings:
+def save_settings(session: Session, user_id: int, settings: AppSettings) -> AppSettings:
     payload = settings.model_dump_json()
-    row = session.get(SettingRow, SETTINGS_KEY)
+    row = session.get(SettingRow, settings_key(user_id))
     if row is None:
-        session.add(SettingRow(key=SETTINGS_KEY, value=payload))
+        session.add(SettingRow(key=settings_key(user_id), value=payload))
     else:
         row.value = payload
     session.commit()

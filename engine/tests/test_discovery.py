@@ -214,6 +214,7 @@ def test_a_stopped_discovery_keeps_what_it_found(client: TestClient) -> None:
         run = run_discovery(
             session,
             app.state.http,
+            1,
             DiscoveryRequest(budget_cents=15000, card_count=2, sources=[SourcePlatform.MERCARI]),
             source_factory=app.state.source_factory,
             should_stop=lambda: True,
@@ -222,3 +223,13 @@ def test_a_stopped_discovery_keeps_what_it_found(client: TestClient) -> None:
     assert run.status == "done"
     assert run.stopped is True
     assert run.listings_seen == 0
+
+
+def test_promo_and_two_letter_sets_are_not_searched() -> None:
+    from mekiki_engine.scanner.discovery import _searchable_set_code
+
+    assert _searchable_set_code("sv2a")
+    assert _searchable_set_code("sm9")
+    assert not _searchable_set_code("sv-p")
+    assert not _searchable_set_code("s-p")
+    assert not _searchable_set_code("mc")

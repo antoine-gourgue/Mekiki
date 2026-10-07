@@ -83,9 +83,12 @@ def search_products(
     return [market_price_out(p) for p in session.scalars(statement)]
 
 
-def list_tracked_cards(session: Session, settings: AppSettings) -> list[TrackedCardOut]:
+def list_tracked_cards(
+    session: Session, user_id: int, settings: AppSettings
+) -> list[TrackedCardOut]:
     cards = session.scalars(
         select(TrackedCard)
+        .where(TrackedCard.user_id == user_id)
         .options(selectinload(TrackedCard.listings))
         .order_by(TrackedCard.active.desc(), TrackedCard.name)
     ).all()
@@ -96,8 +99,10 @@ def list_tracked_cards(session: Session, settings: AppSettings) -> list[TrackedC
     ]
 
 
-def tracked_card_detail(session: Session, settings: AppSettings, card_id: int) -> TrackedCardOut:
-    card = _get_card(session, card_id)
+def tracked_card_detail(
+    session: Session, user_id: int, settings: AppSettings, card_id: int
+) -> TrackedCardOut:
+    card = _get_card(session, user_id, card_id)
     product = (
         session.get(CardmarketProduct, card.cardmarket_product_id)
         if card.cardmarket_product_id
@@ -107,37 +112,42 @@ def tracked_card_detail(session: Session, settings: AppSettings, card_id: int) -
 
 
 def create_tracked_card(
-    session: Session, settings: AppSettings, payload: TrackedCardCreate
+    session: Session, user_id: int, settings: AppSettings, payload: TrackedCardCreate
 ) -> TrackedCardOut:
     values = payload.model_dump()
     values["game"] = payload.game.value
     values["search_query"] = payload.search_query or default_search_query(
         payload.card_number, payload.name
     )
-    card = TrackedCard(**values)
+    card = TrackedCard(**values, user_id=user_id)
     session.add(card)
     session.commit()
-    return tracked_card_detail(session, settings, card.id)
+    return tracked_card_detail(session, user_id, settings, card.id)
 
 
 def update_tracked_card(
-    session: Session, settings: AppSettings, card_id: int, payload: TrackedCardUpdate
+    session: Session,
+    user_id: int,
+    settings: AppSettings,
+    card_id: int,
+    payload: TrackedCardUpdate,
 ) -> TrackedCardOut:
-    card = _get_card(session, card_id)
+    card = _get_card(session, user_id, card_id)
     for name, value in payload.model_dump(exclude_unset=True).items():
         setattr(card, name, value.value if isinstance(value, Game) else value)
     session.commit()
     session.expire_all()
-    return tracked_card_detail(session, settings, card_id)
+    return tracked_card_detail(session, user_id, settings, card_id)
 
 
-def delete_tracked_card(session: Session, card_id: int) -> None:
-    session.delete(_get_card(session, card_id))
+def delete_tracked_card(session: Session, user_id: int, card_id: int) -> None:
+    session.delete(_get_card(session, user_id, card_id))
     session.commit()
 
 
 def list_deals(
     session: Session,
+    user_id: int,
     settings: AppSettings,
     *,
     triage: ListingTriage | None = None,
@@ -145,7 +155,12 @@ def list_deals(
     min_roi_percent: Decimal | None = None,
     include_offline: bool = False,
 ) -> list[DealOut]:
-    statement = select(Listing).options(selectinload(Listing.tracked_card))
+    statement = (
+        select(Listing)
+        .join(Listing.tracked_card)
+        .where(TrackedCard.user_id == user_id)
+        .options(selectinload(Listing.tracked_card))
+    )
     if triage is None:
         statement = statement.where(Listing.triage != ListingTriage.DISMISSED.value)
     else:
@@ -177,10 +192,14 @@ def list_deals(
 
 
 def update_deal(
-    session: Session, settings: AppSettings, listing_id: int, triage: ListingTriage
+    session: Session,
+    user_id: int,
+    settings: AppSettings,
+    listing_id: int,
+    triage: ListingTriage,
 ) -> DealOut:
     listing = session.get(Listing, listing_id)
-    if listing is None:
+    if listing is None or listing.tracked_card.user_id != user_id:
         raise NotFoundError(f"listing {listing_id} not found")
     listing.triage = triage.value
     session.commit()
@@ -192,10 +211,11 @@ def update_deal(
     return _deal_out(listing, product, settings)
 
 
-def count_unseen_deals(session: Session, settings: AppSettings) -> int:
+def count_unseen_deals(session: Session, user_id: int, settings: AppSettings) -> int:
     return len(
         list_deals(
             session,
+            user_id,
             settings,
             triage=ListingTriage.NEW,
             min_roi_percent=settings.scanner.min_roi_percent,
@@ -203,9 +223,11 @@ def count_unseen_deals(session: Session, settings: AppSettings) -> int:
     )
 
 
-def mark_new_deals_seen(session: Session) -> int:
+def mark_new_deals_seen(session: Session, user_id: int) -> int:
     listings = session.scalars(
-        select(Listing).where(Listing.triage == ListingTriage.NEW.value)
+        select(Listing)
+        .join(Listing.tracked_card)
+        .where(TrackedCard.user_id == user_id, Listing.triage == ListingTriage.NEW.value)
     ).all()
     for listing in listings:
         listing.triage = ListingTriage.SEEN.value
@@ -298,9 +320,9 @@ def record_found_listings(
     return new_listings, new_deals
 
 
-def _get_card(session: Session, card_id: int) -> TrackedCard:
+def _get_card(session: Session, user_id: int, card_id: int) -> TrackedCard:
     card = session.get(TrackedCard, card_id)
-    if card is None:
+    if card is None or card.user_id != user_id:
         raise NotFoundError(f"tracked card {card_id} not found")
     return card
 

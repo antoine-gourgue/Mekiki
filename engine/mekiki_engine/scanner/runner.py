@@ -11,7 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from mekiki_engine.domain import Game, SourcePlatform
-from mekiki_engine.models import CardmarketProduct, TrackedCard
+from mekiki_engine.models import CardmarketProduct, TrackedCard, User
 from mekiki_engine.scanner import card_index, cardmarket, links
 from mekiki_engine.scanner.matching import build_rule, match_title, split_keywords
 from mekiki_engine.scanner.pricing import estimate_listing, expected_sale_cents
@@ -57,23 +57,31 @@ class ScanOutcome:
     errors: list[str] = field(default_factory=list)
 
 
+def refresh_reference_data(session: Session, client: PoliteClient) -> list[str]:
+    """Cardmarket prices and the card index, shared by every account."""
+    errors: list[str] = []
+    for game in Game:
+        errors += cardmarket.refresh(session, client, game)
+    if error := card_index.refresh(session, client):
+        errors.append(error)
+    return errors
+
+
 def scan_tracked_cards(
     session: Session,
     client: PoliteClient,
+    user_id: int,
     *,
     source_factory: SourceFactory = build_source,
     should_stop: Callable[[], bool] = lambda: False,
 ) -> ScanOutcome:
-    """Searches every active tracked card on every enabled marketplace."""
-    settings = load_settings(session)
-    outcome = ScanOutcome()
-    for game in Game:
-        outcome.errors += cardmarket.refresh(session, client, game)
-    if error := card_index.refresh(session, client):
-        outcome.errors.append(error)
-
+    """Searches every active tracked card of one account on its enabled marketplaces."""
+    settings = load_settings(session, user_id)
+    outcome = ScanOutcome(errors=refresh_reference_data(session, client))
     cards = session.scalars(
-        select(TrackedCard).where(TrackedCard.active.is_(True)).order_by(TrackedCard.id)
+        select(TrackedCard)
+        .where(TrackedCard.user_id == user_id, TrackedCard.active.is_(True))
+        .order_by(TrackedCard.id)
     ).all()
     sources: dict[tuple[SourcePlatform, Game], Source] = {}
     for card in cards:
@@ -181,10 +189,23 @@ def search_once(
     )
 
 
-class ScannerWorker:
-    """Background thread: keeps Cardmarket prices fresh and runs the scheduled scans.
+@dataclass(slots=True)
+class AccountScan:
+    """Scan state of one account."""
 
-    It wakes up every minute, or right away when a scan is requested from the UI.
+    running: bool = False
+    last_started_at: str | None = None
+    last_finished_at: str | None = None
+    last_error: str | None = None
+    next_run_at: datetime | None = None
+    outcome: ScanOutcome = field(default_factory=ScanOutcome)
+
+
+class ScannerWorker:
+    """Background thread: keeps reference prices fresh and runs each account's scans.
+
+    It wakes up every minute, or right away when a scan is requested from the UI, and scans
+    the accounts whose scanner is due, one after the other.
     """
 
     TICK_S = 60.0
@@ -202,14 +223,9 @@ class ScannerWorker:
         self._wake = threading.Event()
         self._stop = threading.Event()
         self._lock = threading.Lock()
-        self._requested = False
+        self._requested: set[int] = set()
         self._thread: threading.Thread | None = None
-        self.running = False
-        self.last_started_at: str | None = None
-        self.last_finished_at: str | None = None
-        self.last_error: str | None = None
-        self.next_run_at: datetime | None = None
-        self.outcome = ScanOutcome()
+        self._accounts: dict[int, AccountScan] = {}
 
     def start(self) -> None:
         self._thread = threading.Thread(target=self._loop, name="mekiki-scanner", daemon=True)
@@ -221,69 +237,78 @@ class ScannerWorker:
         if self._thread is not None:
             self._thread.join(timeout=5)
 
-    def request_scan(self) -> None:
+    def request_scan(self, user_id: int) -> None:
         with self._lock:
-            self._requested = True
+            self._requested.add(user_id)
         self._wake.set()
 
-    def run_now(self) -> None:
+    def run_now(self, user_id: int) -> None:
         """Runs one scan in the calling thread (used when background jobs are off)."""
-        self._run()
+        self._run(user_id)
 
-    def status(self, settings: AppSettings) -> ScanStatus:
+    def status(self, user_id: int, settings: AppSettings) -> ScanStatus:
+        state = self._accounts.get(user_id) or AccountScan()
         return ScanStatus(
-            running=self.running,
+            running=state.running,
             enabled=settings.scanner.enabled,
-            last_started_at=self.last_started_at,
-            last_finished_at=self.last_finished_at,
-            last_error=self.last_error,
+            last_started_at=state.last_started_at,
+            last_finished_at=state.last_finished_at,
+            last_error=state.last_error,
             next_run_at=(
-                self.next_run_at.strftime("%Y-%m-%dT%H:%M:%SZ")
-                if self.next_run_at and settings.scanner.enabled
+                state.next_run_at.strftime("%Y-%m-%dT%H:%M:%SZ")
+                if state.next_run_at and settings.scanner.enabled
                 else None
             ),
-            cards_scanned=self.outcome.cards_scanned,
-            new_listings=self.outcome.new_listings,
-            new_deals=self.outcome.new_deals,
+            cards_scanned=state.outcome.cards_scanned,
+            new_listings=state.outcome.new_listings,
+            new_deals=state.outcome.new_deals,
         )
 
     def _loop(self) -> None:
         while not self._stop.is_set():
-            with self._session_factory() as session:
-                settings = load_settings(session)
-            now = datetime.now(UTC)
             with self._lock:
-                requested, self._requested = self._requested, False
-            due = settings.scanner.enabled and (self.next_run_at is None or now >= self.next_run_at)
-            if requested or due:
-                self._run()
-                self.next_run_at = datetime.now(UTC) + timedelta(
-                    minutes=settings.scanner.interval_minutes
-                )
-            elif not settings.scanner.enabled:
-                # Prices still matter for the watch list and the stock when scans are off.
-                with self._session_factory() as session:
-                    for game in Game:
-                        cardmarket.refresh(session, self._client, game)
-                    card_index.refresh(session, self._client)
+                requested, self._requested = self._requested, set()
+            for user_id in sorted(requested | self._due_accounts()):
+                if self._stop.is_set():
+                    break
+                self._run(user_id)
+            with self._session_factory() as session:
+                # Prices still matter for the watch lists and the stock when no scan runs.
+                refresh_reference_data(session, self._client)
             self._wake.wait(self.TICK_S)
             self._wake.clear()
 
-    def _run(self) -> None:
-        self.running = True
-        self.last_started_at = utc_now()
+    def _due_accounts(self) -> set[int]:
+        now = datetime.now(UTC)
+        due: set[int] = set()
+        with self._session_factory() as session:
+            for user_id in session.scalars(select(User.id)):
+                settings = load_settings(session, user_id)
+                state = self._accounts.get(user_id)
+                next_run = state.next_run_at if state else None
+                if settings.scanner.enabled and (next_run is None or now >= next_run):
+                    due.add(user_id)
+        return due
+
+    def _run(self, user_id: int) -> None:
+        state = self._accounts.setdefault(user_id, AccountScan())
+        state.running = True
+        state.last_started_at = utc_now()
         try:
             with self._session_factory() as session:
-                self.outcome = scan_tracked_cards(
+                state.outcome = scan_tracked_cards(
                     session,
                     self._client,
+                    user_id,
                     source_factory=self._source_factory,
                     should_stop=self._stop.is_set,
                 )
-            self.last_error = " · ".join(self.outcome.errors) or None
+                interval = load_settings(session, user_id).scanner.interval_minutes
+            state.last_error = " · ".join(state.outcome.errors) or None
+            state.next_run_at = datetime.now(UTC) + timedelta(minutes=interval)
         # The worker thread must survive any failure, or scans would silently stop.
         except Exception as error:
-            self.last_error = f"Erreur inattendue : {error}"
+            state.last_error = f"Erreur inattendue : {error}"
         finally:
-            self.running = False
-            self.last_finished_at = utc_now()
+            state.running = False
+            state.last_finished_at = utc_now()

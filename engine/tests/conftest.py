@@ -220,4 +220,16 @@ def client(tmp_path: Path, marketplace: FakeMarketplace) -> Iterator[TestClient]
     app.state.http.default_interval_s = 0
     # The context manager runs the lifespan, which releases the SQLite file at the end.
     with TestClient(app, base_url="http://127.0.0.1:18421") as test_client:
+        sign_in(test_client, "ash@example.com")
         yield test_client
+
+
+def sign_in(client: TestClient, email: str, password: str = "pikachu-2026") -> dict[str, object]:
+    """Registers an account and sends its token with every following request."""
+    response = client.post(
+        "/auth/register",
+        json={"email": email, "password": password, "display_name": email.split("@")[0]},
+    )
+    assert response.status_code == 201, response.text
+    client.headers["Authorization"] = f"Bearer {response.json()['token']}"
+    return response.json()

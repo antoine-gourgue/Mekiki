@@ -27,8 +27,10 @@ from mekiki_engine.schemas import (
 from mekiki_engine.services.portfolio import NotFoundError, project_sale
 
 
-def list_favorites(session: Session, settings: AppSettings) -> FavoritesOut:
-    favorites = session.scalars(select(Favorite).order_by(Favorite.id.desc())).all()
+def list_favorites(session: Session, user_id: int, settings: AppSettings) -> FavoritesOut:
+    favorites = session.scalars(
+        select(Favorite).where(Favorite.user_id == user_id).order_by(Favorite.id.desc())
+    ).all()
     products = _products(session, favorites)
     expected = {
         f.id: expected_sale_cents(f.target_price_cents, products.get(f.cardmarket_product_id))
@@ -80,10 +82,11 @@ def list_favorites(session: Session, settings: AppSettings) -> FavoritesOut:
     return FavoritesOut(items=items, cart=totals)
 
 
-def add_favorite(session: Session, payload: FavoriteCreate) -> None:
+def add_favorite(session: Session, user_id: int, payload: FavoriteCreate) -> None:
     """Saves a listing; saving it again refreshes its price, title and pictures."""
     favorite = session.scalars(
         select(Favorite).where(
+            Favorite.user_id == user_id,
             Favorite.source == payload.source.value,
             Favorite.external_id == payload.external_id,
         )
@@ -92,7 +95,7 @@ def add_favorite(session: Session, payload: FavoriteCreate) -> None:
     values["game"] = payload.game.value
     values["source"] = payload.source.value
     if favorite is None:
-        session.add(Favorite(**values))
+        session.add(Favorite(**values, user_id=user_id))
     else:
         # The user's own choices on an existing favorite win over a new save.
         for keep in ("in_cart", "notes", "target_price_cents"):
@@ -102,27 +105,30 @@ def add_favorite(session: Session, payload: FavoriteCreate) -> None:
     session.commit()
 
 
-def update_favorite(session: Session, favorite_id: int, payload: FavoriteUpdate) -> None:
-    favorite = _get(session, favorite_id)
+def update_favorite(
+    session: Session, user_id: int, favorite_id: int, payload: FavoriteUpdate
+) -> None:
+    favorite = _get(session, user_id, favorite_id)
     for name, value in payload.model_dump(exclude_unset=True).items():
         setattr(favorite, name, value)
     session.commit()
 
 
-def delete_favorite(session: Session, favorite_id: int) -> None:
-    session.delete(_get(session, favorite_id))
+def delete_favorite(session: Session, user_id: int, favorite_id: int) -> None:
+    session.delete(_get(session, user_id, favorite_id))
     session.commit()
 
 
-def empty_cart(session: Session) -> None:
-    for favorite in session.scalars(select(Favorite).where(Favorite.in_cart.is_(True))):
+def empty_cart(session: Session, user_id: int) -> None:
+    cart = select(Favorite).where(Favorite.user_id == user_id, Favorite.in_cart.is_(True))
+    for favorite in session.scalars(cart):
         favorite.in_cart = False
     session.commit()
 
 
-def _get(session: Session, favorite_id: int) -> Favorite:
+def _get(session: Session, user_id: int, favorite_id: int) -> Favorite:
     favorite = session.get(Favorite, favorite_id)
-    if favorite is None:
+    if favorite is None or favorite.user_id != user_id:
         raise NotFoundError(f"favorite {favorite_id} not found")
     return favorite
 

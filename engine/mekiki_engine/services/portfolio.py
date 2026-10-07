@@ -150,12 +150,14 @@ def cost_lot(lot: Lot, settings: AppSettings) -> LotCosting:
     )
 
 
-def list_lots(session: Session, settings: AppSettings) -> list[LotOut]:
-    return [LotOut(**_lot_fields(lot, cost_lot(lot, settings))) for lot in _load_lots(session)]
+def list_lots(session: Session, user_id: int, settings: AppSettings) -> list[LotOut]:
+    return [
+        LotOut(**_lot_fields(lot, cost_lot(lot, settings))) for lot in _load_lots(session, user_id)
+    ]
 
 
-def lot_detail(session: Session, settings: AppSettings, lot_id: int) -> LotDetail:
-    lot = _get_lot(session, lot_id)
+def lot_detail(session: Session, user_id: int, settings: AppSettings, lot_id: int) -> LotDetail:
+    lot = _get_lot(session, user_id, lot_id)
     costing = cost_lot(lot, settings)
     return LotDetail(
         **_lot_fields(lot, costing),
@@ -163,73 +165,78 @@ def lot_detail(session: Session, settings: AppSettings, lot_id: int) -> LotDetai
     )
 
 
-def create_lot(session: Session, settings: AppSettings, payload: LotCreate) -> LotDetail:
+def create_lot(
+    session: Session, user_id: int, settings: AppSettings, payload: LotCreate
+) -> LotDetail:
     defaults = {"fx_jpy_per_eur", "packing_fee_jpy", "handling_fee_cents"}
     lot = Lot(
         **_to_columns(payload.model_dump(exclude=defaults)),
+        user_id=user_id,
         fx_jpy_per_eur=str(_or(payload.fx_jpy_per_eur, settings.fx_jpy_per_eur)),
         packing_fee_jpy=_or(payload.packing_fee_jpy, settings.neokyo_packing_fee_jpy),
         handling_fee_cents=_or(payload.handling_fee_cents, settings.default_handling_fee_cents),
     )
     session.add(lot)
     _commit(session)
-    return lot_detail(session, settings, lot.id)
+    return lot_detail(session, user_id, settings, lot.id)
 
 
 def update_lot(
-    session: Session, settings: AppSettings, lot_id: int, payload: LotUpdate
+    session: Session, user_id: int, settings: AppSettings, lot_id: int, payload: LotUpdate
 ) -> LotDetail:
-    lot = _get_lot(session, lot_id)
+    lot = _get_lot(session, user_id, lot_id)
     for name, value in _to_columns(payload.model_dump(exclude_unset=True)).items():
         setattr(lot, name, value)
     _commit(session)
-    return lot_detail(session, settings, lot_id)
+    return lot_detail(session, user_id, settings, lot_id)
 
 
-def delete_lot(session: Session, lot_id: int) -> None:
-    session.delete(_get_lot(session, lot_id))
+def delete_lot(session: Session, user_id: int, lot_id: int) -> None:
+    session.delete(_get_lot(session, user_id, lot_id))
     _commit(session)
 
 
-def item_detail(session: Session, settings: AppSettings, item_id: int) -> ItemOut:
-    item = _get_item(session, item_id)
+def item_detail(session: Session, user_id: int, settings: AppSettings, item_id: int) -> ItemOut:
+    item = _get_item(session, user_id, item_id)
     return _item_out(item, cost_lot(item.lot, settings).by_item[item.id], settings)
 
 
-def add_item(session: Session, settings: AppSettings, lot_id: int, payload: ItemCreate) -> ItemOut:
-    lot = _get_lot(session, lot_id)
+def add_item(
+    session: Session, user_id: int, settings: AppSettings, lot_id: int, payload: ItemCreate
+) -> ItemOut:
+    lot = _get_lot(session, user_id, lot_id)
     item = Item(
         **_to_columns(payload.model_dump(exclude={"service_fee_jpy"})),
         service_fee_jpy=_or(payload.service_fee_jpy, settings.neokyo_service_fee_jpy),
     )
     lot.items.append(item)
     _commit(session)
-    return item_detail(session, settings, item.id)
+    return item_detail(session, user_id, settings, item.id)
 
 
 def update_item(
-    session: Session, settings: AppSettings, item_id: int, payload: ItemUpdate
+    session: Session, user_id: int, settings: AppSettings, item_id: int, payload: ItemUpdate
 ) -> ItemOut:
-    item = _get_item(session, item_id)
+    item = _get_item(session, user_id, item_id)
     values = _to_columns(payload.model_dump(exclude_unset=True))
     if "lot_id" in values:
         # Going through the relationship keeps both lots' item lists in sync.
-        item.lot = _get_lot(session, values.pop("lot_id"))
+        item.lot = _get_lot(session, user_id, values.pop("lot_id"))
     for name, value in values.items():
         setattr(item, name, value)
     _commit(session)
-    return item_detail(session, settings, item_id)
+    return item_detail(session, user_id, settings, item_id)
 
 
-def delete_item(session: Session, item_id: int) -> None:
-    session.delete(_get_item(session, item_id))
+def delete_item(session: Session, user_id: int, item_id: int) -> None:
+    session.delete(_get_item(session, user_id, item_id))
     _commit(session)
 
 
 def record_sale(
-    session: Session, settings: AppSettings, item_id: int, payload: SaleUpsert
+    session: Session, user_id: int, settings: AppSettings, item_id: int, payload: SaleUpsert
 ) -> ItemOut:
-    item = _get_item(session, item_id)
+    item = _get_item(session, user_id, item_id)
     platform_fee = payload.platform_fee_cents
     if platform_fee is None:
         platform_fee = compute_platform_fee(
@@ -251,19 +258,20 @@ def record_sale(
         for name, value in values.items():
             setattr(item.sale, name, value)
     _commit(session)
-    return item_detail(session, settings, item_id)
+    return item_detail(session, user_id, settings, item_id)
 
 
-def cancel_sale(session: Session, settings: AppSettings, item_id: int) -> ItemOut:
-    item = _get_item(session, item_id)
+def cancel_sale(session: Session, user_id: int, settings: AppSettings, item_id: int) -> ItemOut:
+    item = _get_item(session, user_id, item_id)
     if item.sale is not None:
         item.sale = None
         _commit(session)
-    return item_detail(session, settings, item_id)
+    return item_detail(session, user_id, settings, item_id)
 
 
 def inventory(
     session: Session,
+    user_id: int,
     settings: AppSettings,
     *,
     status: ItemStatus | None = None,
@@ -271,7 +279,7 @@ def inventory(
 ) -> list[ItemOut]:
     items = [
         _item_out(item, landed, settings)
-        for item, landed in _costed_items(session, settings)
+        for item, landed in _costed_items(session, user_id, settings)
         if (game is None or item.game == game) and (status is None or item_status(item) is status)
     ]
     return sorted(items, key=lambda item: item.id, reverse=True)
@@ -279,6 +287,7 @@ def inventory(
 
 def dashboard(
     session: Session,
+    user_id: int,
     settings: AppSettings,
     *,
     since: date | None = None,
@@ -290,7 +299,7 @@ def dashboard(
     revenue = net = cost_of_sold = 0
     monthly: dict[str, MonthlySales] = {}
 
-    for item, landed in _costed_items(session, settings):
+    for item, landed in _costed_items(session, user_id, settings):
         status = item_status(item)
         if item.sale is None:
             counts[status] += 1
@@ -433,31 +442,37 @@ def max_price_jpy_for_roi(
     return low
 
 
-def _load_lots(session: Session) -> list[Lot]:
+def _load_lots(session: Session, user_id: int) -> list[Lot]:
     statement = (
-        select(Lot).options(selectinload(Lot.items).selectinload(Item.sale)).order_by(Lot.id.desc())
+        select(Lot)
+        .where(Lot.user_id == user_id)
+        .options(selectinload(Lot.items).selectinload(Item.sale))
+        .order_by(Lot.id.desc())
     )
     return list(session.scalars(statement))
 
 
-def _costed_items(session: Session, settings: AppSettings) -> list[tuple[Item, ItemLandedCost]]:
+def _costed_items(
+    session: Session, user_id: int, settings: AppSettings
+) -> list[tuple[Item, ItemLandedCost]]:
     rows: list[tuple[Item, ItemLandedCost]] = []
-    for lot in _load_lots(session):
+    for lot in _load_lots(session, user_id):
         costing = cost_lot(lot, settings)
         rows.extend((item, costing.by_item[item.id]) for item in lot.items)
     return rows
 
 
-def _get_lot(session: Session, lot_id: int) -> Lot:
+def _get_lot(session: Session, user_id: int, lot_id: int) -> Lot:
     lot = session.get(Lot, lot_id)
-    if lot is None:
+    # Another account's lot answers like a missing one: ids must not reveal anything.
+    if lot is None or lot.user_id != user_id:
         raise NotFoundError(f"lot {lot_id} not found")
     return lot
 
 
-def _get_item(session: Session, item_id: int) -> Item:
+def _get_item(session: Session, user_id: int, item_id: int) -> Item:
     item = session.get(Item, item_id)
-    if item is None:
+    if item is None or item.lot.user_id != user_id:
         raise NotFoundError(f"item {item_id} not found")
     return item
 

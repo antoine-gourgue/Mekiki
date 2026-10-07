@@ -8,12 +8,18 @@ from __future__ import annotations
 
 from sqlalchemy import Connection, text
 
-from mekiki_engine.migrations import m0001_initial, m0002_scanner, m0003_favorites
+from mekiki_engine.migrations import (
+    m0001_initial,
+    m0002_scanner,
+    m0003_favorites,
+    m0004_accounts,
+)
 
 MIGRATIONS: tuple[tuple[int, str], ...] = (
     (1, m0001_initial.SQL),
     (2, m0002_scanner.SQL),
     (3, m0003_favorites.SQL),
+    (4, m0004_accounts.SQL),
 )
 
 
