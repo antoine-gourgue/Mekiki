@@ -1,0 +1,25 @@
+# Local data: the SQLite database holds your stock and sales, never commit it.
+.data/
+*.sqlite3*
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+engine/build/
+engine/dist/
+
+# Node / Nuxt
+node_modules/
+.nuxt/
+.output/
+dist/
+
+# Tauri
+desktop/src-tauri/target/
+desktop/src-tauri/binaries/
+
+.DS_Store
+.env

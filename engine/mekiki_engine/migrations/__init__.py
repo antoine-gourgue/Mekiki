@@ -1,0 +1,42 @@
+"""Forward-only SQL migrations, applied at startup.
+
+Migrations live in Python modules rather than ``.sql`` files so the PyInstaller sidecar
+bundles them without any data-file configuration.
+"""
+
+from __future__ import annotations
+
+from sqlalchemy import Connection, text
+
+from mekiki_engine.migrations import m0001_initial
+
+MIGRATIONS: tuple[tuple[int, str], ...] = ((1, m0001_initial.SQL),)
+
+
+def apply_migrations(connection: Connection) -> list[int]:
+    """Apply pending migrations in order and return the versions that ran."""
+    connection.exec_driver_sql(
+        "CREATE TABLE IF NOT EXISTS schema_migrations ("
+        " version INTEGER PRIMARY KEY,"
+        " applied_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))"
+        ")"
+    )
+    applied = set(connection.execute(text("SELECT version FROM schema_migrations")).scalars())
+    ran: list[int] = []
+    for version, sql in MIGRATIONS:
+        if version in applied:
+            continue
+        for statement in _split_statements(sql):
+            connection.exec_driver_sql(statement)
+        connection.execute(
+            text("INSERT INTO schema_migrations (version) VALUES (:version)"),
+            {"version": version},
+        )
+        ran.append(version)
+    return ran
+
+
+def _split_statements(sql: str) -> list[str]:
+    # The migrations contain no semicolons inside literals or triggers, so a plain split
+    # is enough and avoids pulling in an SQL parser.
+    return [s.strip() for s in sql.split(";") if s.strip()]
