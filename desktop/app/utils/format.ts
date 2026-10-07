@@ -27,11 +27,15 @@ export function formatRatio(ratio: number | null | undefined): string {
   return ratio == null ? EMPTY : percent.format(ratio)
 }
 
-/** Formats an ISO date (2026-10-05) without shifting it through the local time zone. */
+/**
+ * Formats an ISO date (2026-10-05) without shifting it through the local time zone. A full
+ * timestamp (2026-10-05T18:55:54Z) shows its date part.
+ */
 export function formatDate(iso: string | null | undefined): string {
   if (!iso) return EMPTY
-  const [year, month, day] = iso.split('-').map(Number)
-  return longDate.format(new Date(year!, month! - 1, day))
+  const [year, month, day] = iso.slice(0, 10).split('-').map(Number)
+  const date = new Date(year!, month! - 1, day)
+  return Number.isNaN(date.getTime()) ? EMPTY : longDate.format(date)
 }
 
 const dateTime = new Intl.DateTimeFormat('fr-FR', { dateStyle: 'short', timeStyle: 'short' })
