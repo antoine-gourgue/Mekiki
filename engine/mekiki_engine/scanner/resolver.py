@@ -16,7 +16,7 @@ from mekiki_engine.scanner.pricing import reference_price
 
 # Japanese One Piece printings sit in expansions named "… (Non-English)" or
 # "… (Asia Region Legal)"; the English ones are priced very differently.
-_JAPANESE_EXPANSION = re.compile(r"non-english|asia", re.IGNORECASE)
+JAPANESE_EXPANSION = re.compile(r"non-english|asia", re.IGNORECASE)
 _CODE_IN_NAME = re.compile(r"\(\s*((?:OP|ST|EB|PRB)\d{2}|P)-(\d{3})\s*\)", re.IGNORECASE)
 
 
@@ -108,7 +108,7 @@ class CatalogResolver:
             )
             for product in products:
                 match = _CODE_IN_NAME.search(product.name or "")
-                japanese = _JAPANESE_EXPANSION.search(product.expansion_name or "")
+                japanese = JAPANESE_EXPANSION.search(product.expansion_name or "")
                 if match and japanese and reference_price(product):
                     by_code.setdefault(f"{match[1].lower()}-{match[2]}", []).append(product)
             # Cardmarket creates a code's versions in the official order (regular, parallel,

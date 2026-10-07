@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from mekiki_engine.domain import Game, SourcePlatform
 from mekiki_engine.models import CardmarketProduct, TrackedCard, User
-from mekiki_engine.scanner import card_index, cardmarket, links
+from mekiki_engine.scanner import card_index, cardmarket, links, names
 from mekiki_engine.scanner.matching import build_rule, match_title, split_keywords
 from mekiki_engine.scanner.pricing import estimate_listing, expected_sale_cents
 from mekiki_engine.scanner.service import (
@@ -63,6 +63,8 @@ def refresh_reference_data(session: Session, client: PoliteClient) -> list[str]:
     for game in Game:
         errors += cardmarket.refresh(session, client, game)
     if error := card_index.refresh(session, client):
+        errors.append(error)
+    if error := names.refresh(session, client):
         errors.append(error)
     return errors
 
@@ -123,6 +125,7 @@ def search_once(
         else None
     )
     expected = expected_sale_cents(request.expected_sale_cents, product)
+    query = japanese_query(session, client, request.game, request.query)
     rule = build_rule(
         card_number=request.card_number,
         required=request.required_keywords,
@@ -136,7 +139,7 @@ def search_once(
         try:
             found = search_safely(
                 source_factory(platform, client, request.game),
-                request.query,
+                query,
                 limit=RESULTS_PER_SEARCH,
             )
         except SourceError as error:
@@ -179,14 +182,22 @@ def search_once(
     neokyo = {
         platform.value: url
         for platform in SourcePlatform
-        if (url := links.neokyo_search_url(platform, request.query)) is not None
+        if (url := links.neokyo_search_url(platform, query)) is not None
     }
     return SearchResponse(
+        searched_query=query,
         expected_sale_cents=expected,
         results=results,
         errors=errors,
         neokyo_search_urls=neokyo,
     )
+
+
+def japanese_query(session: Session, client: PoliteClient, game: Game, text: str) -> str:
+    """``text`` with French or English card names in the Japanese the listings use."""
+    if game is Game.POKEMON and not names.species_count(session):
+        names.refresh(session, client)
+    return names.translate(session, game, text, "ja") or text
 
 
 @dataclass(slots=True)

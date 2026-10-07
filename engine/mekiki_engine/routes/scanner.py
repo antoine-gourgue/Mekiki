@@ -7,7 +7,7 @@ from fastapi import APIRouter, Query, Request, status
 
 from mekiki_engine.deps import SessionDep, SettingsDep, UserDep
 from mekiki_engine.domain import Game, ListingTriage
-from mekiki_engine.scanner import card_index, cardmarket, favorites, service
+from mekiki_engine.scanner import card_index, cardmarket, favorites, names, service
 from mekiki_engine.scanner.discovery import DiscoveryJob, DiscoveryJobs
 from mekiki_engine.scanner.runner import ScannerWorker, search_once
 from mekiki_engine.scanner.sources.base import PoliteClient
@@ -78,11 +78,15 @@ def delete_tracked_card(card_id: int, session: SessionDep, user: UserDep) -> Non
 
 @router.get("/cardmarket/products")
 def search_products(
+    request: Request,
     session: SessionDep,
     _user: UserDep,
     q: Annotated[str, Query(min_length=1, max_length=100)],
     game: Game = Game.POKEMON,
 ) -> list[MarketPriceOut]:
+    # French names need the Pokémon name list, downloaded on first use.
+    if game is Game.POKEMON and not names.species_count(session):
+        names.refresh(session, _client(request))
     return service.search_products(session, game=game, query=q)
 
 

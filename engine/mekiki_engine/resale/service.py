@@ -91,6 +91,7 @@ def verdict(
         price_jpy=price_jpy,
         shipping_included=shipping_included,
         landed_cents=landed_cents,
+        selling=item_id is not None,
     )
 
 

@@ -11,8 +11,8 @@ from sqlalchemy.orm import Session, selectinload
 
 from mekiki_engine.costing.sale import roi
 from mekiki_engine.domain import Game, ListingTriage, SourcePlatform
-from mekiki_engine.models import CardmarketProduct, Listing, TrackedCard
-from mekiki_engine.scanner import links
+from mekiki_engine.models import CardIndexEntry, CardmarketProduct, Listing, TrackedCard
+from mekiki_engine.scanner import links, names
 from mekiki_engine.scanner.matching import build_rule, match_title, split_keywords
 from mekiki_engine.scanner.pricing import (
     DealEstimate,
@@ -22,6 +22,7 @@ from mekiki_engine.scanner.pricing import (
     meets_target,
     reference_price,
 )
+from mekiki_engine.scanner.resolver import JAPANESE_EXPANSION
 from mekiki_engine.scanner.sources.base import FoundListing
 from mekiki_engine.schemas import (
     AppSettings,
@@ -47,9 +48,10 @@ def default_search_query(card_number: str | None, name: str) -> str:
     return (card_number or name).strip()
 
 
-def market_price_out(product: CardmarketProduct) -> MarketPriceOut:
+def market_price_out(product: CardmarketProduct, *, japanese: bool = False) -> MarketPriceOut:
     reference = reference_price(product)
     return MarketPriceOut(
+        japanese=japanese,
         id_product=product.id_product,
         game=Game(product.game),
         name=product.name,
@@ -70,7 +72,30 @@ def market_price_out(product: CardmarketProduct) -> MarketPriceOut:
 def search_products(
     session: Session, *, game: Game, query: str, limit: int = 20
 ) -> list[MarketPriceOut]:
-    """Catalog lookup by name or product id, most expensive first."""
+    """Catalog lookup by name or product id: Japanese printings first, then the dearest.
+
+    Cardmarket names cards in English: a French name ("Dracaufeu") is searched in English
+    too.
+    """
+    queries = [query]
+    english = names.translate(session, game, query, "en")
+    if english and english.lower() != query.lower():
+        queries.append(english)
+    found: dict[int, CardmarketProduct] = {}
+    for text in queries:
+        for product in _catalog_matches(session, game, text, limit * 3):
+            found.setdefault(product.id_product, product)
+    japanese = japanese_printings(session, game, found.values())
+    ordered = sorted(
+        found.values(),
+        key=lambda p: (p.id_product not in japanese, -(p.avg30_cents or p.trend_cents or 0)),
+    )
+    return [market_price_out(p, japanese=p.id_product in japanese) for p in ordered[:limit]]
+
+
+def _catalog_matches(
+    session: Session, game: Game, query: str, limit: int
+) -> list[CardmarketProduct]:
     statement = select(CardmarketProduct).where(CardmarketProduct.game == game.value)
     if query.strip().isdigit():
         statement = statement.where(CardmarketProduct.id_product == int(query))
@@ -80,14 +105,34 @@ def search_products(
     statement = statement.order_by(
         func.coalesce(CardmarketProduct.avg30_cents, CardmarketProduct.trend_cents, 0).desc()
     ).limit(limit)
-    return [market_price_out(p) for p in session.scalars(statement)]
+    return list(session.scalars(statement))
+
+
+def japanese_printings(
+    session: Session, game: Game, products: Iterable[CardmarketProduct]
+) -> set[int]:
+    """Ids of the Japanese printings among ``products``.
+
+    Pokémon: the ones the TCGdex index links to a Japanese set. One Piece: those of an
+    expansion Cardmarket marks "(Non-English)" or "(Asia Region Legal)".
+    """
+    products = list(products)
+    if game is Game.ONE_PIECE:
+        return {p.id_product for p in products if JAPANESE_EXPANSION.search(p.expansion_name or "")}
+    ids = [p.id_product for p in products]
+    if not ids:
+        return set()
+    return set(
+        session.scalars(select(CardIndexEntry.id_product).where(CardIndexEntry.id_product.in_(ids)))
+    )
 
 
 def product_detail(session: Session, id_product: int) -> MarketPriceOut:
     product = session.get(CardmarketProduct, id_product)
     if product is None:
         raise NotFoundError(f"product {id_product} not found")
-    return market_price_out(product)
+    japanese = japanese_printings(session, Game(product.game), [product])
+    return market_price_out(product, japanese=bool(japanese))
 
 
 def list_tracked_cards(

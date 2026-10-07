@@ -65,6 +65,8 @@ def test_a_card_in_stock_is_judged_on_its_real_cost(client: TestClient) -> None:
         result["outlets"][0]["net_cents"] - item["landed_cost"]["total_cents"]
     )
     assert result["prices"]["query"] == "Dracaufeu ex 006/165"
+    # Bought alone, the card carries the whole parcel's costs: the verdict is about selling.
+    assert result["headline"].startswith(("À vendre sur", "Marge faible", "Perte de"))
 
 
 def test_an_unknown_card_cannot_be_judged(client: TestClient) -> None:

@@ -468,6 +468,8 @@ class MarketPriceOut(BaseModel):
     # The value used as resale price: avg30, else avg7, avg, avg1, trend; never low.
     reference_cents: int | None
     reference_field: str | None
+    # A Japanese printing, the one Japanese listings sell (the English one prices apart).
+    japanese: bool = False
 
 
 class TrackedCardOut(TrackedCardFields):
@@ -574,6 +576,8 @@ class SearchResultOut(BaseModel):
 
 
 class SearchResponse(BaseModel):
+    # What was searched: the typed text with card names translated to Japanese.
+    searched_query: str = ""
     expected_sale_cents: int | None
     results: list[SearchResultOut]
     # Sources that failed (blocked, timeout…) with the reason, so partial results are visible.

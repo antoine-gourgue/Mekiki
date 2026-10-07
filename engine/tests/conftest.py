@@ -154,7 +154,11 @@ def tcgdex_archive() -> bytes:
 
 
 def cardmarket_handler(request: httpx.Request) -> httpx.Response:
-    """Fake Cardmarket file server and fake GitHub for the TCGdex card index."""
+    """Fake Cardmarket file server and fake GitHub for the TCGdex index and PokéAPI names."""
+    if request.url.host == "raw.githubusercontent.com":
+        from test_names import SPECIES
+
+        return httpx.Response(200, text=SPECIES)
     if request.url.host == "api.github.com":
         return httpx.Response(200, text="0123456789abcdef")
     if request.url.host == "codeload.github.com":

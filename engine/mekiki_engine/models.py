@@ -208,6 +208,20 @@ class Listing(Base):
     tracked_card: Mapped[TrackedCard] = relationship(back_populates="listings")
 
 
+class PokemonSpecies(Base):
+    """One Pokémon's official name in each language (PokéAPI)."""
+
+    __tablename__ = "pokemon_species"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=False)
+    ja: Mapped[str | None]
+    en: Mapped[str | None]
+    fr: Mapped[str | None]
+    de: Mapped[str | None]
+    es: Mapped[str | None]
+    it: Mapped[str | None]
+
+
 class CardIndexEntry(Base):
     """Japanese card identity (set code, collector number) → Cardmarket product."""
 

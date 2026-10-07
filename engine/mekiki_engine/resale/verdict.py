@@ -53,10 +53,11 @@ def card_verdict(
     price_jpy: int | None = None,
     shipping_included: bool | None = None,
     landed_cents: int | None = None,
+    selling: bool = False,
 ) -> CardVerdict:
     """Judges a card bought at ``price_jpy`` (a Japanese listing), or at its real
     ``landed_cents`` (a card in stock), or without any price (a catalog product: only the
-    most to pay in Japan)."""
+    most to pay in Japan). ``selling`` words the verdict for a card already bought."""
     if landed_cents is None and price_jpy is not None:
         landed_cents = landed_cost_of_listing(settings, price_jpy, shipping_included).total_cents
 
@@ -70,6 +71,8 @@ def card_verdict(
     verdict, headline = _judge(
         settings, outlets, price_jpy, landed_cents, reference[0] if reference else None
     )
+    if selling:
+        headline = _selling_headline(settings, verdict, outlets) or headline
     signals = _signals(product, prices)
     if verdict == "suspicious":
         signals.insert(
@@ -162,6 +165,24 @@ def _judge(
     if margin >= 0:
         return "fair", f"Rentable, mais sous votre objectif de {target_percent} ({where})."
     return "bad", f"À éviter : {_euros(-margin)} de perte, même sur {where}."
+
+
+def _selling_headline(
+    settings: AppSettings, verdict: Verdict, outlets: list[ResaleOutlet]
+) -> str | None:
+    if not outlets or outlets[0].margin_cents is None:
+        return None
+    best = outlets[0]
+    where = PLATFORM_LABELS.get(best.platform, best.platform.value)
+    margin = best.margin_cents or 0
+    if verdict == "good":
+        return f"À vendre sur {where} : {_euros(margin)} de marge à la cote actuelle."
+    if verdict == "fair":
+        target = f"{settings.scanner.min_roi_percent:g} %"
+        return f"Marge faible : {_euros(margin)} sur {where}, sous votre objectif de {target}."
+    if verdict == "bad":
+        return f"Perte de {_euros(-margin)} même sur {where} : attendez une meilleure cote."
+    return None
 
 
 def _signals(product: CardmarketProduct | None, prices: ResalePrices) -> list[VerdictSignal]:
