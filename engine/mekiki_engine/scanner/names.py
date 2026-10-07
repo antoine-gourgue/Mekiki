@@ -35,7 +35,7 @@ MAX_AGE = timedelta(days=30)
 LANGUAGE_IDS = {"1": "ja", "9": "en", "5": "fr", "6": "de", "7": "es", "8": "it"}
 LATIN_LANGUAGES = ("en", "fr", "de", "es", "it")
 
-Target = Literal["ja", "en"]
+Target = Literal["ja", "en", "fr"]
 
 # Written after the Pokémon's name on Japanese cards, without a space: "リザードンex".
 SUFFIXES = {
@@ -49,6 +49,12 @@ SUFFIXES = {
 MEGA_WORDS = {"mega", "mega-"}
 # Regional forms: English puts the region first ("Alolan Vulpix"), French after
 # ("Goupix d'Alola"), Japanese first and attached ("アローラロコン").
+FRENCH_REGIONS = {
+    "alola": "d'Alola",
+    "galar": "de Galar",
+    "hisui": "d'Hisui",
+    "paldea": "de Paldea",
+}
 REGIONS = {
     "alola": ("アローラ", "Alolan"),
     "galar": ("ガラル", "Galarian"),
@@ -143,6 +149,7 @@ _JAPANESE = re.compile(r"[぀-ヿ㐀-鿿]")
 class Name:
     ja: str
     en: str
+    fr: str | None = None
 
 
 class NameBook:
@@ -201,6 +208,10 @@ def _spell(name: Name, target: Target, *, mega: bool, region: str | None, suffix
     if target == "ja":
         head = ("メガ" if mega else "") + (REGIONS[region][0] if region else "")
         return f"{head}{name.ja}{suffix}"
+    if target == "fr":
+        words = [("Méga-" if mega else "") + (name.fr or name.en)]
+        words += [FRENCH_REGIONS[region]] if region else []
+        return " ".join(words) + (f" {suffix}" if suffix else "")
     words = [*(["Mega"] if mega else []), *([REGIONS[region][1]] if region else []), name.en]
     return " ".join(words) + (f" {suffix}" if suffix else "")
 
@@ -248,7 +259,7 @@ def _species_entries(session: Session) -> Iterable[tuple[str, Name]]:
     for species in session.scalars(select(PokemonSpecies)):
         if not species.ja or not species.en:
             continue
-        name = Name(ja=unicodedata.normalize("NFKC", species.ja), en=species.en)
+        name = Name(ja=unicodedata.normalize("NFKC", species.ja), en=species.en, fr=species.fr)
         for language in LATIN_LANGUAGES:
             typed = getattr(species, language)
             if typed:

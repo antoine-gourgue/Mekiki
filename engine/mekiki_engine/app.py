@@ -13,10 +13,21 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from mekiki_engine import __version__
 from mekiki_engine.auth import SignInThrottle
+from mekiki_engine.browser.service import Browsers
 from mekiki_engine.config import EngineConfig, load_config
 from mekiki_engine.db import create_db_engine, session_factory
 from mekiki_engine.resale.ebay import EbayBrowse
-from mekiki_engine.routes import auth, items, lots, reports, resale, scanner, settings, system
+from mekiki_engine.routes import (
+    auth,
+    browser,
+    items,
+    lots,
+    reports,
+    resale,
+    scanner,
+    settings,
+    system,
+)
 from mekiki_engine.scanner.discovery import DiscoveryJobs
 from mekiki_engine.scanner.runner import ScannerWorker, SourceFactory
 from mekiki_engine.scanner.sources.base import PoliteClient
@@ -49,6 +60,7 @@ def create_app(
             worker.start()
         yield
         worker.stop()
+        app.state.browsers.stop_all()
         http.close()
         engine.dispose()
 
@@ -60,13 +72,14 @@ def create_app(
     app.state.source_factory = source_factory
     app.state.discovery = DiscoveryJobs(sessions, http, source_factory=source_factory)
     app.state.sign_in_throttle = SignInThrottle()
+    app.state.browsers = Browsers(config.data_dir)
     app.state.ebay = (
         EbayBrowse(http, config.ebay_client_id, config.ebay_client_secret, config.ebay_marketplace)
         if config.ebay_client_id and config.ebay_client_secret
         else None
     )
 
-    for module in (system, auth, settings, lots, items, reports, scanner, resale):
+    for module in (system, auth, settings, lots, items, reports, scanner, resale, browser):
         app.include_router(module.router)
 
     @app.exception_handler(NotFoundError)

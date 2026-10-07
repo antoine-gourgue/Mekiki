@@ -7,6 +7,7 @@ from fastapi import APIRouter, HTTPException, Query, Request, status
 from mekiki_engine.deps import SessionDep, SettingsDep, UserDep
 from mekiki_engine.domain import SalePlatform
 from mekiki_engine.resale import service
+from mekiki_engine.scanner import names
 from mekiki_engine.schemas import CardVerdict, ListingDraftOut, ResalePrices
 
 router = APIRouter(tags=["resale"])
@@ -46,6 +47,9 @@ def resale_verdict(
 ) -> CardVerdict:
     """Whether a card is worth buying: a card in stock, a Japanese listing at ``price_jpy``
     or a catalog product, judged on every resale outlet."""
+    # Vinted is searched with French names, which need the Pokémon name list.
+    if not names.species_count(session):
+        names.refresh(session, request.app.state.http)
     result = service.verdict(
         session,
         settings,
@@ -57,6 +61,7 @@ def resale_verdict(
         query=" ".join((q or "").replace("·", " ").split()),
         price_jpy=price_jpy,
         shipping_included=shipping_included,
+        browsers=request.app.state.browsers,
     )
     if result is None:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, detail="carte inconnue")

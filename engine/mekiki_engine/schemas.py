@@ -838,6 +838,12 @@ class CardVerdict(BaseModel):
     outlets: list[ResaleOutlet]
     signals: list[VerdictSignal]
     prices: ResalePrices
+    # The number listings must name to count: "201/165", "OP05-119".
+    card_number: str | None = None
+    # The card's name in French, English and Japanese, which listings must also name.
+    card_names: list[str] = []
+    # What to search on each site in Chrome (French names on Vinted), to complete the verdict.
+    market_queries: dict[str, str] = {}
 
 
 class TrackedCardTemplate(BaseModel):
@@ -855,3 +861,55 @@ class TrackedCardTemplate(BaseModel):
     label: str
     # False for an English printing: Japanese listings sell another card.
     japanese: bool
+
+
+BrowserSite = Literal["vinted", "ebay"]
+
+
+class BrowserStatus(BaseModel):
+    chrome_installed: bool
+    # The Mekiki Chrome window is open.
+    running: bool
+
+
+class SiteConnection(BaseModel):
+    site: BrowserSite
+    connected: bool
+
+
+class BrowserPricesRequest(BaseModel):
+    query: Annotated[str, Field(min_length=1, max_length=200)]
+    # Listings must name it to count towards the median: "201/165", "OP05-119".
+    card_number: Annotated[str, Field(max_length=40)] | None = None
+    # The card's name in several languages; a listing must name one of them to count.
+    names: Annotated[list[Annotated[str, Field(max_length=80)]], Field(max_length=6)] = []
+
+
+class MarketListingOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    site: BrowserSite
+    external_id: str
+    title: str
+    price_cents: int
+    url: str
+    image_url: str | None
+    # Vinted: the condition. eBay: the sale date ("Vendu le 6 oct. 2026").
+    detail: str | None
+    shipping_cents: int | None
+    # eBay: a lower offer was accepted; the real price is unknown.
+    best_offer: bool
+    # Names the card's number, ungraded and alone: counts towards the median.
+    relevant: bool
+
+
+class BrowserPricesOut(BaseModel):
+    site: BrowserSite
+    query: str
+    listings: list[MarketListingOut]
+    relevant_count: int
+    median_cents: int | None
+    min_cents: int | None
+    max_cents: int | None
+    fetched_at: str
+    error: str | None

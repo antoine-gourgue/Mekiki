@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from typing import Literal
 
+from mekiki_engine.browser.service import MarketPrices
 from mekiki_engine.costing.money import percent_to_fraction
 from mekiki_engine.costing.sale import roi
 from mekiki_engine.domain import SalePlatform
@@ -36,7 +37,11 @@ REFERENCE_LABELS = {
     "avg1": "ventes de la veille",
     "trend": "tendance",
 }
-PLATFORM_LABELS = {SalePlatform.CARDMARKET: "Cardmarket", SalePlatform.EBAY: "eBay"}
+PLATFORM_LABELS = {
+    SalePlatform.CARDMARKET: "Cardmarket",
+    SalePlatform.EBAY: "eBay",
+    SalePlatform.VINTED: "Vinted",
+}
 # Same rule as discovery: below this share of the price guide, it is not the real card.
 SUSPICIOUS_PRICE_SHARE = 0.2
 # A week's average this far from the month's shows a moving price.
@@ -54,6 +59,7 @@ def card_verdict(
     shipping_included: bool | None = None,
     landed_cents: int | None = None,
     selling: bool = False,
+    market: dict[str, MarketPrices] | None = None,
 ) -> CardVerdict:
     """Judges a card bought at ``price_jpy`` (a Japanese listing), or at its real
     ``landed_cents`` (a card in stock), or without any price (a catalog product: only the
@@ -63,7 +69,7 @@ def card_verdict(
 
     outlets = [
         _outlet(settings, platform, sale_cents, basis, landed_cents)
-        for platform, sale_cents, basis in _resale_prices(product, prices)
+        for platform, sale_cents, basis in _resale_prices(product, prices, market or {})
     ]
     outlets.sort(key=lambda o: (o.roi if o.roi is not None else -1e9, o.net_cents), reverse=True)
 
@@ -73,7 +79,7 @@ def card_verdict(
     )
     if selling:
         headline = _selling_headline(settings, verdict, outlets) or headline
-    signals = _signals(product, prices)
+    signals = _signals(product, prices, market or {})
     if verdict == "suspicious":
         signals.insert(
             0,
@@ -96,17 +102,28 @@ def card_verdict(
 
 
 def _resale_prices(
-    product: CardmarketProduct | None, prices: ResalePrices
+    product: CardmarketProduct | None,
+    prices: ResalePrices,
+    market: dict[str, MarketPrices],
 ) -> list[tuple[SalePlatform, int, str]]:
     found = []
     reference = reference_price(product)
     if reference is not None:
         label = REFERENCE_LABELS.get(reference[1], reference[1])
         found.append((SalePlatform.CARDMARKET, reference[0], f"Cote Cardmarket, {label}"))
+    # Sold listings beat asking prices: eBay's API only knows the listings still for sale.
+    sold = market.get("ebay")
     ebay = prices.ebay
-    if ebay.median_cents is not None:
+    if sold is not None and sold.median_cents is not None:
+        basis = f"Médiane de {len(sold.relevant)} ventes réussies eBay"
+        found.append((SalePlatform.EBAY, sold.median_cents, basis))
+    elif ebay.median_cents is not None:
         basis = f"Médiane de {len(ebay.listings)} annonces eBay en cours"
         found.append((SalePlatform.EBAY, ebay.median_cents, basis))
+    vinted = market.get("vinted")
+    if vinted is not None and vinted.median_cents is not None:
+        basis = f"Médiane de {len(vinted.relevant)} annonces Vinted en cours"
+        found.append((SalePlatform.VINTED, vinted.median_cents, basis))
     return found
 
 
@@ -185,8 +202,25 @@ def _selling_headline(
     return None
 
 
-def _signals(product: CardmarketProduct | None, prices: ResalePrices) -> list[VerdictSignal]:
+def _signals(
+    product: CardmarketProduct | None, prices: ResalePrices, market: dict[str, MarketPrices]
+) -> list[VerdictSignal]:
     signals: list[VerdictSignal] = []
+    for site, label in (("ebay", "ventes réussies eBay"), ("vinted", "annonces Vinted")):
+        read = market.get(site)
+        if read is None:
+            continue
+        count = len(read.relevant)
+        if read.error:
+            signals.append(VerdictSignal(tone="warning", text=f"{label} : {read.error}."))
+        elif count == 0:
+            signals.append(
+                VerdictSignal(tone="warning", text=f"Aucune des {label} ne correspond à la carte.")
+            )
+        elif count < FEW_EBAY_LISTINGS:
+            signals.append(
+                VerdictSignal(tone="warning", text=f"Seulement {count} {label} : médiane fragile.")
+            )
     if product is not None and product.avg7_cents and product.avg30_cents:
         change = product.avg7_cents / product.avg30_cents - 1
         if change >= TREND_THRESHOLD:
@@ -208,10 +242,11 @@ def _signals(product: CardmarketProduct | None, prices: ResalePrices) -> list[Ve
         )
         signals.append(VerdictSignal(tone="neutral", text=text))
     ebay = prices.ebay
-    if not ebay.configured:
+    # Prices read in Chrome already stand in for the missing eBay keys.
+    if not ebay.configured and not market:
         text = (
-            "Prix eBay en direct indisponibles : ouvrez les ventes réussies eBay et les "
-            "annonces Vinted pour compléter."
+            "Lisez les prix Vinted et les ventes réussies eBay dans Chrome pour compléter "
+            "avec ce qui se vend vraiment."
         )
         signals.append(VerdictSignal(tone="neutral", text=text))
     elif ebay.listings and len(ebay.listings) < FEW_EBAY_LISTINGS:
