@@ -1,9 +1,17 @@
 <script setup lang="ts">
 import type { DropdownMenuItem } from '@nuxt/ui'
-import type { DiscoveryPick, DiscoveryRun, Game, ItemCreate, ScannableSource } from '~/types/engine'
+import type {
+  DiscoveryDepth,
+  DiscoveryPick,
+  DiscoveryRun,
+  Game,
+  ItemCreate,
+  ScannableSource,
+} from '~/types/engine'
 
 const engine = useEngine()
 const showError = useErrorToast()
+const favorites = useFavorites()
 
 const { data: settings } = useAsyncData('settings', () => engine.getSettings())
 const { data: lots } = useAsyncData('lots', () => engine.listLots())
@@ -14,7 +22,14 @@ const form = reactive({
   card_count: 10 as number | null,
   min_roi_percent: null as number | null,
   sources: [...DEFAULT_SOURCES] as ScannableSource[],
+  depth: 'quick' as DiscoveryDepth,
 })
+
+const depthItems: { value: DiscoveryDepth; label: string; description: string }[] = [
+  { value: 'quick', label: 'Rapide', description: '~1 500 annonces, 1 à 2 min' },
+  { value: 'deep', label: 'Approfondie', description: '~5 000 annonces, ~5 min' },
+  { value: 'max', label: 'Maximale', description: '10 000+ annonces, ~15 min' },
+]
 // The ROI target defaults to the scanner's one, shown as the field's starting value.
 watch(
   settings,
@@ -27,10 +42,27 @@ watch(
 const run = ref<DiscoveryRun | null>(null)
 let timer: ReturnType<typeof setTimeout> | undefined
 
+// The form starts from the last search, so a new one only changes what needs changing.
+let prefilled = false
+function prefill(current: DiscoveryRun | null) {
+  if (prefilled || !current?.request) return
+  prefilled = true
+  const request = current.request
+  Object.assign(form, {
+    game: request.game,
+    budget_cents: request.budget_cents,
+    card_count: request.card_count,
+    min_roi_percent: request.min_roi_percent ?? form.min_roi_percent,
+    sources: request.sources?.length ? [...request.sources] : form.sources,
+    depth: request.depth ?? form.depth,
+  })
+}
+
 async function poll() {
   clearTimeout(timer)
   try {
     run.value = await engine.discovery()
+    prefill(run.value)
   } catch (error) {
     showError(error)
   }
@@ -50,10 +82,19 @@ async function start() {
       card_count: form.card_count,
       min_roi_percent: form.min_roi_percent,
       sources: form.sources,
+      depth: form.depth,
     })
     void poll()
   } catch (error) {
     showError(error, 'Recherche impossible')
+  }
+}
+
+async function stop() {
+  try {
+    run.value = await engine.stopDiscovery()
+  } catch (error) {
+    showError(error)
   }
 }
 
@@ -102,6 +143,14 @@ function menu(pick: DiscoveryPick): DropdownMenuItem[] {
   ]
 }
 
+function toFavorite(pick: DiscoveryPick) {
+  return listingToFavorite(pick, {
+    game: run.value?.request?.game ?? 'pokemon',
+    card_label: pick.card_label,
+    cardmarket_product_id: pick.product.id_product,
+  })
+}
+
 function subtitle(pick: DiscoveryPick) {
   const product = pick.product.expansion_name
     ? `${pick.product.name} (${pick.product.expansion_name})`
@@ -135,6 +184,14 @@ const gameItems = selectItems(GAME_LABELS)
           <UFormField label="ROI minimum">
             <PercentInput v-model="form.min_roi_percent" :max="1000" />
           </UFormField>
+          <UFormField label="Profondeur" class="xl:col-span-2">
+            <USelect
+              v-model="form.depth"
+              :items="depthItems"
+              class="w-full"
+              :ui="{ itemDescription: 'text-xs' }"
+            />
+          </UFormField>
           <UFormField label="Sites" class="xl:col-span-2">
             <UCheckboxGroup
               v-model="form.sources"
@@ -164,10 +221,20 @@ const gameItems = selectItems(GAME_LABELS)
             <span>Recherche en cours…</span>
             <span class="text-muted tabular-nums">
               {{ run.searches_done }} / {{ run.searches_total }} recherches ·
-              {{ run.listings_seen }} annonces parcourues
+              {{ run.listings_seen.toLocaleString('fr-FR') }} annonces parcourues
             </span>
           </div>
           <UProgress :model-value="progress" />
+          <div class="flex justify-end">
+            <UButton
+              size="xs"
+              color="neutral"
+              variant="outline"
+              icon="i-lucide-square"
+              label="Arrêter et voir les résultats"
+              @click="stop"
+            />
+          </div>
         </div>
       </UCard>
 
@@ -189,8 +256,15 @@ const gameItems = selectItems(GAME_LABELS)
 
       <template v-else-if="run.status === 'done' || run.status === 'failed'">
         <p class="text-sm text-muted">
-          {{ run.listings_seen }} annonces parcourues · {{ run.listings_identified }} cartes
-          reconnues · {{ run.listings_priced }} avec une cote
+          <UBadge
+            v-if="run.stopped"
+            color="neutral"
+            variant="outline"
+            label="Recherche arrêtée"
+            class="mr-1"
+          />
+          {{ run.listings_seen.toLocaleString('fr-FR') }} annonces parcourues ·
+          {{ run.listings_identified }} cartes reconnues · {{ run.listings_priced }} avec une cote
           <template v-if="run.finished_at"> · {{ formatDateTime(run.finished_at) }}</template>
         </p>
 
@@ -256,6 +330,9 @@ const gameItems = selectItems(GAME_LABELS)
               :target-roi="targetRoi"
               :note="pick.warning ?? (pick.confidence === 'medium' ? pick.confidence_note : null)"
               :menu="menu(pick)"
+              favoritable
+              :favorite="!!favorites.find(pick.source, pick.external_id)"
+              @toggle-favorite="favorites.toggle(toFavorite(pick))"
             />
           </div>
         </section>
@@ -286,6 +363,9 @@ const gameItems = selectItems(GAME_LABELS)
               :target-roi="targetRoi"
               :note="pick.warning ?? (pick.confidence === 'medium' ? pick.confidence_note : null)"
               :menu="menu(pick)"
+              favoritable
+              :favorite="!!favorites.find(pick.source, pick.external_id)"
+              @toggle-favorite="favorites.toggle(toFavorite(pick))"
             />
           </div>
         </section>

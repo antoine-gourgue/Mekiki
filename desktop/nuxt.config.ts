@@ -30,6 +30,12 @@ export default defineNuxtConfig({
     clientBundle: { scan: true },
   },
 
+  // The dev server bundles icons once at start-up; icons added while it runs come from
+  // Iconify instead of rendering blank.
+  $development: {
+    icon: { provider: 'iconify', fallbackToApi: true },
+  },
+
   // Tauri expects a fixed port in dev and does not need the Nuxt dev server on the network.
   devServer: { host: 'localhost', port: 3000 },
 

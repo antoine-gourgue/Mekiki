@@ -309,6 +309,9 @@ export interface Deal {
   id: number
   tracked_card_id: number
   card_name: string
+  game: Game
+  cardmarket_product_id: number | null
+  target_price_cents: number | null
   source: SourcePlatform
   external_id: string
   title: string
@@ -407,7 +410,11 @@ export interface DiscoveryRequest {
   /** Left `null`, the scanner's ROI target from the settings. */
   min_roi_percent?: number | null
   sources?: ScannableSource[] | null
+  /** quick: ~1 500 listings in 1-2 min; deep: ~5 000 in ~5 min; max: 10 000+ in ~15 min. */
+  depth?: DiscoveryDepth
 }
+
+export type DiscoveryDepth = 'quick' | 'deep' | 'max'
 
 export interface DiscoveryPick {
   source: SourcePlatform
@@ -441,6 +448,8 @@ export interface DiscoveryTotals {
   net_cents: number
   margin_cents: number
   roi: number | null
+  /** Cards without a resale price: their cost counts, their resale does not. */
+  unpriced_count: number
 }
 
 export interface DiscoveryRun {
@@ -459,4 +468,51 @@ export interface DiscoveryRun {
   /** Other listings reaching the ROI target, best first. */
   alternatives: DiscoveryPick[]
   errors: string[]
+  /** Stopped by the user: the results cover the listings browsed until then. */
+  stopped: boolean
+}
+
+export interface FavoriteFields {
+  game: Game
+  source: SourcePlatform
+  external_id: string
+  title: string
+  price_jpy: number
+  shipping_included: boolean | null
+  url: string
+  thumbnail_url: string | null
+  listed_at: string | null
+  ends_at: string | null
+  bids: number | null
+  /** What the listing was read as, e.g. "SV2a 201/165 · SAR". */
+  card_label: string | null
+  cardmarket_product_id: number | null
+  /** Resale price chosen by hand; `null` uses the Cardmarket price. */
+  target_price_cents: number | null
+  in_cart: boolean
+  notes: string | null
+}
+
+export type FavoriteCreate = Partial<FavoriteFields> &
+  Pick<FavoriteFields, 'game' | 'source' | 'external_id' | 'title' | 'price_jpy' | 'url'>
+
+export type FavoriteUpdate = Partial<
+  Pick<FavoriteFields, 'in_cart' | 'target_price_cents' | 'notes'>
+>
+
+export interface Favorite extends FavoriteFields {
+  id: number
+  created_at: string
+  neokyo_url: string | null
+  product: MarketPrice | null
+  expected_sale_cents: number | null
+  /** In the cart: its share of the cart parcel. Otherwise: one card of a typical parcel. */
+  landed_cost: LandedCost
+  sale: SaleBreakdown | null
+}
+
+export interface Favorites {
+  items: Favorite[]
+  /** The cart priced as one parcel; `null` when it is empty. */
+  cart: DiscoveryTotals | null
 }

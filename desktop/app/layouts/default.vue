@@ -2,6 +2,7 @@
 import type { NavigationMenuItem } from '@nuxt/ui'
 
 const engine = useEngine()
+const favorites = useFavorites()
 
 // Good deals not looked at yet, shown as a badge; refreshed every 30 seconds.
 const unseenDeals = ref(0)
@@ -23,6 +24,12 @@ const links = computed<NavigationMenuItem[][]>(() => [
       icon: 'i-lucide-sparkles',
       to: '/affaires',
       badge: unseenDeals.value ? String(unseenDeals.value) : undefined,
+    },
+    {
+      label: 'Panier',
+      icon: 'i-lucide-shopping-basket',
+      to: '/panier',
+      badge: favorites.cartCount.value ? String(favorites.cartCount.value) : undefined,
     },
     { label: 'Recherche', icon: 'i-lucide-search', to: '/recherche' },
     { label: 'Cartes suivies', icon: 'i-lucide-eye', to: '/suivi' },
@@ -49,6 +56,7 @@ watch(
     if (value !== 'online' || ready.value) return
     ready.value = true
     void refreshUnseenDeals()
+    void favorites.refresh()
     dealsTimer = setInterval(refreshUnseenDeals, 30_000)
   },
   { immediate: true },
@@ -65,10 +73,7 @@ onBeforeUnmount(() => clearInterval(dealsTimer))
       :ui="{ footer: 'border-t border-default' }"
     >
       <template #header="{ collapsed }">
-        <div class="flex items-center gap-2 px-1">
-          <span class="text-lg font-semibold text-primary">目利き</span>
-          <span v-if="!collapsed" class="font-semibold text-highlighted">Mekiki</span>
-        </div>
+        <AppLogo :collapsed="collapsed" :class="collapsed ? 'mx-auto' : 'px-1'" />
       </template>
 
       <template #default="{ collapsed }">

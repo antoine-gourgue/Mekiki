@@ -6,6 +6,7 @@ const route = useRoute()
 const router = useRouter()
 const engine = useEngine()
 const showError = useErrorToast()
+const favorites = useFavorites()
 const toast = useToast()
 
 const cardFilter = computed<number | 'all'>({
@@ -115,6 +116,15 @@ function bought(deal: Deal) {
   }
   buying.value = true
   void setTriage(deal, 'bought')
+}
+
+function toFavorite(deal: Deal) {
+  return listingToFavorite(deal, {
+    game: deal.game,
+    card_label: deal.card_name,
+    cardmarket_product_id: deal.cardmarket_product_id,
+    target_price_cents: deal.target_price_cents,
+  })
 }
 
 function menu(deal: Deal): DropdownMenuItem[] {
@@ -247,6 +257,9 @@ const newCount = computed(() => (deals.value ?? []).filter((d) => d.triage === '
           :offline="!deal.online"
           :muted="deal.triage === 'dismissed' || deal.triage === 'bought'"
           :menu="menu(deal)"
+          favoritable
+          :favorite="!!favorites.find(deal.source, deal.external_id)"
+          @toggle-favorite="favorites.toggle(toFavorite(deal))"
         />
       </div>
 

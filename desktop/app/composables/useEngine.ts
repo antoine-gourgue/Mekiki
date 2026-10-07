@@ -6,6 +6,9 @@ import type {
   DealQuery,
   DiscoveryRequest,
   DiscoveryRun,
+  FavoriteCreate,
+  Favorites,
+  FavoriteUpdate,
   Game,
   DashboardQuery,
   InventoryQuery,
@@ -98,6 +101,14 @@ export function useEngine() {
     discovery: () => request<DiscoveryRun>('/discovery'),
     startDiscovery: (body: DiscoveryRequest) =>
       request<DiscoveryRun>('/discovery', { method: 'POST', body }),
+    stopDiscovery: () => request<DiscoveryRun>('/discovery/stop', { method: 'POST', body: {} }),
+    listFavorites: () => request<Favorites>('/favorites'),
+    addFavorite: (body: FavoriteCreate) =>
+      request<Favorites>('/favorites', { method: 'POST', body }),
+    updateFavorite: (id: number, body: FavoriteUpdate) =>
+      request<Favorites>(`/favorites/${id}`, { method: 'PATCH', body }),
+    deleteFavorite: (id: number) => request<Favorites>(`/favorites/${id}`, { method: 'DELETE' }),
+    emptyCart: () => request<Favorites>('/favorites/empty-cart', { method: 'POST', body: {} }),
     search: (body: SearchRequest) =>
       request<SearchResponse>('/search', { method: 'POST', body, timeout: 120_000 }),
   }

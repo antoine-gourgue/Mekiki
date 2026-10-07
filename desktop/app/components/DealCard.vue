@@ -24,7 +24,13 @@ const props = defineProps<{
   muted?: boolean
   note?: string | null
   menu?: DropdownMenuItem[]
+  /** Shows the star button. */
+  favoritable?: boolean
+  /** The listing is already a favorite. */
+  favorite?: boolean
 }>()
+
+const emit = defineEmits<{ toggleFavorite: [] }>()
 
 const roiColor = computed(() => {
   const roi = props.sale?.roi
@@ -131,6 +137,16 @@ const shippingLabel = computed(() => {
           />
           <span class="flex-1" />
           <UButton
+            v-if="favoritable"
+            size="xs"
+            :color="favorite ? 'warning' : 'neutral'"
+            :variant="favorite ? 'soft' : 'ghost'"
+            icon="i-lucide-star"
+            :aria-label="favorite ? 'Retirer des favoris' : 'Ajouter aux favoris'"
+            :class="{ '[&_svg]:fill-current': favorite }"
+            @click="emit('toggleFavorite')"
+          />
+          <UButton
             size="xs"
             color="neutral"
             variant="outline"
@@ -146,6 +162,7 @@ const shippingLabel = computed(() => {
             @click="openExternal(neokyoUrl)"
           />
         </div>
+        <slot />
       </div>
     </div>
   </UCard>

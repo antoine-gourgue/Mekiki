@@ -4,11 +4,13 @@ import type {
   MarketPrice,
   ScannableSource,
   SearchResponse,
+  SearchResult,
   TrackedCardCreate,
 } from '~/types/engine'
 
 const engine = useEngine()
 const showError = useErrorToast()
+const favorites = useFavorites()
 
 const { data: settings } = useAsyncData('settings', () => engine.getSettings())
 const targetRoi = computed(() => (settings.value?.scanner.min_roi_percent ?? 30) / 100)
@@ -25,6 +27,10 @@ const form = reactive({
 const product = ref<MarketPrice | null>(null)
 
 const response = ref<SearchResponse | null>(null)
+// What the shown results were searched with, to save them as favorites.
+const searched = ref<{ game: Game; product: MarketPrice | null; target: number | null } | null>(
+  null,
+)
 const searching = ref(false)
 const showRejected = ref(false)
 
@@ -43,11 +49,24 @@ async function search() {
       cardmarket_product_id: product.value?.id_product ?? null,
       expected_sale_cents: form.expected_sale_cents,
     })
+    searched.value = {
+      game: form.game,
+      product: product.value,
+      target: product.value ? null : form.expected_sale_cents,
+    }
   } catch (error) {
     showError(error, 'Recherche impossible')
   } finally {
     searching.value = false
   }
+}
+
+function toFavorite(result: SearchResult) {
+  return listingToFavorite(result, {
+    game: searched.value?.game ?? form.game,
+    cardmarket_product_id: searched.value?.product?.id_product ?? null,
+    target_price_cents: searched.value?.target ?? null,
+  })
 }
 
 const visible = computed(() =>
@@ -219,6 +238,9 @@ const gameItems = selectItems(GAME_LABELS)
                 :target-roi="targetRoi"
                 :muted="!result.matched"
                 :note="result.matched ? null : `Écartée : ${result.reject_reason}`"
+                favoritable
+                :favorite="!!favorites.find(result.source, result.external_id)"
+                @toggle-favorite="favorites.toggle(toFavorite(result))"
               />
             </div>
           </template>
