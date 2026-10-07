@@ -13,6 +13,7 @@ from mekiki_engine.costing.landed_cost import (
 )
 from mekiki_engine.costing.money import percent_to_fraction
 from mekiki_engine.costing.sale import SaleBreakdown, roi
+from mekiki_engine.domain import SalePlatform
 from mekiki_engine.models import CardmarketProduct
 from mekiki_engine.schemas import AppSettings, DiscoveryTotals
 from mekiki_engine.services.portfolio import (
@@ -91,11 +92,18 @@ def estimate_listing(
     return DealEstimate(landed=landed, sale=sale)
 
 
-def max_buy_price_jpy(settings: AppSettings, expected_sale_cents: int | None) -> int | None:
-    """Highest asking price (shipping included) that still reaches the scanner's ROI target."""
+def max_buy_price_jpy(
+    settings: AppSettings,
+    expected_sale_cents: int | None,
+    platform: SalePlatform | None = None,
+) -> int | None:
+    """Highest asking price (shipping included) that still reaches the scanner's ROI target.
+
+    The resale goes through ``platform``, by default the one set for the scanner.
+    """
     if expected_sale_cents is None:
         return None
-    sale = project_sale(settings, settings.scanner.resale_platform, expected_sale_cents)
+    sale = project_sale(settings, platform or settings.scanner.resale_platform, expected_sale_cents)
     return max_price_jpy_for_roi(
         lambda price: landed_cost_of_listing(settings, price, True),
         sale.net_cents,

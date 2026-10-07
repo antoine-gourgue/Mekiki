@@ -798,3 +798,39 @@ class ListingDraftOut(BaseModel):
     new_listing_url: str
     query: str
     links: ResaleLinks
+
+
+class ResaleOutlet(BaseModel):
+    """One way to resell a card: where, at what price, and what it would leave."""
+
+    platform: SalePlatform
+    sale_cents: int
+    # Where the price comes from, in French: "Cote Cardmarket, moyenne des ventes sur 30 jours".
+    basis: str
+    net_cents: int
+    # Highest price to pay in Japan, shipping included, to reach the target ROI.
+    max_buy_jpy: int | None
+    margin_cents: int | None
+    roi: float | None
+
+
+class VerdictSignal(BaseModel):
+    tone: Literal["positive", "warning", "negative", "neutral"]
+    text: str
+
+
+class CardVerdict(BaseModel):
+    """Is this card worth buying (or, once bought, where to sell it)?"""
+
+    # good: reaches the target ROI; fair: profitable below it; bad: loses money;
+    # suspicious: too cheap to be the real card; unknown: no resale price; limit: no
+    # buying price given, only the most to pay.
+    verdict: Literal["good", "fair", "bad", "suspicious", "unknown", "limit"]
+    headline: str
+    target_roi: float
+    price_jpy: int | None
+    landed_cents: int | None
+    # Best first.
+    outlets: list[ResaleOutlet]
+    signals: list[VerdictSignal]
+    prices: ResalePrices
