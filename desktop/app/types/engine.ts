@@ -547,3 +547,60 @@ export interface AccountUpdate {
   current_password?: string
   new_password?: string
 }
+
+/** Searches opened in the browser: the engine never fetches eBay or Vinted pages. */
+export interface ResaleLinks {
+  ebay_listings: string
+  ebay_sold: string
+  ebay_research: string
+  vinted: string
+}
+
+export interface EbayListing {
+  item_id: string
+  title: string
+  price_cents: number
+  shipping_cents: number | null
+  url: string
+  image_url: string | null
+  condition: string | null
+  country: string | null
+}
+
+export interface EbayPrices {
+  /** False when the engine has no eBay application keys: only the links work then. */
+  configured: boolean
+  error: string | null
+  total: number
+  min_cents: number | null
+  median_cents: number | null
+  max_cents: number | null
+  listings: EbayListing[]
+}
+
+export interface ResalePrices {
+  query: string
+  links: ResaleLinks
+  ebay: EbayPrices
+}
+
+export interface ResaleQuery {
+  q?: string
+  product_id?: number
+  /** Card label, e.g. "SV2a 201/165 · SAR", whose number refines a product search. */
+  label?: string
+}
+
+export type ListingSite = 'ebay' | 'vinted'
+
+export interface ListingDraft {
+  platform: ListingSite
+  title: string
+  description: string
+  price_cents: number | null
+  /** "listing" for the price already set, else the Cardmarket field it comes from. */
+  price_source: string | null
+  new_listing_url: string
+  query: string
+  links: ResaleLinks
+}

@@ -82,3 +82,13 @@ export const SCANNABLE_SOURCE_ITEMS: {
 
 /** Default marketplaces: Yahoo! JAPAN refuses visitors from Europe. */
 export const DEFAULT_SOURCES: ScannableSource[] = ['mercari', 'rakuma']
+
+/** Where a suggested listing price comes from (see ListingDraft.price_source). */
+export const PRICE_SOURCE_LABELS: Record<string, string> = {
+  listing: 'prix déjà enregistré',
+  avg30: 'moyenne des ventes Cardmarket sur 30 jours',
+  avg7: 'moyenne des ventes Cardmarket sur 7 jours',
+  avg: 'prix moyen Cardmarket',
+  avg1: 'ventes Cardmarket de la veille',
+  trend: 'tendance Cardmarket',
+}

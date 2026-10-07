@@ -127,8 +127,21 @@ function toFavorite(deal: Deal) {
   })
 }
 
+const showResale = useResaleModal()
+
 function menu(deal: Deal): DropdownMenuItem[] {
   return [
+    {
+      label: 'Prix en Europe (eBay, Vinted)',
+      icon: 'i-lucide-euro',
+      onSelect: () =>
+        showResale(
+          deal.card_name,
+          deal.cardmarket_product_id
+            ? { product_id: deal.cardmarket_product_id, label: deal.card_name }
+            : { q: deal.card_name },
+        ),
+    },
     {
       label: 'Acheté : ajouter au stock',
       icon: 'i-lucide-package-plus',

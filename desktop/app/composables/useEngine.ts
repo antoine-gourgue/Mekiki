@@ -22,9 +22,13 @@ import type {
   LotSummary,
   ListingTriage,
   LotUpdate,
+  ListingDraft,
+  ListingSite,
   LoginRequest,
   MarketPrice,
   RegisterRequest,
+  ResalePrices,
+  ResaleQuery,
   SaleUpsert,
   ScanStatus,
   SearchRequest,
@@ -138,6 +142,10 @@ export function useEngine() {
       request<Favorites>(`/favorites/${id}`, { method: 'PATCH', body }),
     deleteFavorite: (id: number) => request<Favorites>(`/favorites/${id}`, { method: 'DELETE' }),
     emptyCart: () => request<Favorites>('/favorites/empty-cart', { method: 'POST', body: {} }),
+    resalePrices: (query: ResaleQuery) =>
+      request<ResalePrices>('/resale/prices', { query, timeout: 30_000 }),
+    listingDraft: (itemId: number, platform: ListingSite) =>
+      request<ListingDraft>(`/items/${itemId}/listing-draft`, { query: { platform } }),
     search: (body: SearchRequest) =>
       request<SearchResponse>('/search', { method: 'POST', body, timeout: 120_000 }),
   }

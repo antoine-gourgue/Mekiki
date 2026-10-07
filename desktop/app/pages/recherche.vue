@@ -76,6 +76,19 @@ const rejectedCount = computed(
   () => (response.value?.results ?? []).filter((result) => !result.matched).length,
 )
 
+const showResale = useResaleModal()
+function resaleOfSearch() {
+  const number = form.card_number.trim() || undefined
+  if (product.value) {
+    showResale(product.value.name ?? form.query, {
+      product_id: product.value.id_product,
+      label: number,
+    })
+  } else {
+    showResale(form.query, { q: [form.query.trim(), number].filter(Boolean).join(' ') })
+  }
+}
+
 // "Suivre cette carte" turns the current search into a tracked card.
 const tracking = ref(false)
 const trackInitial = computed<Partial<TrackedCardCreate>>(() => ({
@@ -212,11 +225,21 @@ const gameItems = selectItems(GAME_LABELS)
                 </template>
                 <template v-else> · indiquez un prix de revente pour voir les marges</template>
               </p>
-              <USwitch
-                v-if="rejectedCount"
-                v-model="showRejected"
-                :label="`Afficher les ${rejectedCount} écartées`"
-              />
+              <div class="flex items-center gap-4">
+                <USwitch
+                  v-if="rejectedCount"
+                  v-model="showRejected"
+                  :label="`Afficher les ${rejectedCount} écartées`"
+                />
+                <UButton
+                  size="sm"
+                  color="neutral"
+                  variant="outline"
+                  icon="i-lucide-euro"
+                  label="Prix en Europe"
+                  @click="resaleOfSearch"
+                />
+              </div>
             </div>
 
             <div class="grid gap-3 2xl:grid-cols-2">

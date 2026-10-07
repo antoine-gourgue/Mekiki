@@ -128,8 +128,19 @@ function bought(pick: DiscoveryPick) {
   buying.value = true
 }
 
+const showResale = useResaleModal()
+
 function menu(pick: DiscoveryPick): DropdownMenuItem[] {
   return [
+    {
+      label: 'Prix en Europe (eBay, Vinted)',
+      icon: 'i-lucide-euro',
+      onSelect: () =>
+        showResale(pick.card_label, {
+          product_id: pick.product.id_product,
+          label: pick.card_label,
+        }),
+    },
     {
       label: 'Voir la cote sur Cardmarket',
       icon: 'i-lucide-chart-line',
