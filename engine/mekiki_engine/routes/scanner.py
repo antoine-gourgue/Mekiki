@@ -3,11 +3,12 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import Annotated
 
-from fastapi import APIRouter, Query, Request, status
+from fastapi import APIRouter, HTTPException, Query, Request, status
 
 from mekiki_engine.deps import SessionDep, SettingsDep, UserDep
 from mekiki_engine.domain import Game, ListingTriage
-from mekiki_engine.scanner import card_index, cardmarket, favorites, names, service
+from mekiki_engine.models import CardmarketProduct
+from mekiki_engine.scanner import card_index, cardmarket, favorites, names, service, tracking
 from mekiki_engine.scanner.discovery import DiscoveryJob, DiscoveryJobs
 from mekiki_engine.scanner.runner import ScannerWorker, search_once
 from mekiki_engine.scanner.sources.base import PoliteClient
@@ -27,6 +28,7 @@ from mekiki_engine.schemas import (
     SearchResponse,
     TrackedCardCreate,
     TrackedCardOut,
+    TrackedCardTemplate,
     TrackedCardUpdate,
 )
 
@@ -58,6 +60,17 @@ def create_tracked_card(
     payload: TrackedCardCreate, session: SessionDep, user: UserDep, settings: SettingsDep
 ) -> TrackedCardOut:
     return service.create_tracked_card(session, user.id, settings, payload)
+
+
+@router.get("/tracked-cards/template")
+def tracked_card_template(
+    product_id: int, session: SessionDep, _user: UserDep
+) -> TrackedCardTemplate:
+    """How to track a product: its Japanese name, number and search."""
+    product = session.get(CardmarketProduct, product_id)
+    if product is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="produit introuvable")
+    return TrackedCardTemplate.model_validate(tracking.template_for(session, product))
 
 
 @router.patch("/tracked-cards/{card_id}")

@@ -12,7 +12,8 @@ from sqlalchemy.orm import Session, selectinload
 from mekiki_engine.costing.sale import roi
 from mekiki_engine.domain import Game, ListingTriage, SourcePlatform
 from mekiki_engine.models import CardIndexEntry, CardmarketProduct, Listing, TrackedCard
-from mekiki_engine.scanner import links, names
+from mekiki_engine.scanner import links, names, tracking
+from mekiki_engine.scanner.identify import identify
 from mekiki_engine.scanner.matching import build_rule, match_title, split_keywords
 from mekiki_engine.scanner.pricing import (
     DealEstimate,
@@ -169,8 +170,16 @@ def create_tracked_card(
     values = payload.model_dump()
     values["game"] = payload.game.value
     values["search_query"] = payload.search_query or default_search_query(
-        payload.card_number, payload.name
+        payload.card_number,
+        names.translate(session, payload.game, payload.name, "ja") or payload.name,
     )
+    product = (
+        session.get(CardmarketProduct, payload.cardmarket_product_id)
+        if payload.cardmarket_product_id
+        else None
+    )
+    if not payload.search_query and product is not None:
+        values["search_query"] = tracking.template_for(session, product).search_query
     card = TrackedCard(**values, user_id=user_id)
     session.add(card)
     session.commit()
@@ -287,9 +296,9 @@ def mark_new_deals_seen(session: Session, user_id: int) -> int:
     return len(listings)
 
 
-def card_match_rule(card: TrackedCard, settings: AppSettings):  # type: ignore[no-untyped-def]
+def card_match_rule(card: TrackedCard, settings: AppSettings, *, with_number: bool = True):  # type: ignore[no-untyped-def]
     return build_rule(
-        card_number=card.card_number,
+        card_number=card.card_number if with_number else None,
         required=card.required_keywords,
         excluded=card.excluded_keywords,
         grading=card.grading,
@@ -317,12 +326,16 @@ def record_found_listings(
     Listings of ``unchecked_sources`` (searches that failed this time) keep counting as
     online rather than looking sold.
     """
-    rule = card_match_rule(card, settings)
     product = (
         session.get(CardmarketProduct, card.cardmarket_product_id)
         if card.cardmarket_product_id
         else None
     )
+    # A Japanese printing is matched on the title's set, number and version; the keyword
+    # rule still applies its exclusions, grading and required words.
+    printing = tracking.printing_of(session, product) if product is not None else None
+    rule = card_match_rule(card, settings, with_number=printing is None)
+    game = Game(card.game)
     expected = expected_sale_cents(card.target_price_cents, product)
     existing = {(listing.source, listing.external_id): listing for listing in card.listings}
     new_listings = new_deals = 0
@@ -331,6 +344,8 @@ def record_found_listings(
         if not within_price_bounds(card, item.price_jpy):
             continue
         if not match_title(item.title, rule).matched:
+            continue
+        if printing is not None and not tracking.is_printing(printing, identify(item.title, game)):
             continue
         key = (item.source.value, item.external_id)
         listing = existing.get(key)

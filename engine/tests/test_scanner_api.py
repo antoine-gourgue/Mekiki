@@ -23,8 +23,8 @@ def track_charizard(client: TestClient, **overrides: Any) -> dict[str, Any]:
     assert client.post("/cardmarket/refresh", json={}).status_code == 200
     body = {
         "game": "pokemon",
-        "name": "Charizard ex SAR",
-        "card_number": "201/165",
+        "name": "Charizard ex RR",
+        "card_number": "006/165",
         "cardmarket_product_id": 719448,
         **overrides,
     }
@@ -73,7 +73,8 @@ def test_price_reference_falls_back_when_avg30_is_missing(client: TestClient) ->
 def test_tracked_card_gets_a_query_a_price_and_a_buying_limit(client: TestClient) -> None:
     card = track_charizard(client)
 
-    assert card["search_query"] == "201/165"
+    # Tracked through its product: the Japanese name and number the listings write.
+    assert card["search_query"] == "リザードンex 006/165"
     assert card["expected_sale_cents"] == 9000
     assert card["market"]["id_product"] == 719448
     # Highest asking price still giving 30 % ROI on a 90 € Cardmarket resale.
@@ -92,11 +93,11 @@ def test_scan_keeps_matching_listings_and_finds_the_good_deal(
 ) -> None:
     card = track_charizard(client)
     marketplace.listings[SourcePlatform.MERCARI] = [
-        mercari("m1", "リザードンex SAR 201/165 ポケモンカード151", 4000),
-        mercari("m2", "リザードンex SAR 201/165 美品", 12000),
-        mercari("m3", "リザードンex SAR 201/165 PSA10", 30000),
+        mercari("m1", "リザードンex RR 006/165 ポケモンカード151", 4000),
+        mercari("m2", "リザードンex RR 006/165 美品", 12000),
+        mercari("m3", "リザードンex RR 006/165 PSA10", 30000),
         mercari("m4", "フシギバナex SAR 200/165", 3000),
-        mercari("m5", "SAR まとめ売り 201/165", 2000),
+        mercari("m5", "RR まとめ売り 006/165", 2000),
     ]
 
     status = scan(client)
@@ -105,7 +106,7 @@ def test_scan_keeps_matching_listings_and_finds_the_good_deal(
     assert status["cards_scanned"] == 1
     assert status["new_listings"] == 2
     assert status["new_deals"] == 1
-    assert (SourcePlatform.MERCARI, "201/165") in marketplace.queries
+    assert (SourcePlatform.MERCARI, "リザードンex 006/165") in marketplace.queries
 
     good = client.get("/deals", params={"min_roi_percent": 30}).json()
     assert [d["external_id"] for d in good] == ["m1"]
@@ -128,11 +129,11 @@ def test_sold_listings_go_offline_on_the_next_scan(
 ) -> None:
     track_charizard(client)
     marketplace.listings[SourcePlatform.MERCARI] = [
-        mercari("m1", "リザードンex 201/165", 4000),
-        mercari("m2", "リザードンex 201/165", 5000),
+        mercari("m1", "リザードンex 006/165", 4000),
+        mercari("m2", "リザードンex 006/165", 5000),
     ]
     scan(client)
-    marketplace.listings[SourcePlatform.MERCARI] = [mercari("m2", "リザードンex 201/165", 4500)]
+    marketplace.listings[SourcePlatform.MERCARI] = [mercari("m2", "リザードンex 006/165", 4500)]
 
     status = scan(client)
 
@@ -147,21 +148,21 @@ def test_a_failing_source_is_reported_and_keeps_its_listings_online(
     client: TestClient, marketplace: FakeMarketplace
 ) -> None:
     track_charizard(client)
-    marketplace.listings[SourcePlatform.MERCARI] = [mercari("m1", "リザードンex 201/165", 4000)]
+    marketplace.listings[SourcePlatform.MERCARI] = [mercari("m1", "リザードンex 006/165", 4000)]
     scan(client)
     marketplace.failures.add(SourcePlatform.MERCARI)
 
     status = scan(client)
 
-    assert "Mercari (Charizard ex SAR) : bloqué (test)" in status["last_error"]
+    assert "Mercari (Charizard ex RR) : bloqué (test)" in status["last_error"]
     assert [d["online"] for d in client.get("/deals").json()] == [True]
 
 
 def test_triage(client: TestClient, marketplace: FakeMarketplace) -> None:
     track_charizard(client)
     marketplace.listings[SourcePlatform.MERCARI] = [
-        mercari("m1", "リザードンex 201/165", 4000),
-        mercari("m2", "リザードンex 201/165", 4100),
+        mercari("m1", "リザードンex 006/165", 4000),
+        mercari("m2", "リザードンex 006/165", 4100),
     ]
     scan(client)
     first, second = client.get("/deals").json()
@@ -189,7 +190,7 @@ def test_deleting_a_tracked_card_deletes_its_listings(
     client: TestClient, marketplace: FakeMarketplace
 ) -> None:
     card = track_charizard(client)
-    marketplace.listings[SourcePlatform.MERCARI] = [mercari("m1", "リザードンex 201/165", 4000)]
+    marketplace.listings[SourcePlatform.MERCARI] = [mercari("m1", "リザードンex 006/165", 4000)]
     scan(client)
 
     assert client.delete(f"/tracked-cards/{card['id']}").status_code == 204
@@ -202,7 +203,7 @@ def test_one_off_search_prices_every_result(
     client.post("/cardmarket/refresh", json={})
     marketplace.listings[SourcePlatform.MERCARI] = [
         mercari("m9", "フシギバナex 200/165", 1000),
-        mercari("m1", "リザードンex 201/165", 4000),
+        mercari("m1", "リザードンex 006/165", 4000),
     ]
     marketplace.failures.add(SourcePlatform.YAHOO_AUCTIONS)
 
@@ -210,7 +211,7 @@ def test_one_off_search_prices_every_result(
         "/search",
         json={
             "query": "リザードン",
-            "card_number": "201/165",
+            "card_number": "006/165",
             "cardmarket_product_id": 719448,
             "sources": ["mercari", "yahoo_auctions"],
         },

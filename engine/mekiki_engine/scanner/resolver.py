@@ -100,6 +100,10 @@ class CatalogResolver:
             f"{len(versions)} versions japonaises sur Cardmarket : vérifiez laquelle",
         )
 
+    def one_piece_versions(self, code: str) -> list[CardmarketProduct]:
+        """Japanese versions of a One Piece code ("op05-119"): regular, parallel, manga."""
+        return self._one_piece_index().get(code.lower(), [])
+
     def _one_piece_index(self) -> dict[str, list[CardmarketProduct]]:
         if self._one_piece is None:
             by_code: dict[str, list[CardmarketProduct]] = {}

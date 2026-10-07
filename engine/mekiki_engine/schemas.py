@@ -838,3 +838,20 @@ class CardVerdict(BaseModel):
     outlets: list[ResaleOutlet]
     signals: list[VerdictSignal]
     prices: ResalePrices
+
+
+class TrackedCardTemplate(BaseModel):
+    """Fields to track a Cardmarket product, as Japanese listings write the card."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    game: Game
+    name: str
+    set_code: str | None
+    card_number: str | None
+    rarity: str | None
+    search_query: str
+    # Which printing this is: "SV2A 201/165 · SAR", "OP05-119 · parallèle".
+    label: str
+    # False for an English printing: Japanese listings sell another card.
+    japanese: bool

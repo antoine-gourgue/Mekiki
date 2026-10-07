@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import threading
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 
@@ -12,7 +13,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from mekiki_engine.domain import Game, SourcePlatform
 from mekiki_engine.models import CardmarketProduct, TrackedCard, User
-from mekiki_engine.scanner import card_index, cardmarket, links, names
+from mekiki_engine.scanner import card_index, cardmarket, links, names, tracking
 from mekiki_engine.scanner.matching import build_rule, match_title, split_keywords
 from mekiki_engine.scanner.pricing import estimate_listing, expected_sale_cents
 from mekiki_engine.scanner.service import (
@@ -45,6 +46,10 @@ SOURCE_LABELS = {
     SourcePlatform.YAHOO_FLEAMARKET: "Yahoo Fleamarket",
 }
 RESULTS_PER_SEARCH = 60
+# A tracked card is searched several ways, each over a few pages: the listings that name
+# it exactly are few among everything the marketplaces return.
+TRACKED_RESULTS_PER_PAGE = 120
+TRACKED_PAGES_PER_QUERY = 3
 
 SourceFactory = Callable[[SourcePlatform, PoliteClient, Game], Source]
 
@@ -85,22 +90,26 @@ def scan_tracked_cards(
         .where(TrackedCard.user_id == user_id, TrackedCard.active.is_(True))
         .order_by(TrackedCard.id)
     ).all()
-    sources: dict[tuple[SourcePlatform, Game], Source] = {}
     for card in cards:
         if should_stop():
             break
         game = Game(card.game)
-        found: list[FoundListing] = []
-        failed: set[str] = set()
-        for platform in settings.scanner.sources:
-            source = sources.get((platform, game))
-            if source is None:
-                source = sources[(platform, game)] = source_factory(platform, client, game)
-            try:
-                found += search_safely(source, card.search_query, limit=RESULTS_PER_SEARCH)
-            except SourceError as error:
-                failed.add(platform.value)
-                outcome.errors.append(f"{SOURCE_LABELS[platform]} ({card.name}) : {error}")
+        product = (
+            session.get(CardmarketProduct, card.cardmarket_product_id)
+            if card.cardmarket_product_id
+            else None
+        )
+        printing = tracking.printing_of(session, product) if product is not None else None
+        queries = tracking.search_queries(session, card, printing)
+        found, failed, errors = _search_card(
+            client,
+            source_factory,
+            settings.scanner.sources,
+            game,
+            queries,
+            should_stop=should_stop,
+        )
+        outcome.errors += [f"{source} ({card.name}) : {error}" for source, error in errors]
         new_listings, new_deals = record_found_listings(
             session, settings, card, found, now=utc_now(), unchecked_sources=failed
         )
@@ -108,6 +117,50 @@ def scan_tracked_cards(
         outcome.new_listings += new_listings
         outcome.new_deals += new_deals
     return outcome
+
+
+def _search_card(
+    client: PoliteClient,
+    source_factory: SourceFactory,
+    platforms: list[SourcePlatform],
+    game: Game,
+    queries: list[str],
+    *,
+    should_stop: Callable[[], bool],
+) -> tuple[list[FoundListing], set[str], list[tuple[str, str]]]:
+    """Every listing the ``queries`` find, over a few pages on each marketplace.
+
+    Returns the listings (each once), the marketplaces that failed and their errors.
+    """
+    found: dict[tuple[str, str], FoundListing] = {}
+    failed: set[str] = set()
+    errors: list[tuple[str, str]] = []
+    lock = threading.Lock()
+
+    def browse(platform: SourcePlatform) -> None:
+        source = source_factory(platform, client, game)
+        for query in queries:
+            for page in range(TRACKED_PAGES_PER_QUERY):
+                if should_stop():
+                    return
+                try:
+                    items = search_safely(source, query, limit=TRACKED_RESULTS_PER_PAGE, page=page)
+                except SourceError as error:
+                    with lock:
+                        failed.add(platform.value)
+                        errors.append((SOURCE_LABELS[platform], str(error)))
+                    return
+                with lock:
+                    for item in items:
+                        found.setdefault((item.source.value, item.external_id), item)
+                # A short page is the last one.
+                if len(items) < TRACKED_RESULTS_PER_PAGE:
+                    break
+
+    # Each site keeps its own pace (see PoliteClient), so sites are searched side by side.
+    with ThreadPoolExecutor(max_workers=len(platforms) or 1) as pool:
+        list(pool.map(browse, platforms))
+    return list(found.values()), failed, errors
 
 
 def search_once(
