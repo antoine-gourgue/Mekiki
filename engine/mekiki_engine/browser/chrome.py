@@ -57,7 +57,19 @@ class Tab:
             self._socket.send(json.dumps({"id": command_id, "method": method, "params": params}))
             while True:
                 message = json.loads(self._socket.recv())
-                # Events arrive between answers; only our answer matters here.
+                # A "leave this page?" prompt freezes the page until answered.
+                if message.get("method") == "Page.javascriptDialogOpening":
+                    self._socket.send(
+                        json.dumps(
+                            {
+                                "id": next(self._ids),
+                                "method": "Page.handleJavaScriptDialog",
+                                "params": {"accept": True},
+                            }
+                        )
+                    )
+                    continue
+                # Other events arrive between answers; only our answer matters here.
                 if message.get("id") != command_id:
                     continue
                 if "error" in message:
@@ -133,12 +145,41 @@ class Tab:
                 clickCount=1,
             )
 
+    def click_text(self, text: str, *, within: str = "body") -> None:
+        """Clicks the innermost visible element whose first line of text is ``text``."""
+        found = self.evaluate(
+            f"""(() => {{
+                const scope = document.querySelector({json.dumps(within)}) ?? document.body;
+                const first = (e) => (e.innerText || '').trim().split('\\n')[0].trim();
+                const all = [...scope.querySelectorAll(
+                    'li, button, a, label, [role=button], [role=option], div, span'
+                )].filter((e) => e.offsetParent && first(e) === {json.dumps(text)});
+                const target = all[all.length - 1];
+                if (!target) return false;
+                document.querySelectorAll('[data-mekiki-target]')
+                    .forEach((e) => e.removeAttribute('data-mekiki-target'));
+                target.setAttribute('data-mekiki-target', '');
+                return true;
+            }})()"""
+        )
+        if not found:
+            raise ChromeError(f"« {text} » introuvable sur la page")
+        self.click("[data-mekiki-target]")
+
+    def exists(self, selector: str) -> bool:
+        return bool(
+            self.evaluate(
+                f"(() => {{ const e = document.querySelector({json.dumps(selector)}); "
+                "return !!e && !!e.offsetParent; })()"
+            )
+        )
+
     def type_text(self, selector: str, text: str) -> None:
         """Replaces a field's text as typed from the keyboard."""
         self.click(selector)
         self.evaluate(
             f"(() => {{ const e = document.querySelector({json.dumps(selector)}); "
-            "e.focus(); if (e.select) e.select(); }})()"
+            "e.focus(); if (e.select) e.select(); })()"
         )
         self.call("Input.insertText", text=text)
 
@@ -202,6 +243,26 @@ class ChromeSession:
                 yield tab
             finally:
                 tab.close()
+
+    @contextmanager
+    def new_tab(self, url: str = "about:blank") -> Iterator[tuple[Tab, str]]:
+        """A tab of its own, e.g. for a listing form; the caller closes it with
+        ``close_tab`` when done, or leaves it open for the user to finish by hand."""
+        with self.lock:
+            self.start()
+            target = self._http.put(f"http://127.0.0.1:{self.port}/json/new?{url}").json()
+            tab = Tab(str(target["webSocketDebuggerUrl"]))
+            try:
+                tab.call("Page.enable")
+                tab.call("Page.bringToFront")
+                yield tab, str(target["id"])
+            finally:
+                tab.close()
+
+    def close_tab(self, target_id: str) -> None:
+        if self.port is not None:
+            with suppress(httpx.HTTPError):
+                self._http.get(f"http://127.0.0.1:{self.port}/json/close/{target_id}")
 
     def stop(self) -> None:
         if self.process is not None and self.process.poll() is None:

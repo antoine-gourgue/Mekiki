@@ -2,17 +2,23 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Request, status
 
+from mekiki_engine.browser import publish
 from mekiki_engine.browser.chrome import ChromeError
 from mekiki_engine.browser.service import Browsers, MarketPrices
-from mekiki_engine.deps import UserDep
+from mekiki_engine.deps import DataDirDep, SessionDep, UserDep
+from mekiki_engine.domain import Game, SalePlatform
 from mekiki_engine.schemas import (
     BrowserPricesOut,
     BrowserPricesRequest,
     BrowserSite,
     BrowserStatus,
     MarketListingOut,
+    PublishJobOut,
+    PublishRequest,
     SiteConnection,
 )
+from mekiki_engine.services import photos
+from mekiki_engine.services.portfolio import get_item
 
 router = APIRouter(prefix="/browser", tags=["browser"])
 
@@ -61,6 +67,49 @@ def site_prices(
         user.id, site, payload.query, payload.card_number, payload.names
     )
     return prices_out(prices)
+
+
+@router.post("/{site}/publish/{item_id}", status_code=status.HTTP_202_ACCEPTED)
+def publish_item(
+    site: BrowserSite,
+    item_id: int,
+    payload: PublishRequest,
+    request: Request,
+    session: SessionDep,
+    user: UserDep,
+    data_dir: DataDirDep,
+) -> PublishJobOut:
+    """Fills and sends the site's listing form in Chrome, in the background."""
+    item = get_item(session, user.id, item_id)
+    listing = publish.Listing(
+        game=Game(item.game),
+        title=payload.title,
+        description=payload.description,
+        price_cents=payload.price_cents,
+        photos=photos.item_photo_files(session, data_dir, user.id, item_id),
+        condition=item.condition,
+        grading=item.grading,
+    )
+    factory = request.app.state.session_factory
+
+    def mark_listed(_url: str) -> None:
+        # The card shows as for sale on this site, at this price.
+        with factory() as listed:
+            card = get_item(listed, user.id, item_id)
+            card.listing_platform = SalePlatform(site).value
+            card.listing_price_cents = payload.price_cents
+            listed.commit()
+
+    job = _browsers(request).publish(user.id, item_id, site, listing, mark_listed)
+    return PublishJobOut.model_validate(job)
+
+
+@router.get("/{site}/publish/{item_id}")
+def publish_status(
+    site: BrowserSite, item_id: int, request: Request, user: UserDep
+) -> PublishJobOut | None:
+    job = _browsers(request).publish_job(user.id, item_id, site)
+    return PublishJobOut.model_validate(job) if job else None
 
 
 def prices_out(prices: MarketPrices) -> BrowserPricesOut:

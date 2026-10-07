@@ -1,0 +1,109 @@
+import time
+from collections.abc import Iterator
+from contextlib import contextmanager
+from pathlib import Path
+from typing import Any
+
+import pytest
+from fastapi.testclient import TestClient
+from test_photos import JPEG, encoded, new_item
+
+from mekiki_engine.browser import publish, service
+from mekiki_engine.browser.chrome import ChromeError
+from mekiki_engine.browser.publish import _html, condition_grade, euros
+from mekiki_engine.browser.service import Browsers
+
+
+class FakeSession:
+    def __init__(self) -> None:
+        self.opened = 0
+        self.closed: list[str] = []
+        self.running = True
+
+    @contextmanager
+    def new_tab(self, url: str = "about:blank") -> Iterator[tuple[object, str]]:
+        self.opened += 1
+        yield object(), f"tab-{self.opened}"
+
+    def close_tab(self, target_id: str) -> None:
+        self.closed.append(target_id)
+
+    def stop(self) -> None:
+        self.running = False
+
+
+@pytest.fixture
+def chrome(client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
+    session = FakeSession()
+    client.app.state.browsers = Browsers(tmp_path, session_factory=lambda _profile: session)  # type: ignore[attr-defined,arg-type,return-value]
+    seen: dict[str, Any] = {"session": session, "listings": []}
+
+    def fake_vinted(_tab: object, listing: publish.Listing) -> str:
+        seen["listings"].append(listing)
+        return "https://www.vinted.fr/items/42-pikachu"
+
+    def failing_ebay(_tab: object, _listing: publish.Listing) -> str:
+        raise ChromeError("mise en vente eBay : le site n'a pas confirmé la publication")
+
+    monkeypatch.setitem(service.PUBLISHERS, "vinted", fake_vinted)
+    monkeypatch.setitem(service.PUBLISHERS, "ebay", failing_ebay)
+    return seen
+
+
+def wait_job(client: TestClient, site: str, item_id: int) -> dict[str, Any]:
+    for _ in range(50):
+        job = client.get(f"/browser/{site}/publish/{item_id}").json()
+        if job and job["status"] != "running":
+            return job  # type: ignore[no-any-return]
+        time.sleep(0.05)
+    raise AssertionError("the job never ended")
+
+
+def test_conditions_map_to_the_sites_grades() -> None:
+    assert condition_grade(None) == "mint"
+    assert condition_grade("Near Mint") == "mint"
+    assert condition_grade("Très bon état") == "excellent"
+    assert condition_grade("LP") == "excellent"
+    assert condition_grade("Bon état") == "good"
+    assert condition_grade("HP, coin abîmé") == "played"
+    assert euros(1250) == "12,50"
+    assert _html("Carte : Pikachu.\nÉtat : NM\n\nEnvoi <soigné>") == (
+        "<p>Carte : Pikachu.<br>État : NM</p><p>Envoi &lt;soigné&gt;</p>"
+    )
+
+
+def test_a_published_card_is_marked_for_sale(client: TestClient, chrome: dict[str, Any]) -> None:
+    item = new_item(client)
+    client.post(f"/items/{item['id']}/photos", json=encoded(JPEG))
+    body = {"title": "Pikachu 025/165", "description": "Carte japonaise.", "price_cents": 1500}
+
+    started = client.post(f"/browser/vinted/publish/{item['id']}", json=body)
+    job = wait_job(client, "vinted", item["id"])
+
+    assert started.status_code == 202
+    assert job["status"] == "done"
+    assert job["url"] == "https://www.vinted.fr/items/42-pikachu"
+    [listing] = chrome["listings"]
+    assert listing.title == "Pikachu 025/165"
+    assert len(listing.photos) == 1 and listing.photos[0].is_file()
+    assert chrome["session"].closed == ["tab-1"]
+    stored = client.get(f"/items/{item['id']}").json()
+    assert (stored["listing_platform"], stored["listing_price_cents"]) == ("vinted", 1500)
+
+
+def test_a_failed_publication_leaves_the_form_open(
+    client: TestClient, chrome: dict[str, Any]
+) -> None:
+    item = new_item(client)
+    body = {"title": "Pikachu 025/165", "description": "Carte japonaise.", "price_cents": 1500}
+
+    client.post(f"/browser/ebay/publish/{item['id']}", json=body)
+    job = wait_job(client, "ebay", item["id"])
+
+    assert job["status"] == "failed"
+    assert "n'a pas confirmé" in job["error"]
+    assert chrome["session"].closed == []
+    assert client.get(f"/items/{item['id']}").json()["listing_platform"] is None
+    assert client.get("/browser/ebay/publish/999").json() is None
+    other = client.post("/browser/vinted/publish/999", json=body)
+    assert other.status_code == 404

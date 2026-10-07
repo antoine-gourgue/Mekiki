@@ -7,9 +7,10 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Literal
 
-from mekiki_engine.browser import markets
-from mekiki_engine.browser.chrome import ChromeError, ChromeSession, find_chrome
+from mekiki_engine.browser import markets, publish
+from mekiki_engine.browser.chrome import ChromeError, ChromeSession, Tab, find_chrome
 from mekiki_engine.browser.markets import MarketListing, Site
 
 # Prices read in Chrome are reused for an hour: reading them again means loading the page.
@@ -31,6 +32,24 @@ class MarketPrices:
 
 
 @dataclass(slots=True)
+class PublishJob:
+    """A listing being published in Chrome, and how it ended."""
+
+    site: Site
+    item_id: int
+    started_at: str
+    status: Literal["running", "done", "failed"] = "running"
+    url: str | None = None
+    error: str | None = None
+
+
+PUBLISHERS: dict[Site, Callable[[Tab, publish.Listing], str]] = {
+    "vinted": publish.publish_vinted,
+    "ebay": publish.publish_ebay,
+}
+
+
+@dataclass(slots=True)
 class _Cached:
     at: float
     prices: MarketPrices
@@ -44,6 +63,7 @@ class Browsers:
     session_factory: Callable[[Path], ChromeSession] = ChromeSession
     _sessions: dict[int, ChromeSession] = field(default_factory=dict)
     _cache: dict[tuple[int, Site, str], _Cached] = field(default_factory=dict)
+    _jobs: dict[tuple[int, int, Site], PublishJob] = field(default_factory=dict)
     _lock: threading.Lock = field(default_factory=threading.Lock)
 
     @staticmethod
@@ -111,6 +131,56 @@ class Browsers:
                 if entry and now - entry.at < CACHE_S:
                     found[site] = entry.prices
         return found
+
+    def publish(
+        self,
+        user_id: int,
+        item_id: int,
+        site: Site,
+        listing: publish.Listing,
+        on_published: Callable[[str], None],
+    ) -> PublishJob:
+        """Starts publishing in the background; a running job for the same card is reused.
+
+        On success the tab closes and ``on_published`` gets the listing's address; on failure
+        the tab stays open on the form, for the user to finish by hand.
+        """
+        key = (user_id, item_id, site)
+        with self._lock:
+            running = self._jobs.get(key)
+            if running is not None and running.status == "running":
+                return running
+            job = PublishJob(site=site, item_id=item_id, started_at=markets.utc_now())
+            self._jobs[key] = job
+        session = self.session(user_id)
+
+        def run() -> None:
+            try:
+                with session.new_tab() as (tab, target):
+                    url = PUBLISHERS[site](tab, listing)
+                session.close_tab(target)
+                job.url = url
+                # The card is marked for sale before the job reads as done.
+                try:
+                    on_published(url)
+                # The listing is online whatever happens to the card's record.
+                except Exception as error:
+                    job.error = f"annonce publiée, mais la carte n'a pas été mise à jour : {error}"
+                job.status = "done"
+            except ChromeError as error:
+                job.error = str(error)
+                job.status = "failed"
+            # A job must always end, or the app would wait on it forever.
+            except Exception as error:
+                job.error = f"erreur inattendue : {error}"
+                job.status = "failed"
+
+        threading.Thread(target=run, name=f"publish-{site}-{item_id}", daemon=True).start()
+        return job
+
+    def publish_job(self, user_id: int, item_id: int, site: Site) -> PublishJob | None:
+        with self._lock:
+            return self._jobs.get((user_id, item_id, site))
 
     def stop_all(self) -> None:
         with self._lock:
