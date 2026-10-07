@@ -56,6 +56,14 @@ function bought(item: Favorite) {
 }
 
 const showResale = useResaleModal()
+const drawer = useDrawer()
+
+function openFavorite(item: Favorite) {
+  drawer.open({
+    kind: 'listing',
+    listing: { ...item, product_id: item.cardmarket_product_id, label: item.card_label },
+  })
+}
 
 function menu(item: Favorite): DropdownMenuItem[] {
   return [
@@ -208,6 +216,7 @@ function subtitle(item: Favorite) {
               :sale="item.sale"
               :target-roi="targetRoi"
               :menu="menu(item)"
+              @open="openFavorite(item)"
             >
               <USwitch
                 class="mt-3"
@@ -243,6 +252,7 @@ function subtitle(item: Favorite) {
               :sale="item.sale"
               :target-roi="targetRoi"
               :menu="menu(item)"
+              @open="openFavorite(item)"
             >
               <USwitch
                 class="mt-3"

@@ -2,6 +2,7 @@ import type {
   AccountUpdate,
   AppSettings,
   AuthResponse,
+  CardVerdict,
   CardmarketStatus,
   Dashboard,
   Deal,
@@ -38,8 +39,10 @@ import type {
   SimulationResult,
   TrackedCard,
   TrackedCardCreate,
+  TrackedCardTemplate,
   TrackedCardUpdate,
   User,
+  VerdictQuery,
 } from '~/types/engine'
 
 /**
@@ -92,6 +95,7 @@ export function useEngine() {
       await request(`/lots/${id}`, { method: 'DELETE' })
     },
 
+    getItem: (id: number) => request<Item>(`/items/${id}`),
     addItem: (lotId: number, body: ItemCreate) =>
       request<Item>(`/lots/${lotId}/items`, { method: 'POST', body }),
     updateItem: (id: number, body: ItemUpdate) =>
@@ -123,6 +127,10 @@ export function useEngine() {
       request<SimulationResult>('/simulate', { method: 'POST', body }),
 
     listTrackedCards: () => request<TrackedCard[]>('/tracked-cards'),
+    trackedCardTemplate: (productId: number) =>
+      request<TrackedCardTemplate>('/tracked-cards/template', {
+        query: { product_id: productId },
+      }),
     createTrackedCard: (body: TrackedCardCreate) =>
       request<TrackedCard>('/tracked-cards', { method: 'POST', body }),
     updateTrackedCard: (id: number, body: TrackedCardUpdate) =>
@@ -133,6 +141,7 @@ export function useEngine() {
 
     searchProducts: (game: Game, q: string) =>
       request<MarketPrice[]>('/cardmarket/products', { query: { game, q } }),
+    getProduct: (id: number) => request<MarketPrice>(`/cardmarket/products/${id}`),
     cardmarketStatus: () => request<CardmarketStatus[]>('/cardmarket/status'),
     refreshCardmarket: () =>
       request<CardmarketStatus[]>('/cardmarket/refresh', { method: 'POST', body: {} }),
@@ -158,6 +167,8 @@ export function useEngine() {
     emptyCart: () => request<Favorites>('/favorites/empty-cart', { method: 'POST', body: {} }),
     resalePrices: (query: ResaleQuery) =>
       request<ResalePrices>('/resale/prices', { query, timeout: 30_000 }),
+    verdict: (query: VerdictQuery) =>
+      request<CardVerdict>('/resale/verdict', { query, timeout: 30_000 }),
     listingDraft: (itemId: number, platform: ListingSite) =>
       request<ListingDraft>(`/items/${itemId}/listing-draft`, { query: { platform } }),
     search: (body: SearchRequest) =>

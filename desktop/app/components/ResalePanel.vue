@@ -5,7 +5,11 @@ import type { ResalePrices, ResaleQuery } from '~/types/engine'
  * What a card sells for in Europe: live eBay listings when the engine has eBay keys, and
  * links to eBay's sold listings and to Vinted, which only the user's browser may open.
  */
-const props = defineProps<{ query: ResaleQuery }>()
+const props = defineProps<{
+  query: ResaleQuery
+  /** Prices already fetched with the query (by a verdict): shown without a new request. */
+  initial?: ResalePrices | null
+}>()
 
 const engine = useEngine()
 
@@ -30,7 +34,14 @@ async function load(query: ResaleQuery) {
 // Parents pass a fresh object on every render: only a different search reloads.
 watch(
   () => JSON.stringify(props.query),
-  () => load(props.query),
+  () => {
+    if (props.initial && !prices.value) {
+      prices.value = props.initial
+      search.value = props.initial.query
+    } else {
+      void load(props.query)
+    }
+  },
   { immediate: true },
 )
 

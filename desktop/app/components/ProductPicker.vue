@@ -74,7 +74,7 @@ function pick(picked: MarketPrice) {
       v-model="query"
       icon="i-lucide-search"
       :loading="searching"
-      placeholder="Chercher dans le catalogue Cardmarket (nom anglais ou n° de produit)"
+      placeholder="Chercher dans le catalogue Cardmarket (nom français, anglais ou n° de produit)"
       class="w-full"
     />
     <ul
@@ -88,7 +88,10 @@ function pick(picked: MarketPrice) {
           @click="pick(result)"
         >
           <span class="min-w-0">
-            <span class="block truncate">{{ result.name }}</span>
+            <span class="flex items-center gap-2">
+              <span class="truncate">{{ result.name }}</span>
+              <UBadge v-if="result.japanese" label="JP" size="sm" variant="subtle" />
+            </span>
             <span class="block truncate text-xs text-muted">
               {{ result.expansion_name ?? 'Extension inconnue' }} · n° {{ result.id_product }}
             </span>
@@ -100,7 +103,7 @@ function pick(picked: MarketPrice) {
       </li>
     </ul>
     <p v-else-if="query.trim().length >= 2 && !searching" class="text-xs text-muted">
-      Aucun produit. Les noms sont en anglais sur Cardmarket, même pour les éditions japonaises.
+      Aucun produit. Essayez le nom anglais, français ou le numéro de produit Cardmarket.
     </p>
   </div>
 </template>

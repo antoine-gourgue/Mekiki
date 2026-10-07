@@ -41,6 +41,18 @@ function open(item: Item, modal: 'listing' | 'sale' | 'edit') {
   editOpen.value = modal === 'edit'
 }
 
+/** "Pokémon · SV2A 201/165 · Colis de mai" */
+function cardLine(item: Item) {
+  const number = [item.set_code?.toUpperCase(), item.card_number].filter(Boolean).join(' ')
+  return [GAME_LABELS[item.game], number, item.lot_label].filter(Boolean).join(' · ')
+}
+
+// The side panel walks through the cards in the order shown.
+const drawer = useDrawer()
+function showItem(item: Item) {
+  drawer.open({ kind: 'item', id: item.id, siblings: (items.value ?? []).map((row) => row.id) })
+}
+
 async function deleteItem(item: Item) {
   const confirmed = await confirm({
     title: `Supprimer « ${item.name} » ?`,
@@ -143,13 +155,10 @@ const totals = computed(() => {
           empty="Aucune carte ne correspond à ces filtres."
         >
           <template #name-cell="{ row }">
-            <p class="font-medium text-highlighted">{{ row.original.name }}</p>
-            <p class="text-xs text-muted">
-              {{ GAME_LABELS[row.original.game] }}
-              <template v-if="row.original.set_code"> · {{ row.original.set_code }}</template>
-              <template v-if="row.original.card_number"> {{ row.original.card_number }}</template>
-              · {{ row.original.lot_label }}
-            </p>
+            <button type="button" class="text-left" @click="showItem(row.original)">
+              <p class="font-medium text-highlighted hover:underline">{{ row.original.name }}</p>
+              <p class="text-xs text-muted">{{ cardLine(row.original) }}</p>
+            </button>
           </template>
           <template #status-cell="{ row }">
             <UBadge

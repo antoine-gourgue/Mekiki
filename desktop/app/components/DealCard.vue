@@ -30,7 +30,8 @@ const props = defineProps<{
   favorite?: boolean
 }>()
 
-const emit = defineEmits<{ toggleFavorite: [] }>()
+// `open` asks for the listing's side panel (see ListingDrawer).
+const emit = defineEmits<{ toggleFavorite: []; open: [] }>()
 
 const roiColor = computed(() => {
   const roi = props.sale?.roi
@@ -48,7 +49,12 @@ const shippingLabel = computed(() => {
 <template>
   <UCard :class="{ 'opacity-60': muted }" :ui="{ body: 'p-3 sm:p-3' }">
     <div class="flex gap-3">
-      <div class="size-24 shrink-0 overflow-hidden rounded-md bg-elevated">
+      <button
+        type="button"
+        class="size-24 shrink-0 overflow-hidden rounded-md bg-elevated"
+        aria-label="Ouvrir la fiche de l’annonce"
+        @click="emit('open')"
+      >
         <img
           v-if="thumbnailUrl"
           :src="thumbnailUrl"
@@ -58,13 +64,18 @@ const shippingLabel = computed(() => {
           class="size-full object-cover"
         />
         <UIcon v-else name="i-lucide-image-off" class="m-auto mt-9 size-6 text-muted" />
-      </div>
+      </button>
 
       <div class="min-w-0 flex-1">
         <div class="flex items-start justify-between gap-2">
-          <p class="line-clamp-2 text-sm font-medium text-highlighted" :title="title">
+          <button
+            type="button"
+            class="line-clamp-2 text-left text-sm font-medium text-highlighted hover:underline"
+            :title="title"
+            @click="emit('open')"
+          >
             {{ title }}
-          </p>
+          </button>
           <UDropdownMenu v-if="menu?.length" :items="menu" :content="{ align: 'end' }">
             <UButton
               icon="i-lucide-ellipsis-vertical"

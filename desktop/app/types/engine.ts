@@ -293,6 +293,8 @@ export interface MarketPrice {
   /** avg30, else avg7, avg, avg1, trend; never low. */
   reference_cents: number | null
   reference_field: string | null
+  /** A Japanese printing: the one Japanese listings sell. */
+  japanese: boolean
 }
 
 export interface TrackedCard extends TrackedCardFields {
@@ -395,6 +397,8 @@ export interface SearchResult {
 }
 
 export interface SearchResponse {
+  /** What was searched: card names translated to Japanese. */
+  searched_query: string
   expected_sale_cents: number | null
   results: SearchResult[]
   /** Sources that failed, with the reason. */
@@ -611,4 +615,59 @@ export interface ItemPhoto {
   content_type: string
   /** 0 is the main photo, shown first in listings. */
   position: number
+}
+
+export interface ResaleOutlet {
+  platform: SalePlatform
+  sale_cents: number
+  /** Where the price comes from, e.g. "Cote Cardmarket, moyenne des ventes sur 30 jours". */
+  basis: string
+  net_cents: number
+  /** Highest price to pay in Japan, shipping included, to reach the target ROI. */
+  max_buy_jpy: number | null
+  margin_cents: number | null
+  roi: number | null
+}
+
+export interface VerdictSignal {
+  tone: 'positive' | 'warning' | 'negative' | 'neutral'
+  text: string
+}
+
+export type Verdict = 'good' | 'fair' | 'bad' | 'suspicious' | 'unknown' | 'limit'
+
+export interface CardVerdict {
+  verdict: Verdict
+  headline: string
+  target_roi: number
+  price_jpy: number | null
+  landed_cents: number | null
+  /** Best first. */
+  outlets: ResaleOutlet[]
+  signals: VerdictSignal[]
+  prices: ResalePrices
+}
+
+/** A card in stock, a Japanese listing (with its price) or a catalog product. */
+export interface VerdictQuery {
+  item_id?: number
+  product_id?: number
+  label?: string
+  q?: string
+  price_jpy?: number
+  shipping_included?: boolean
+}
+
+/** How to track a Cardmarket product, as Japanese listings write the card. */
+export interface TrackedCardTemplate {
+  game: Game
+  name: string
+  set_code: string | null
+  card_number: string | null
+  rarity: string | null
+  search_query: string
+  /** Which printing this is: "SV2A 201/165 · SAR", "OP05-119 · parallèle". */
+  label: string
+  /** False for an English printing: Japanese listings sell another card. */
+  japanese: boolean
 }

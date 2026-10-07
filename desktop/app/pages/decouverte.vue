@@ -129,6 +129,19 @@ function bought(pick: DiscoveryPick) {
 }
 
 const showResale = useResaleModal()
+const drawer = useDrawer()
+
+function openPick(pick: DiscoveryPick) {
+  drawer.open({
+    kind: 'listing',
+    listing: {
+      ...pick,
+      game: run.value?.request?.game ?? 'pokemon',
+      product_id: pick.product.id_product,
+      label: pick.card_label,
+    },
+  })
+}
 
 function menu(pick: DiscoveryPick): DropdownMenuItem[] {
   return [
@@ -344,6 +357,7 @@ const gameItems = selectItems(GAME_LABELS)
               favoritable
               :favorite="!!favorites.find(pick.source, pick.external_id)"
               @toggle-favorite="favorites.toggle(toFavorite(pick))"
+              @open="openPick(pick)"
             />
           </div>
         </section>
@@ -377,6 +391,7 @@ const gameItems = selectItems(GAME_LABELS)
               favoritable
               :favorite="!!favorites.find(pick.source, pick.external_id)"
               @toggle-favorite="favorites.toggle(toFavorite(pick))"
+              @open="openPick(pick)"
             />
           </div>
         </section>

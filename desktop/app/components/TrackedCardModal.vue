@@ -1,6 +1,12 @@
 <script setup lang="ts">
 import type { FormError } from '@nuxt/ui'
-import type { Game, MarketPrice, TrackedCard, TrackedCardCreate } from '~/types/engine'
+import type {
+  Game,
+  MarketPrice,
+  TrackedCard,
+  TrackedCardCreate,
+  TrackedCardTemplate,
+} from '~/types/engine'
 
 /** Adds a card to the watch list, or edits `card` when given. */
 const props = defineProps<{
@@ -62,9 +68,23 @@ watch(open, (isOpen) => {
   product.value = props.card?.market ?? props.initialProduct ?? null
 })
 
-// Picking a product names an empty card after it.
-watch(product, (picked) => {
-  if (picked?.name && !state.name) state.name = picked.name
+// Picking a product fills the card as Japanese listings write it: name, number, search.
+const printing = ref<TrackedCardTemplate | null>(null)
+watch(product, async (picked) => {
+  printing.value = null
+  if (!picked) return
+  try {
+    const template = await engine.trackedCardTemplate(picked.id_product)
+    printing.value = template
+    if (props.card) return
+    state.name = template.name
+    state.set_code = template.set_code ?? ''
+    state.card_number = template.card_number ?? ''
+    state.rarity = template.rarity ?? ''
+    state.search_query = template.search_query
+  } catch {
+    if (picked.name && !state.name) state.name = picked.name
+  }
 })
 
 function validate(form: TrackedCardForm): FormError[] {
@@ -148,6 +168,18 @@ const gameItems = selectItems(GAME_LABELS)
         <USeparator label="Cote Cardmarket" />
         <div class="space-y-3">
           <ProductPicker v-model="product" :game="state.game" />
+          <UAlert
+            v-if="printing"
+            :color="printing.japanese ? 'success' : 'warning'"
+            variant="subtle"
+            :icon="printing.japanese ? 'i-lucide-badge-check' : 'i-lucide-triangle-alert'"
+            :title="printing.japanese ? `Impression japonaise : ${printing.label}` : printing.label"
+            :description="
+              printing.japanese
+                ? 'Seules les annonces de cette impression exacte seront gardées.'
+                : 'Choisissez la version japonaise de la carte dans le catalogue.'
+            "
+          />
           <UFormField
             label="Prix de revente visé"
             name="target_price_cents"

@@ -128,6 +128,14 @@ function toFavorite(deal: Deal) {
 }
 
 const showResale = useResaleModal()
+const drawer = useDrawer()
+
+function openDeal(deal: Deal) {
+  drawer.open({
+    kind: 'listing',
+    listing: { ...deal, product_id: deal.cardmarket_product_id, label: deal.card_name },
+  })
+}
 
 function menu(deal: Deal): DropdownMenuItem[] {
   return [
@@ -273,6 +281,7 @@ const newCount = computed(() => (deals.value ?? []).filter((d) => d.triage === '
           favoritable
           :favorite="!!favorites.find(deal.source, deal.external_id)"
           @toggle-favorite="favorites.toggle(toFavorite(deal))"
+          @open="openDeal(deal)"
         />
       </div>
 

@@ -87,6 +87,11 @@ onBeforeUnmount(() => clearInterval(dealsTimer))
       </template>
 
       <template #default="{ collapsed }">
+        <UDashboardSearchButton
+          :collapsed="collapsed"
+          label="Rechercher…"
+          class="bg-transparent ring-default"
+        />
         <UNavigationMenu :collapsed="collapsed" :items="links" orientation="vertical" tooltip />
       </template>
 
@@ -131,6 +136,9 @@ onBeforeUnmount(() => clearInterval(dealsTimer))
         </div>
       </template>
     </UDashboardSidebar>
+
+    <AppSearch :links="links" />
+    <DrawerHost />
 
     <slot v-if="ready" />
     <UDashboardPanel v-else id="engine-wait">

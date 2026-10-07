@@ -77,6 +77,19 @@ const rejectedCount = computed(
 )
 
 const showResale = useResaleModal()
+const drawer = useDrawer()
+
+function openResult(result: SearchResult) {
+  drawer.open({
+    kind: 'listing',
+    listing: {
+      ...result,
+      game: searched.value?.game ?? form.game,
+      product_id: searched.value?.product?.id_product ?? null,
+      label: searched.value?.product?.name ?? null,
+    },
+  })
+}
 function resaleOfSearch() {
   const number = form.card_number.trim() || undefined
   if (product.value) {
@@ -224,6 +237,11 @@ const gameItems = selectItems(GAME_LABELS)
                   · revente estimée {{ formatCents(response.expected_sale_cents) }}
                 </template>
                 <template v-else> · indiquez un prix de revente pour voir les marges</template>
+                <template
+                  v-if="response.searched_query && response.searched_query !== form.query.trim()"
+                >
+                  · recherché en japonais : « {{ response.searched_query }} »
+                </template>
               </p>
               <div class="flex items-center gap-4">
                 <USwitch
@@ -264,6 +282,7 @@ const gameItems = selectItems(GAME_LABELS)
                 favoritable
                 :favorite="!!favorites.find(result.source, result.external_id)"
                 @toggle-favorite="favorites.toggle(toFavorite(result))"
+                @open="openResult(result)"
               />
             </div>
           </template>
