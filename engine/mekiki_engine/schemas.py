@@ -4,9 +4,16 @@ from __future__ import annotations
 
 from datetime import date
 from decimal import Decimal
-from typing import Annotated
+from typing import Annotated, ClassVar, Self
 
-from pydantic import BaseModel, ConfigDict, Field, PlainSerializer, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    PlainSerializer,
+    field_validator,
+    model_validator,
+)
 
 from mekiki_engine.domain import Game, ItemStatus, LotStatus, SalePlatform, SourcePlatform
 
@@ -17,6 +24,24 @@ Percent = Annotated[Rate, Field(ge=0, le=100)]
 Cents = Annotated[int, Field(ge=0)]
 Yen = Annotated[int, Field(ge=0)]
 ShortText = Annotated[str, Field(min_length=1, max_length=200)]
+
+
+class PartialUpdate(BaseModel):
+    """PATCH body: only the fields sent are applied, and ``null`` clears a field.
+
+    Fields absent from ``NULLABLE`` map to NOT NULL columns, so ``null`` is refused for them.
+    """
+
+    NULLABLE: ClassVar[frozenset[str]] = frozenset()
+
+    @model_validator(mode="after")
+    def _reject_null_on_required_fields(self) -> Self:
+        cleared = sorted(
+            name for name in self.model_fields_set - self.NULLABLE if getattr(self, name) is None
+        )
+        if cleared:
+            raise ValueError(f"cannot be null: {', '.join(cleared)}")
+        return self
 
 
 class PlatformFeeSettings(BaseModel):
@@ -82,7 +107,20 @@ class LotCreate(LotFields):
     handling_fee_cents: Cents | None = None
 
 
-class LotUpdate(BaseModel):
+class LotUpdate(PartialUpdate):
+    # ``import_vat_cents: null`` switches the lot back to an estimated VAT.
+    NULLABLE = frozenset(
+        {
+            "import_vat_cents",
+            "shipping_method",
+            "tracking_number",
+            "ordered_on",
+            "shipped_on",
+            "received_on",
+            "notes",
+        }
+    )
+
     label: ShortText | None = None
     proxy: ShortText | None = None
     status: LotStatus | None = None
@@ -127,7 +165,22 @@ class ItemCreate(ItemFields):
     service_fee_jpy: Yen | None = None
 
 
-class ItemUpdate(BaseModel):
+class ItemUpdate(PartialUpdate):
+    NULLABLE = frozenset(
+        {
+            "set_code",
+            "card_number",
+            "rarity",
+            "condition",
+            "grading",
+            "source_url",
+            "cardmarket_product_id",
+            "listing_platform",
+            "listing_price_cents",
+            "notes",
+        }
+    )
+
     lot_id: int | None = None
     game: Game | None = None
     name: ShortText | None = None
@@ -216,8 +269,11 @@ class LotOut(LotFields):
     handling_fee_cents: int
     item_count: int
     sold_count: int
+    # Card prices plus Japanese domestic shipping: what the sellers were paid.
     goods_jpy: int
     landed_total_cents: int
+    # The carrier's amount once entered, the estimate until then.
+    applied_import_vat_cents: int
     vat_estimated: bool
 
 
