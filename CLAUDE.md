@@ -39,6 +39,27 @@ cd desktop && npm run lint && npm run format:check && npm run typecheck && npm r
 - `desktop/app/types/engine.ts` reflète `engine/mekiki_engine/schemas.py` : les modifier
   ensemble.
 
+## Scanner (`engine/mekiki_engine/scanner/`)
+
+- `cardmarket.py` importe les fichiers publics de Cardmarket (Pokémon = 6, One Piece = 18),
+  avec ETag. Cote de revente : avg30, sinon avg7, avg, avg1, trend ; jamais `low`.
+- `sources/` : une classe par site. Mercari passe par l'API JSON de son site avec une preuve
+  DPoP signée localement (`ecdsa`, pur Python à cause de Smart App Control).
+- `matching.py` décide si un titre japonais est la carte suivie (numéro, mots requis ou
+  exclus, cartes gradées) ; `pricing.py` chiffre une annonce comme une carte d'un colis type.
+- Découverte (`discovery.py`) : recherches larges dans la catégorie, `identify.py` lit le titre
+  (extension + numéro, code One Piece, miroir, parallèle/manga), `resolver.py` trouve le
+  produit Cardmarket. Pokémon passe par `card_index.py` (archive TCGdex, rafraîchie chaque
+  semaine) ; One Piece par le nom Cardmarket (« (OP05-119) ») dans les extensions japonaises
+  (« Non-English » / « Asia Region Legal »), les versions étant rangées par `idProduct`.
+- Une annonce à moins de 20 % de la cote est presque toujours une reproduction ou un
+  accessoire : elle est signalée et n'entre jamais dans un colis proposé.
+- Yahoo! JAPAN bloque l'Europe (403) : ne pas tenter de contourner le blocage.
+- Les tests n'accèdent jamais au réseau : `create_app(..., http_transport=..., source_factory=...)`
+  et `background_jobs=False` (voir `engine/tests/conftest.py`).
+- Rester poli avec les sites : pas de requêtes en parallèle vers un même site, intervalles de
+  `PoliteClient`, jamais de compte ni de connexion.
+
 ## Pièges connus (Windows, octobre 2026)
 
 - Smart App Control bloque les binaires récents sans réputation : le Python géré par uv,

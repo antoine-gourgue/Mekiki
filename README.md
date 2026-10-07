@@ -6,10 +6,17 @@ Application desktop perso pour l'achat-revente de cartes TCG **Pokémon** et **O
 achat au Japon via le proxy Neokyo (Mercari, Rakuma, Yahoo Auctions, Yahoo Fleamarket), revente
 en Europe sur Cardmarket, eBay, Vinted et Leboncoin.
 
-Pour l'instant : le stock et la **rentabilité réelle**. Coût de revient complet par carte (prix,
-frais Neokyo, envoi, TVA à l'import, douane, frais de dossier), net de vente par plateforme
-(commission, envoi, emballage, cotisations URSSAF), marge et ROI. Plus tard : un scanner de
-bonnes affaires et la détection de la hype.
+- **Stock et rentabilité réelle** : coût de revient complet par carte (prix, frais Neokyo,
+  envoi, TVA à l'import, douane, frais de dossier), net de vente par plateforme (commission,
+  envoi, emballage, cotisations URSSAF), marge et ROI.
+- **Trouver des cartes** : on choisit le jeu, le budget du colis et le nombre de cartes ;
+  l'app parcourt les annonces récentes de Mercari et Rakuma, reconnaît chaque carte dans son
+  titre japonais, la compare à sa cote Cardmarket et compose le colis le plus rentable, avec
+  le lien Neokyo de chaque annonce.
+- **Recherche et cartes suivies** : recherche ponctuelle, ou cartes surveillées par un scanner
+  automatique ; les annonces qui atteignent le ROI visé apparaissent dans « Bonnes affaires ».
+
+Plus tard : la détection de la hype (tendance des cotes, prix des boutiques japonaises).
 
 ## Architecture
 
@@ -65,3 +72,17 @@ La CI GitHub Actions lance les mêmes commandes.
 
 La base SQLite contient le stock et les ventes : elle ne doit jamais être commitée
 (`.data/` et `*.sqlite3*` sont dans le `.gitignore`).
+
+## Recherche sur les sites japonais
+
+Le moteur interroge Mercari et Rakuma comme le ferait leur site pour un visiteur anonyme :
+aucun compte, quelques secondes entre deux requêtes vers un même site. L'achat reste manuel,
+via le lien Neokyo de chaque annonce.
+
+Yahoo! JAPAN (Auctions et Fleamarket) refuse les visiteurs de l'Union européenne depuis 2022 :
+ces deux sources ne fonctionnent que hors d'Europe et sont désactivées par défaut. La page
+Recherche propose la même recherche sur Neokyo, qui donne accès à Yahoo.
+
+Données utilisées : les fichiers publics de Cardmarket (catalogue et cotes) et la base
+[TCGdex](https://github.com/tcgdex/cards-database) (licence MIT), qui relie les cartes
+Pokémon japonaises (extension, numéro) à leur produit Cardmarket.
