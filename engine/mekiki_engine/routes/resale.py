@@ -22,7 +22,8 @@ def resale_prices(
     label: Annotated[str | None, Query(max_length=200)] = None,
 ) -> ResalePrices:
     """eBay listings and price links for a search, or for a Cardmarket product."""
-    query = (q or "").strip()
+    # Card labels ("M6 110/076 · MUR") make fine searches once their separators are gone.
+    query = " ".join((q or "").replace("·", " ").split())
     if not query and product_id is not None:
         query = service.product_query(session, product_id, label) or ""
     if not query:

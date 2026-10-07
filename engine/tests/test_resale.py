@@ -121,7 +121,7 @@ def test_ebay_search_keeps_euro_listings_and_caches_the_token_and_results() -> N
 
 
 def test_resale_prices_without_ebay_keys_still_give_links(client: TestClient) -> None:
-    response = client.get("/resale/prices", params={"q": "Pikachu 201/165"})
+    response = client.get("/resale/prices", params={"q": " Pikachu  201/165 · SAR"})
 
     assert response.status_code == 200
     body = response.json()
@@ -134,6 +134,7 @@ def test_resale_prices_without_ebay_keys_still_give_links(client: TestClient) ->
         "max_cents": None,
         "listings": [],
     }
+    assert body["query"] == "Pikachu 201/165 SAR"
     assert "LH_Sold=1" in body["links"]["ebay_sold"]
     assert body["links"]["vinted"].startswith("https://www.vinted.fr/catalog?search_text=Pikachu")
     assert client.get("/resale/prices").status_code == 422
@@ -176,3 +177,23 @@ def test_listing_drafts_are_private_to_the_account(client: TestClient) -> None:
     other = client.get(f"/items/{item['id']}/listing-draft", params={"platform": "ebay"})
     assert other.status_code == 404
     assert json.loads(other.text)["detail"].startswith("item")
+
+
+def test_env_files_fill_missing_variables_only(tmp_path, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    from mekiki_engine.config import load_env_file
+
+    env = tmp_path / ".env"
+    env.write_text(
+        "# eBay\nMEKIKI_EBAY_CLIENT_ID='app-id'\nMEKIKI_EBAY_CLIENT_SECRET=from-file\nnot a line\n",
+        encoding="utf-8",
+    )
+    monkeypatch.delenv("MEKIKI_EBAY_CLIENT_ID", raising=False)
+    monkeypatch.setenv("MEKIKI_EBAY_CLIENT_SECRET", "from-env")
+
+    load_env_file(env)
+    load_env_file(tmp_path / "missing.env")
+
+    import os
+
+    assert os.environ["MEKIKI_EBAY_CLIENT_ID"] == "app-id"
+    assert os.environ["MEKIKI_EBAY_CLIENT_SECRET"] == "from-env"

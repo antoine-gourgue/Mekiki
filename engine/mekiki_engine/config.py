@@ -65,5 +65,26 @@ def load_config(
     )
 
 
+def load_env_file(path: Path) -> None:
+    """Sets ``NAME=value`` lines of a ``.env`` file as environment variables.
+
+    Variables already set win, so the real environment overrides the file. Blank lines and
+    ``#`` comments are skipped; values may be wrapped in quotes.
+    """
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except FileNotFoundError:
+        return
+    for line in lines:
+        name, sep, value = line.strip().partition("=")
+        name = name.strip()
+        if not sep or not name or name.startswith("#"):
+            continue
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in "'\"":
+            value = value[1:-1]
+        os.environ.setdefault(name, value)
+
+
 def _env_list(name: str) -> tuple[str, ...]:
     return tuple(item.strip() for item in os.environ.get(name, "").split(",") if item.strip())

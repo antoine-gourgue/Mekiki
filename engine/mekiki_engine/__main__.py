@@ -5,11 +5,12 @@ from __future__ import annotations
 import argparse
 import sys
 import threading
+from pathlib import Path
 
 import uvicorn
 
 from mekiki_engine.app import create_app
-from mekiki_engine.config import DEFAULT_PORT, load_config
+from mekiki_engine.config import DEFAULT_PORT, load_config, load_env_file
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -31,6 +32,8 @@ def main(argv: list[str] | None = None) -> None:
     )
     args = parser.parse_args(argv)
 
+    # Secrets such as the eBay keys live in a .env file next to the engine, never in git.
+    load_env_file(Path(".env"))
     config = load_config(data_dir=args.data_dir, port=args.port, host=args.host)
     # Loopback unless deployed as a server (see config.DEFAULT_HOST).
     server = uvicorn.Server(uvicorn.Config(create_app(config), host=config.host, port=config.port))
