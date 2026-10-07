@@ -1,0 +1,165 @@
+{
+ "totalResultsAvailable": 149999,
+ "totalResultsReturned": 3,
+ "offset": 0,
+ "items": [
+  {
+   "id": "z612422448",
+   "title": "ポケモンカード 旧裏 コダック まとめ売り",
+   "price": 10000,
+   "likeCount": 0,
+   "openTime": "2026-05-20T03:29:28+09:00",
+   "endTime": "2027-05-20T03:29:28+09:00",
+   "thumbnailImageUrl": "https://auc-pctr.c.yimg.jp/i/auctions.c.yimg.jp/images.auctions.yahoo.co.jp/image/dr000/auc0205/users/0b9669f2383d51dea2565400ce15f7a21b222565/i-img1200x900-17792152660290ht27q.jpg?pri=s&w=298&h=298&ccw=298&cch=298&fill=1&fw=298&fh=298&up=0&nf_src=sy&nf_path=images/auc/pc/top/image/1.0.3/na_170x170.png&nf_st=200",
+   "imageCount": 1,
+   "category": {
+    "id": 2420,
+    "name": "トレーディングカード",
+    "path": [
+     {
+      "id": 1,
+      "name": "shopping"
+     },
+     {
+      "id": 2511,
+      "name": "ゲーム、おもちゃ"
+     },
+     {
+      "id": 2420,
+      "name": "トレーディングカード"
+     }
+    ],
+    "productCategoryId": 2419
+   },
+   "sellerId": "p000000000",
+   "itemStatus": "OPEN",
+   "isPriceDown": false,
+   "hashtag": [
+    "ポケモンカード",
+    "旧裏",
+    "コダック"
+   ],
+   "log": {
+    "etc": "uuid=75418ec7-5823-4bb7-9397-2cc866f025cd,p=10000,etm=1810751368,stm=1779215368,vsc=0.9259209559935645,pv=0"
+   },
+   "seller": {
+    "id": "p000000000",
+    "goodRatio": 100,
+    "numRating": 336
+   },
+   "condition": "used20",
+   "isFirstSubmit": false,
+   "isSparkleSubmit": true,
+   "isTargetCountDownCampaign": true,
+   "isBulkPurchaseItem": false,
+   "isImageLarge": false
+  },
+  {
+   "id": "z612422016",
+   "title": "ポケモンカードゲーム MEGAドリームex 10パック 未開封",
+   "price": 10000,
+   "likeCount": 1,
+   "openTime": "2026-05-20T03:14:04+09:00",
+   "endTime": "2027-05-20T03:14:04+09:00",
+   "thumbnailImageUrl": "https://auc-pctr.c.yimg.jp/i/auctions.c.yimg.jp/images.auctions.yahoo.co.jp/image/dr000/auc0205/users/c8e1f3e9079f352a07ec6a75a8f53cf3a7050064/i-img898x963-1779213549877vq7jr6.jpg?pri=s&w=298&h=298&ccw=298&cch=298&fill=1&fw=298&fh=298&up=0&nf_src=sy&nf_path=images/auc/pc/top/image/1.0.3/na_170x170.png&nf_st=200",
+   "imageCount": 2,
+   "category": {
+    "id": 2420,
+    "name": "トレーディングカード",
+    "path": [
+     {
+      "id": 1,
+      "name": "shopping"
+     },
+     {
+      "id": 2511,
+      "name": "ゲーム、おもちゃ"
+     },
+     {
+      "id": 2420,
+      "name": "トレーディングカード"
+     }
+    ],
+    "productCategoryId": 2419
+   },
+   "brand": {
+    "id": 167473,
+    "name": "ポケモンカードゲーム"
+   },
+   "sellerId": "p000000000",
+   "itemStatus": "OPEN",
+   "isPriceDown": false,
+   "hashtag": [
+    "ポケモンカード",
+    "ポケカ",
+    "megaドリームex",
+    "未開封",
+    "10パック"
+   ],
+   "log": {
+    "etc": "uuid=75418ec7-5823-4bb7-9397-2cc866f025cd,p=10000,etm=1810750444,stm=1779214444,vsc=0.9154533764182652,pv=0"
+   },
+   "seller": {
+    "id": "p000000000",
+    "goodRatio": 97.8,
+    "numRating": 89
+   },
+   "condition": "new",
+   "isFirstSubmit": false,
+   "isSparkleSubmit": true,
+   "isTargetCountDownCampaign": true,
+   "isBulkPurchaseItem": false,
+   "isImageLarge": false
+  },
+  {
+   "id": "z612382128",
+   "title": "ポケモンカード アニバーサリーコレクション　パック",
+   "price": 3300,
+   "likeCount": 3,
+   "openTime": "2026-05-19T23:37:34+09:00",
+   "endTime": "2027-05-19T23:37:34+09:00",
+   "thumbnailImageUrl": "https://auc-pctr.c.yimg.jp/i/auctions.c.yimg.jp/images.auctions.yahoo.co.jp/image/dr000/auc0205/users/f8357fe96b551e404202960ecb169f2bb3ea9caa/i-img900x1200-17792014100610zvsuq.jpg?pri=s&w=298&h=298&ccw=298&cch=298&fill=1&fw=298&fh=298&up=0&nf_src=sy&nf_path=images/auc/pc/top/image/1.0.3/na_170x170.png&nf_st=200",
+   "imageCount": 2,
+   "category": {
+    "id": 2420,
+    "name": "トレーディングカード",
+    "path": [
+     {
+      "id": 1,
+      "name": "shopping"
+     },
+     {
+      "id": 2511,
+      "name": "ゲーム、おもちゃ"
+     },
+     {
+      "id": 2420,
+      "name": "トレーディングカード"
+     }
+    ],
+    "productCategoryId": 2419
+   },
+   "sellerId": "p000000000",
+   "itemStatus": "OPEN",
+   "isPriceDown": false,
+   "hashtag": [
+    "ポケモンカード",
+    "アニバーサリーコレクション"
+   ],
+   "log": {
+    "etc": "uuid=75418ec7-5823-4bb7-9397-2cc866f025cd,p=3300,etm=1810737454,stm=1779201454,vsc=0.9064931996424035,pv=7,imp=95,pvImpUnixtime=1779210217"
+   },
+   "seller": {
+    "id": "p000000000",
+    "goodRatio": 99.8,
+    "numRating": 535
+   },
+   "condition": "new",
+   "isFirstSubmit": false,
+   "isSparkleSubmit": true,
+   "isTargetCountDownCampaign": true,
+   "isBulkPurchaseItem": false,
+   "isImageLarge": false
+  }
+ ]
+}

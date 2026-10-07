@@ -339,24 +339,44 @@ def dashboard(
     )
 
 
+def parcel_landed_cost(
+    settings: AppSettings,
+    *,
+    price_jpy: int,
+    domestic_shipping_jpy: int,
+    cards_in_lot: int,
+    lot_shipping_jpy: int,
+    fx_jpy_per_eur: Decimal,
+) -> ItemLandedCost:
+    """Landed cost of one card bought in a parcel of ``cards_in_lot`` identical cards."""
+    lot = LotCostInput(
+        fx_jpy_per_eur=fx_jpy_per_eur,
+        packing_fee_jpy=settings.neokyo_packing_fee_jpy,
+        international_shipping_jpy=lot_shipping_jpy,
+        handling_fee_cents=settings.default_handling_fee_cents,
+    )
+    card = ItemCostInput(
+        price_jpy=price_jpy,
+        domestic_shipping_jpy=domestic_shipping_jpy,
+        service_fee_jpy=settings.neokyo_service_fee_jpy,
+    )
+    # The first card collects the rounding leftovers: it is the costliest of the parcel.
+    return allocate_lot(lot, [card] * cards_in_lot, vat_rate(settings))[0]
+
+
 def simulate(settings: AppSettings, request: SimulationRequest) -> SimulationResult:
     """Prices one card bought in a parcel of ``cards_in_lot`` identical cards."""
     fx = _or(request.fx_jpy_per_eur, settings.fx_jpy_per_eur)
-    lot = LotCostInput(
-        fx_jpy_per_eur=fx,
-        packing_fee_jpy=settings.neokyo_packing_fee_jpy,
-        international_shipping_jpy=request.lot_shipping_jpy,
-        handling_fee_cents=settings.default_handling_fee_cents,
-    )
 
     def landed_at(price_jpy: int) -> ItemLandedCost:
-        card = ItemCostInput(
+        return parcel_landed_cost(
+            settings,
             price_jpy=price_jpy,
             domestic_shipping_jpy=request.domestic_shipping_jpy,
-            service_fee_jpy=settings.neokyo_service_fee_jpy,
+            cards_in_lot=request.cards_in_lot,
+            lot_shipping_jpy=request.lot_shipping_jpy,
+            fx_jpy_per_eur=fx,
         )
-        # The first card collects the rounding leftovers: it is the costliest of the parcel.
-        return allocate_lot(lot, [card] * request.cards_in_lot, vat_rate(settings))[0]
 
     sale = project_sale(
         settings,
@@ -369,7 +389,7 @@ def simulate(settings: AppSettings, request: SimulationRequest) -> SimulationRes
     max_price = (
         None
         if request.target_roi_percent is None
-        else _max_price_jpy(
+        else max_price_jpy_for_roi(
             landed_at, sale.net_cents, percent_to_fraction(request.target_roi_percent), fx
         )
     )
@@ -381,7 +401,7 @@ def simulate(settings: AppSettings, request: SimulationRequest) -> SimulationRes
     )
 
 
-def _max_price_jpy(
+def max_price_jpy_for_roi(
     landed_at: Callable[[int], ItemLandedCost],
     net_cents: int,
     target_roi: Decimal,

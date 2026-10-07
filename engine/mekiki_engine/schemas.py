@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import date
 from decimal import Decimal
-from typing import Annotated, ClassVar, Self
+from typing import Annotated, ClassVar, Literal, Self
 
 from pydantic import (
     BaseModel,
@@ -15,7 +15,14 @@ from pydantic import (
     model_validator,
 )
 
-from mekiki_engine.domain import Game, ItemStatus, LotStatus, SalePlatform, SourcePlatform
+from mekiki_engine.domain import (
+    Game,
+    ItemStatus,
+    ListingTriage,
+    LotStatus,
+    SalePlatform,
+    SourcePlatform,
+)
 
 # Decimals travel as JSON numbers: the UI needs numbers, and rates never need more precision
 # than a float carries.
@@ -60,6 +67,47 @@ def default_platform_fees() -> dict[SalePlatform, PlatformFeeSettings]:
     }
 
 
+SCANNABLE_SOURCES = (
+    SourcePlatform.MERCARI,
+    SourcePlatform.RAKUMA,
+    SourcePlatform.YAHOO_AUCTIONS,
+    SourcePlatform.YAHOO_FLEAMARKET,
+)
+# Yahoo! JAPAN refuses visitors from Europe, so its two sites are opt-in.
+DEFAULT_SOURCES = (SourcePlatform.MERCARI, SourcePlatform.RAKUMA)
+
+# Noise in Japanese card listings: bulk lots, repacks, accessories, fakes, foreign printings.
+DEFAULT_EXCLUDED_KEYWORDS = (
+    "まとめ 枚セット 引退 オリパ 福袋 未開封 box スリーブ ローダー プレイマット デッキ "
+    "フレーム ディスプレイ 観賞用 鑑賞用 acg 防犯 レプリカ カスタム ファンアート 自作 非公式 "
+    "プロキシ コピー 英語 中国 韓国 簡体 繁体"
+)
+
+
+class ScannerSettings(BaseModel):
+    """How the deal scanner searches and judges listings."""
+
+    enabled: bool = False
+    interval_minutes: Annotated[int, Field(ge=10, le=1440)] = 60
+    sources: list[SourcePlatform] = Field(default_factory=lambda: list(DEFAULT_SOURCES))
+    min_roi_percent: Annotated[Rate, Field(ge=0, le=1000)] = Decimal(30)
+    # A listing is priced as one card of a typical parcel, like in the simulator.
+    cards_per_lot: Annotated[int, Field(ge=1, le=500)] = 10
+    lot_shipping_jpy: Yen = 4000
+    resale_platform: SalePlatform = SalePlatform.CARDMARKET
+    # Added when the buyer pays the Japanese shipping (frequent on Yahoo Auctions).
+    domestic_shipping_jpy: Yen = 800
+    excluded_keywords: Annotated[str, Field(max_length=2000)] = DEFAULT_EXCLUDED_KEYWORDS
+
+    @field_validator("sources")
+    @classmethod
+    def _only_scannable(cls, value: list[SourcePlatform]) -> list[SourcePlatform]:
+        unknown = [s for s in value if s not in SCANNABLE_SOURCES]
+        if unknown:
+            raise ValueError(f"not searchable: {', '.join(unknown)}")
+        return list(dict.fromkeys(value))
+
+
 class AppSettings(BaseModel):
     fx_jpy_per_eur: Annotated[Rate, Field(gt=0)] = Decimal(170)
     vat_rate_percent: Percent = Decimal(20)
@@ -72,6 +120,7 @@ class AppSettings(BaseModel):
     platform_fees: dict[SalePlatform, PlatformFeeSettings] = Field(
         default_factory=default_platform_fees
     )
+    scanner: ScannerSettings = Field(default_factory=ScannerSettings)
 
     @field_validator("platform_fees")
     @classmethod
@@ -324,3 +373,257 @@ class SimulationResult(BaseModel):
     fx_jpy_per_eur: Rate
     # Highest price that still meets ``target_roi_percent``; ``None`` when no price does.
     max_price_jpy: int | None
+
+
+class TrackedCardFields(BaseModel):
+    game: Game
+    name: ShortText
+    set_code: str | None = None
+    card_number: str | None = None
+    rarity: str | None = None
+    grading: str | None = None
+    cardmarket_product_id: int | None = None
+    # Keywords sent to the marketplaces, in Japanese or as a card number ("205/187").
+    search_query: ShortText
+    # Space-separated words that a title must contain / must not contain.
+    required_keywords: str | None = None
+    excluded_keywords: str | None = None
+    # Expected resale price; left empty, the Cardmarket price is used.
+    target_price_cents: Cents | None = None
+    min_price_jpy: Yen | None = None
+    max_price_jpy: Yen | None = None
+    active: bool = True
+    notes: str | None = None
+
+
+class TrackedCardCreate(TrackedCardFields):
+    # Left empty, built from the card number (or the name when there is none).
+    search_query: ShortText | None = None  # type: ignore[assignment]
+
+
+class TrackedCardUpdate(PartialUpdate):
+    NULLABLE = frozenset(
+        {
+            "set_code",
+            "card_number",
+            "rarity",
+            "grading",
+            "cardmarket_product_id",
+            "required_keywords",
+            "excluded_keywords",
+            "target_price_cents",
+            "min_price_jpy",
+            "max_price_jpy",
+            "notes",
+        }
+    )
+
+    game: Game | None = None
+    name: ShortText | None = None
+    set_code: str | None = None
+    card_number: str | None = None
+    rarity: str | None = None
+    grading: str | None = None
+    cardmarket_product_id: int | None = None
+    search_query: ShortText | None = None
+    required_keywords: str | None = None
+    excluded_keywords: str | None = None
+    target_price_cents: Cents | None = None
+    min_price_jpy: Yen | None = None
+    max_price_jpy: Yen | None = None
+    active: bool | None = None
+    notes: str | None = None
+
+
+class MarketPriceOut(BaseModel):
+    """Cardmarket price guide values for one product, in cents."""
+
+    id_product: int
+    game: Game
+    name: str | None
+    expansion_name: str | None
+    url: str
+    avg_cents: int | None
+    low_cents: int | None
+    trend_cents: int | None
+    avg1_cents: int | None
+    avg7_cents: int | None
+    avg30_cents: int | None
+    prices_date: str | None
+    # The value used as resale price: avg30, else avg7, avg, avg1, trend; never low.
+    reference_cents: int | None
+    reference_field: str | None
+
+
+class TrackedCardOut(TrackedCardFields):
+    id: int
+    last_scanned_at: str | None
+    market: MarketPriceOut | None
+    expected_sale_cents: int | None
+    # Highest price a listing may ask for and still reach the scanner's ROI target.
+    max_buy_price_jpy: int | None
+    listing_count: int
+    best_roi: Rate | None
+
+
+class DealOut(BaseModel):
+    """A listing priced as one card of a typical parcel, resold at the expected price."""
+
+    id: int
+    tracked_card_id: int
+    card_name: str
+    source: SourcePlatform
+    external_id: str
+    title: str
+    price_jpy: int
+    shipping_included: bool | None
+    url: str
+    neokyo_url: str | None
+    thumbnail_url: str | None
+    listed_at: str | None
+    ends_at: str | None
+    bids: int | None
+    triage: ListingTriage
+    first_seen_at: str
+    last_seen_at: str
+    # False once the last scan of the card no longer found the listing (sold or removed).
+    online: bool
+    expected_sale_cents: int | None
+    landed_cost: LandedCostOut
+    sale: SaleBreakdownOut | None
+
+
+class DealUpdate(BaseModel):
+    triage: ListingTriage
+
+
+class ScanStatus(BaseModel):
+    running: bool
+    enabled: bool
+    last_started_at: str | None
+    last_finished_at: str | None
+    last_error: str | None
+    next_run_at: str | None
+    cards_scanned: int
+    new_listings: int
+    new_deals: int
+    # Online listings not looked at yet that reach the ROI target (the sidebar badge).
+    unseen_deals: int = 0
+
+
+class CardmarketStatus(BaseModel):
+    game: Game
+    products: int
+    priced_products: int
+    prices_date: str | None
+    fetched_at: str | None
+    last_error: str | None
+    # Japanese cards whose number leads to their Cardmarket product (Pokémon only).
+    indexed_cards: int = 0
+    index_error: str | None = None
+
+
+class SearchRequest(BaseModel):
+    """One-off search, not saved: prices every result against ``expected_sale_cents``."""
+
+    query: ShortText
+    game: Game = Game.POKEMON
+    sources: list[SourcePlatform] | None = None
+    card_number: str | None = None
+    required_keywords: str | None = None
+    excluded_keywords: str | None = None
+    grading: str | None = None
+    cardmarket_product_id: int | None = None
+    expected_sale_cents: Cents | None = None
+
+
+class SearchResultOut(BaseModel):
+    source: SourcePlatform
+    external_id: str
+    title: str
+    price_jpy: int
+    shipping_included: bool | None
+    url: str
+    neokyo_url: str | None
+    thumbnail_url: str | None
+    listed_at: str | None
+    ends_at: str | None
+    bids: int | None
+    matched: bool
+    reject_reason: str | None
+    landed_cost: LandedCostOut
+    sale: SaleBreakdownOut | None
+
+
+class SearchResponse(BaseModel):
+    expected_sale_cents: int | None
+    results: list[SearchResultOut]
+    # Sources that failed (blocked, timeout…) with the reason, so partial results are visible.
+    errors: dict[str, str]
+    # The same search on Neokyo's site, per marketplace (Yahoo stays reachable through it).
+    neokyo_search_urls: dict[str, str] = Field(default_factory=dict)
+
+
+class DiscoveryRequest(BaseModel):
+    """Compose a parcel: ``card_count`` listings whose total landed cost fits ``budget_cents``."""
+
+    game: Game = Game.POKEMON
+    # Everything included: cards, proxy fees, parcel shipping and estimated import taxes.
+    budget_cents: Annotated[int, Field(gt=0, le=10_000_000)]
+    card_count: Annotated[int, Field(ge=1, le=50)] = 10
+    # Left empty, the scanner's ROI target from the settings.
+    min_roi_percent: Annotated[Rate, Field(ge=0, le=1000)] | None = None
+    sources: list[SourcePlatform] | None = None
+
+
+class DiscoveryPick(BaseModel):
+    source: SourcePlatform
+    external_id: str
+    title: str
+    price_jpy: int
+    shipping_included: bool | None
+    url: str
+    neokyo_url: str | None
+    thumbnail_url: str | None
+    listed_at: str | None
+    ends_at: str | None
+    bids: int | None
+    # What the title was read as, e.g. "SV2a 201/165 · SAR" or "OP05-119 · parallèle".
+    card_label: str
+    product: MarketPriceOut
+    # "high": one Cardmarket product fits; "medium": several versions share the number.
+    confidence: Literal["high", "medium"]
+    confidence_note: str | None
+    # Set when the price is too far below the market to be the real card (copy, accessory,
+    # wrong version): such listings never enter the parcel.
+    warning: str | None = None
+    landed_cost: LandedCostOut
+    sale: SaleBreakdownOut
+
+
+class DiscoveryTotals(BaseModel):
+    card_count: int
+    purchase_jpy: int
+    landed_cents: int
+    revenue_cents: int
+    net_cents: int
+    margin_cents: int
+    roi: Rate | None
+
+
+class DiscoveryRun(BaseModel):
+    status: Literal["idle", "running", "done", "failed"]
+    request: DiscoveryRequest | None = None
+    started_at: str | None = None
+    finished_at: str | None = None
+    searches_done: int = 0
+    searches_total: int = 0
+    listings_seen: int = 0
+    listings_identified: int = 0
+    listings_priced: int = 0
+    # The parcel: priced together, shared costs split by price as in a real lot.
+    picks: list[DiscoveryPick] = Field(default_factory=list)
+    totals: DiscoveryTotals | None = None
+    # Other listings reaching the ROI target, best first, to swap into the parcel.
+    alternatives: list[DiscoveryPick] = Field(default_factory=list)
+    errors: list[str] = Field(default_factory=list)

@@ -35,3 +35,10 @@ class ItemStatus(StrEnum):
     IN_STOCK = "in_stock"
     LISTED = "listed"
     SOLD = "sold"
+
+
+class ListingTriage(StrEnum):
+    NEW = "new"
+    SEEN = "seen"
+    DISMISSED = "dismissed"
+    BOUGHT = "bought"

@@ -22,13 +22,17 @@ class EngineConfig:
     data_dir: Path
     port: int
     allowed_origins: tuple[str, ...]
+    # Cardmarket downloads and scheduled scans; tests turn them off to stay offline.
+    background_jobs: bool = True
 
     @property
     def database_url(self) -> str:
         return f"sqlite:///{self.data_dir / 'mekiki.sqlite3'}"
 
 
-def load_config(*, data_dir: str | None = None, port: int | None = None) -> EngineConfig:
+def load_config(
+    *, data_dir: str | None = None, port: int | None = None, background_jobs: bool = True
+) -> EngineConfig:
     """Explicit arguments win over ``MEKIKI_*`` environment variables, then defaults."""
     resolved_dir = Path(data_dir or os.environ.get("MEKIKI_DATA_DIR") or ".data").expanduser()
     resolved_port = port or int(os.environ.get("MEKIKI_ENGINE_PORT", DEFAULT_PORT))
@@ -39,4 +43,5 @@ def load_config(*, data_dir: str | None = None, port: int | None = None) -> Engi
         data_dir=resolved_dir.resolve(),
         port=resolved_port,
         allowed_origins=DEFAULT_ALLOWED_ORIGINS + extra_origins,
+        background_jobs=background_jobs,
     )
