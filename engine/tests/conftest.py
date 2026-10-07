@@ -190,6 +190,8 @@ class FakeSource:
             return []
         if self.platform in self.marketplace.failures:
             raise SourceError("bloqué (test)")
+        if query in self.marketplace.failing_queries:
+            raise SourceError("page en erreur (test)")
         return list(self.marketplace.listings.get(self.platform, []))[:limit]
 
 
@@ -197,6 +199,7 @@ class FakeMarketplace:
     def __init__(self) -> None:
         self.listings: dict[SourcePlatform, list[FoundListing]] = {}
         self.failures: set[SourcePlatform] = set()
+        self.failing_queries: set[str] = set()
         self.queries: list[tuple[SourcePlatform, str]] = []
 
     def factory(self) -> Callable[[SourcePlatform, PoliteClient, Game], FakeSource]:

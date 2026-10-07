@@ -1,5 +1,6 @@
 from typing import Any
 
+import httpx
 from conftest import FakeMarketplace
 from fastapi.testclient import TestClient
 
@@ -233,3 +234,29 @@ def test_promo_and_two_letter_sets_are_not_searched() -> None:
     assert not _searchable_set_code("sv-p")
     assert not _searchable_set_code("s-p")
     assert not _searchable_set_code("mc")
+
+
+def test_one_failed_search_does_not_end_a_site(
+    client: TestClient, marketplace: FakeMarketplace
+) -> None:
+    index_pokemon_cards(client)
+    marketplace.listings[SourcePlatform.MERCARI] = LISTINGS
+    marketplace.failing_queries = {"SAR", "SR"}
+
+    run = discover(client, budget_cents=15000, card_count=2)
+
+    searched = [query for _platform, query in marketplace.queries]
+    assert searched[-1] == "HR"
+    assert run["errors"] == ["Mercari : page en erreur (test)"]
+    assert run["searches_done"] == run["searches_total"]
+    assert run["picks"]
+
+
+def test_rakuma_pages_past_the_end_are_empty() -> None:
+    from mekiki_engine.scanner.sources.base import PoliteClient
+    from mekiki_engine.scanner.sources.rakuma import RakumaSource
+
+    transport = httpx.MockTransport(lambda _request: httpx.Response(404, text="not found"))
+    client = PoliteClient(intervals_s={}, default_interval_s=0, transport=transport)
+
+    assert RakumaSource(client, Game.POKEMON).search("sv2a", page=29) == []

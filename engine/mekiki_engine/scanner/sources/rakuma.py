@@ -48,7 +48,10 @@ class RakumaSource:
             params["max"] = price_max_jpy
         if page:
             params["page"] = page + 1
-        response = self.client.request("GET", SEARCH_URL, params=params)
+        # Rakuma answers 404 for a page past the last result.
+        response = self.client.request("GET", SEARCH_URL, params=params, accept=(404,))
+        if response.status_code == 404:
+            return []
         return parse_results(response.text)[:limit]
 
 

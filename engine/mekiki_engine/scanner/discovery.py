@@ -46,6 +46,7 @@ from mekiki_engine.scanner.service import (
 from mekiki_engine.scanner.sources.base import (
     FoundListing,
     PoliteClient,
+    SiteBlocked,
     SourceError,
     search_safely,
 )
@@ -74,6 +75,8 @@ VALUABLE_CENTS = 1000
 PRICE_WINDOW = (0.15, 1.6)
 ONE_PIECE_SET = re.compile(r"\(\s*((?:OP|EB|PRB|ST)\d{2})-\d{3}\s*\)", re.IGNORECASE)
 MAX_SAME_PRODUCT = 2
+# A site failing this many searches in a row is down or has changed: stop browsing it.
+MAX_FAILURES_IN_A_ROW = 3
 MAX_ALTERNATIVES = 30
 # Below this share of the market price, a listing is almost always a reproduction, an
 # accessory or another version of the card, not a bargain.
@@ -190,9 +193,15 @@ def discover(
     found: dict[tuple[str, str], FoundListing] = {}
     lock = threading.Lock()
 
+    def report(platform: SourcePlatform, error: SourceError) -> None:
+        message = f"{SOURCE_LABELS[platform]} : {error}"
+        if message not in run.errors:
+            run.errors.append(message)
+
     def browse(platform: SourcePlatform) -> None:
         source = source_factory(platform, client, request.game)
         remaining = sum(pages for _query, pages in plan)
+        failures_in_a_row = 0
         for query, pages in plan:
             for page in range(pages):
                 if should_stop():
@@ -206,13 +215,22 @@ def discover(
                         price_max_jpy=price_max,
                         page=page,
                     )
+                    failures_in_a_row = 0
                 except SourceError as error:
+                    failures_in_a_row += 1
+                    give_up = (
+                        isinstance(error, SiteBlocked) or failures_in_a_row >= MAX_FAILURES_IN_A_ROW
+                    )
+                    # One failed page skips its search; a blocked or failing site is left.
+                    skipped = remaining if give_up else pages - page
                     with lock:
-                        run.errors.append(f"{SOURCE_LABELS[platform]} : {error}")
-                        # A blocked site stays blocked: skip its remaining searches.
-                        run.searches_done += remaining
+                        report(platform, error)
+                        run.searches_done += skipped
                         on_progress(run)
-                    return
+                    if give_up:
+                        return
+                    remaining -= skipped
+                    break
                 skipped = 0 if items else pages - page - 1
                 with lock:
                     for item in items:

@@ -20,6 +20,10 @@ class SourceError(RuntimeError):
     """A marketplace could not be searched (blocked, changed format, network down…)."""
 
 
+class SiteBlocked(SourceError):
+    """The marketplace refuses our requests (rate limit, region block): stop asking it."""
+
+
 @dataclass(frozen=True, slots=True)
 class FoundListing:
     source: SourcePlatform
@@ -93,7 +97,13 @@ class PoliteClient:
             transport=transport,
         )
 
-    def request(self, method: str, url: str, **kwargs: object) -> httpx.Response:
+    def request(
+        self, method: str, url: str, *, accept: tuple[int, ...] = (), **kwargs: object
+    ) -> httpx.Response:
+        """Sends a request in this host's next free slot.
+
+        Error statuses raise ``SourceError``, except those listed in ``accept``.
+        """
         host = httpx.URL(url).host
         # Book the next free slot for this host, then wait outside the lock so a background
         # scan of one site never delays a manual search on another.
@@ -107,9 +117,13 @@ class PoliteClient:
         except httpx.HTTPError as error:
             raise SourceError(f"{host} : {error.__class__.__name__}") from error
         if response.status_code == 429:
-            raise SourceError(f"{host} limite les requêtes (429), réessayez plus tard")
+        if response.status_code in accept:
+            return response
+            raise SiteBlocked(f"{host} limite les requêtes (429), réessayez plus tard")
         if response.status_code == 403 and EEA_BLOCK_MARKER in response.text:
-            raise SourceError(EEA_BLOCK_MESSAGE)
+            raise SiteBlocked(EEA_BLOCK_MESSAGE)
+        if response.status_code == 403:
+            raise SiteBlocked(f"{host} refuse l'accès (403)")
         if response.status_code >= 400:
             raise SourceError(f"{host} a répondu {response.status_code}")
         return response
