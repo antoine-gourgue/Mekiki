@@ -46,9 +46,10 @@ pub fn stop(app: &AppHandle) {
     let Some(engine) = app.try_state::<Engine>() else {
         return;
     };
+    // The semicolon ends the lock guard's temporary before `engine` goes out of scope.
     if let Ok(mut running) = engine.0.lock() {
         if let Some(child) = running.take() {
             let _ = child.kill();
         }
-    }
+    };
 }
