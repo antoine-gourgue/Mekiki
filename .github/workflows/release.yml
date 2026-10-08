@@ -1,68 +1,119 @@
 name: Release
 
-# Pushing a version tag (v0.2.0) builds the Windows installer, signs the update and
-# publishes both as a GitHub release: installed apps then offer the update, and the landing
-# page's download link points at the new installer.
+# Every push to main that passes the checks becomes a version: the Windows installer is
+# built, the update signed and both published as a GitHub release. Installed apps then
+# offer the update, and the landing page's download link points at the new installer.
 on:
   push:
-    tags: ["v*"]
+    branches: [main]
+    paths-ignore:
+      - "**.md"
 
 permissions:
   contents: write
 
+# One release at a time, in push order.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 jobs:
+  checks:
+    uses: ./.github/workflows/ci.yml
+
   windows:
+    needs: checks
     runs-on: windows-latest
+    env:
+      # Signs the update so installed apps accept it (public key in tauri.conf.json).
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
     steps:
+      - name: Check the update signing key
+        id: key
+        shell: pwsh
+        run: |
+          if ($env:TAURI_SIGNING_PRIVATE_KEY) {
+            "ready=true" >> $env:GITHUB_OUTPUT
+          } else {
+            "::warning::No TAURI_SIGNING_PRIVATE_KEY secret: no version is published. Add it in Settings > Secrets and variables > Actions."
+            "ready=false" >> $env:GITHUB_OUTPUT
+          }
+
       - uses: actions/checkout@v5
+        if: steps.key.outputs.ready == 'true'
+
+      # The base (major.minor) comes from package.json; the run number makes every
+      # release newer than the last, which is how installed apps spot an update.
+      - name: Pick the version
+        id: version
+        if: steps.key.outputs.ready == 'true'
+        shell: pwsh
+        run: |
+          $base = (Get-Content desktop/package.json -Raw | ConvertFrom-Json).version -replace '\.\d+$', ''
+          "number=$base.${{ github.run_number }}" >> $env:GITHUB_OUTPUT
 
       # Before the engine: its build script names the sidecar after the Rust target.
       - uses: dtolnay/rust-toolchain@stable
+        if: steps.key.outputs.ready == 'true'
       - uses: swatinem/rust-cache@v2
+        if: steps.key.outputs.ready == 'true'
         with:
           workspaces: desktop/src-tauri -> target
 
       - uses: actions/setup-python@v6
+        if: steps.key.outputs.ready == 'true'
         with:
           python-version: "3.13"
       - uses: astral-sh/setup-uv@v6
+        if: steps.key.outputs.ready == 'true'
         with:
           enable-cache: true
           cache-dependency-glob: engine/uv.lock
+
+      - uses: actions/setup-node@v5
+        if: steps.key.outputs.ready == 'true'
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - name: Write the version in the app and the engine
+        if: steps.key.outputs.ready == 'true'
+        working-directory: desktop
+        run: |
+          npm ci
+          npm run version:set -- ${{ steps.version.outputs.number }}
+
       - name: Build the engine sidecar
+        if: steps.key.outputs.ready == 'true'
         working-directory: engine
         run: |
           uv sync --locked --group bundle
           uv run python scripts/build_sidecar.py
 
-      - uses: actions/setup-node@v5
-        with:
-          node-version: 24
-          cache: npm
-          cache-dependency-path: desktop/package-lock.json
-      - run: npm ci
-        working-directory: desktop
-
       - name: Build the installer and publish the release
+        if: steps.key.outputs.ready == 'true'
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Signs the update so installed apps accept it (public key in tauri.conf.json).
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           projectPath: desktop
           args: --config src-tauri/tauri.bundle.json
-          tagName: ${{ github.ref_name }}
-          releaseName: Mekiki ${{ github.ref_name }}
+          tagName: v${{ steps.version.outputs.number }}
+          releaseName: Mekiki ${{ steps.version.outputs.number }}
+          releaseCommitish: ${{ github.sha }}
           releaseBody: |
             Téléchargez **Mekiki-Setup.exe** et lancez-le pour installer Mekiki sur Windows.
             Les versions déjà installées proposent cette mise à jour au démarrage.
+
+            ${{ github.event.head_commit.message }}
           releaseDraft: false
           prerelease: false
           includeUpdaterJson: true
 
       - name: Publish the installer under a fixed name for the download link
+        if: steps.key.outputs.ready == 'true'
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -70,4 +121,4 @@ jobs:
           $installer = Get-ChildItem desktop/src-tauri/target/release/bundle/nsis/*-setup.exe |
             Select-Object -First 1
           Copy-Item $installer.FullName Mekiki-Setup.exe
-          gh release upload "${{ github.ref_name }}" Mekiki-Setup.exe --clobber
+          gh release upload "v${{ steps.version.outputs.number }}" Mekiki-Setup.exe --clobber

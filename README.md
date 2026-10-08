@@ -64,21 +64,18 @@ npm run tauri:dev
 
 ## Publier une version
 
-Un tag `vX.Y.Z` déclenche `.github/workflows/release.yml` : il construit le moteur et
-l'installateur Windows (NSIS, en français, sans droits administrateur), signe la mise à jour
-et publie la release. Les apps installées la proposent au démarrage.
+Chaque push sur `main` (hors documentation) lance `.github/workflows/release.yml` : les
+vérifications de la CI, puis le moteur et l'installateur Windows (NSIS, en français, sans
+droits administrateur), la signature de la mise à jour et la release `vX.Y.N`. `X.Y` vient de
+`desktop/package.json`, `N` du numéro d'exécution du workflow, si bien que chaque version est
+plus récente que la précédente. Les apps installées la proposent au démarrage.
 
-```bash
-cd desktop
-npm run version:set -- 0.2.0
-git commit -am "chore: release v0.2.0"
-git tag v0.2.0
-git push --follow-tags
-```
+Pour passer à une nouvelle version majeure ou mineure, changer la base :
+`npm run version:set -- 0.2.0` dans `desktop/`, puis commit et push.
 
 Une fois pour toutes, le dépôt GitHub doit avoir le secret `TAURI_SIGNING_PRIVATE_KEY` : le
 contenu de la clé privée créée par `npx tauri signer generate` (sa clé publique est dans
-`desktop/src-tauri/tauri.conf.json`). Sans signature de code Windows, SmartScreen avertit au
+`desktop/src-tauri/tauri.conf.json`). Sans lui, le workflow ne publie rien et le signale. Sans signature de code Windows, SmartScreen avertit au
 premier lancement de l'installateur (« Informations complémentaires » puis « Exécuter quand
 même »).
 
@@ -121,9 +118,11 @@ Recherche propose la même recherche sur Neokyo, qui donne accès à Yahoo.
 
 Ni Vinted ni eBay n'ouvrent leurs prix de vente aux logiciels, et leurs conditions
 d'utilisation interdisent les robots. À la demande de l'utilisateur, Mekiki pilote donc une
-fenêtre Chrome visible, avec un profil à part où il se connecte lui-même ; chaque lecture part
-d'un clic, une page à la fois. Une vérification anti-robot éventuelle est laissée à
-l'utilisateur. L'usage reste à ses risques vis-à-vis de ces sites.
+fenêtre Chrome, avec un profil à part où il se connecte lui-même ; chaque lecture part d'un
+clic, une page à la fois. La fenêtre travaille hors de l'écran (l'app en montre un aperçu en
+direct) et n'apparaît que pour se connecter, terminer un formulaire ou passer une
+vérification anti-robot, toujours laissée à l'utilisateur. L'usage reste à ses risques
+vis-à-vis de ces sites.
 
 Données utilisées : les fichiers publics de Cardmarket (catalogue et cotes), la base
 [TCGdex](https://github.com/tcgdex/cards-database) (licence MIT), qui relie les cartes

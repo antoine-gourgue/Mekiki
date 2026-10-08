@@ -1,9 +1,10 @@
 name: CI
 
+# Pull requests, and every push to main through the release workflow, which only builds
+# a version once these checks pass.
 on:
-  push:
-    branches: [main]
   pull_request:
+  workflow_call:
 
 permissions:
   contents: read

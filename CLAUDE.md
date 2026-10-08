@@ -68,17 +68,20 @@ cd desktop && npm run lint && npm run format:check && npm run typecheck && npm r
 
 - `verdict.py` juge une carte (produit, annonce japonaise, carte en stock) sur chaque
   débouché : cote Cardmarket, eBay (API Browse si clés, sinon ventes lues dans Chrome), Vinted.
-- `browser/` pilote une fenêtre Chrome visible, profil propre à Mekiki, par le protocole
-  DevTools. **Exception voulue par l'utilisateur** à la règle « jamais de connexion » : il s'y
+- `browser/` pilote une fenêtre Chrome hors écran (aperçu en direct dans l'app), profil propre
+  à Mekiki, par le protocole DevTools ; elle ne s'affiche que pour se connecter, finir un
+  formulaire ou passer une vérification anti-robot. **Exception voulue par l'utilisateur** à la règle « jamais de connexion » : il s'y
   connecte lui-même à Vinted et eBay (Mekiki ne voit jamais de mot de passe). Chaque action part
   d'un clic dans l'app, une page à la fois ; ne jamais contourner une vérification anti-robot.
 - Les secrets (clés eBay…) sont dans `engine/.env`, jamais dans le dépôt.
 
 ## Releases
 
-- Un tag `vX.Y.Z` lance `.github/workflows/release.yml` : installateur NSIS signé pour la mise
-  à jour, `latest.json` pour le plugin updater, copie `Mekiki-Setup.exe` pour le lien de la
-  page d'accueil. `npm run version:set -- X.Y.Z` (dans `desktop/`) met la version partout.
+- Chaque push sur `main` lance `.github/workflows/release.yml` : la CI (`ci.yml`, appelée en
+  workflow réutilisable), puis l'installateur NSIS signé pour la mise à jour, `latest.json`
+  pour le plugin updater et la copie `Mekiki-Setup.exe` du lien de la page d'accueil. La
+  version vaut `X.Y` de `desktop/package.json` + le numéro d'exécution du workflow ;
+  `npm run version:set -- X.Y.0` (dans `desktop/`) change la base.
 - La clé privée de signature des mises à jour ne quitte pas la machine (`~/.tauri/`) et le
   secret GitHub `TAURI_SIGNING_PRIVATE_KEY` ; ne jamais la committer.
 
