@@ -23,6 +23,17 @@ def mercari(item_id: str, title: str, price: int) -> FoundListing:
     )
 
 
+def rakuma(item_id: str, title: str, price: int) -> FoundListing:
+    return FoundListing(
+        source=SourcePlatform.RAKUMA,
+        external_id=item_id,
+        title=title,
+        price_jpy=price,
+        url=f"https://item.fril.jp/{item_id}",
+        shipping_included=True,
+    )
+
+
 def index_pokemon_cards(client: TestClient) -> None:
     """Downloads the fake Cardmarket files and TCGdex archive (see conftest)."""
     client.post("/cardmarket/refresh", json={})
@@ -110,6 +121,9 @@ def test_discovery_uses_the_requested_roi(client: TestClient, marketplace: FakeM
 
     assert run["picks"] == []
     assert run["totals"] is None
+    # Nothing reaches the target: the budget is not to blame.
+    assert run["errors"] == []
+    assert run["log"][-1]["text"] == "Terminé : aucun colis ne remplit les conditions."
 
 
 def test_discovery_reports_failing_sources(
@@ -343,3 +357,52 @@ def test_discovery_logs_each_step(client: TestClient, marketplace: FakeMarketpla
     assert any(line.startswith("Colis proposé : 2 cartes, coût ") for line in log)
     assert log[-1].startswith("Terminé")
     assert all(line["at"].endswith("Z") for line in run["log"])
+
+
+def test_rakuma_listings_are_checked_on_their_page_for_the_minimum_condition(
+    client: TestClient, marketplace: FakeMarketplace
+) -> None:
+    index_pokemon_cards(client)
+    worn, mint = "a" * 32, "b" * 32
+    # Rakuma's search results leave the condition out: only the listing's page gives it.
+    marketplace.listings[SourcePlatform.RAKUMA] = [
+        rakuma(worn, "リザードンex RR SV2a 006/165", 4000),
+        rakuma(mint, "リザードンex RR 006/165 美品", 5000),
+    ]
+    marketplace.rakuma_conditions = {worn: "やや傷や汚れあり", mint: "未使用に近い"}
+
+    run = discover(
+        client,
+        budget_cents=15000,
+        card_count=2,
+        min_roi_percent=10,
+        sources=["rakuma"],
+        min_condition="like_new",
+    )
+
+    assert [p["external_id"] for p in run["picks"]] == [mint]
+    assert run["picks"][0]["condition"] == "like_new"
+    assert marketplace.checked == [worn, mint]
+    assert any("avec de légères traces, sous l'état demandé" in line["text"] for line in run["log"])
+
+
+def test_no_budget_complaint_when_every_listing_failed_its_check(
+    client: TestClient, marketplace: FakeMarketplace
+) -> None:
+    index_pokemon_cards(client)
+    worn = "c" * 32
+    marketplace.listings[SourcePlatform.RAKUMA] = [rakuma(worn, "リザードンex RR 006/165", 4000)]
+    marketplace.rakuma_conditions = {worn: "全体的に状態が悪い"}
+
+    run = discover(
+        client,
+        budget_cents=15000,
+        card_count=2,
+        min_roi_percent=10,
+        sources=["rakuma"],
+        min_condition="good",
+    )
+
+    assert run["picks"] == []
+    assert run["errors"] == []
+    assert run["alternatives"] == []

@@ -208,15 +208,26 @@ class FakeMarketplace:
         # Mercari listings answered as sold when the engine checks them.
         self.sold: set[str] = set()
         self.checked: list[str] = []
+        # Rakuma listings' condition, as their page writes it ("未使用に近い").
+        self.rakuma_conditions: dict[str, str] = {}
 
     def handle(self, request: httpx.Request) -> httpx.Response:
-        """Mercari's item API for availability checks; everything else as cardmarket_handler."""
+        """Mercari's item API and Rakuma's item pages; everything else as cardmarket_handler."""
         if request.url.host == "api.mercari.jp" and request.url.path == "/items/get":
             item_id = request.url.params["id"]
             self.checked.append(item_id)
             status = "sold_out" if item_id in self.sold else "on_sale"
             data = {"id": item_id, "status": status, "item_condition": {"id": 3}}
             return httpx.Response(200, json={"result": "OK", "data": data})
+        if request.url.host == "item.fril.jp":
+            item_id = request.url.path.strip("/")
+            self.checked.append(item_id)
+            condition = self.rakuma_conditions.get(item_id, "")
+            page = (
+                '<meta property="product:availability" content="in stock">'
+                f"<table><tr><th>商品の状態</th><td>{condition}</td></tr></table>"
+            )
+            return httpx.Response(200, text=page)
         return cardmarket_handler(request)
 
     def factory(self) -> Callable[[SourcePlatform, PoliteClient, Game], FakeSource]:

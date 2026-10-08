@@ -24,7 +24,7 @@ from mekiki_engine.costing.landed_cost import (
 )
 from mekiki_engine.costing.money import percent_to_fraction
 from mekiki_engine.costing.sale import SaleBreakdown
-from mekiki_engine.domain import Game, SourcePlatform
+from mekiki_engine.domain import Game, ListingCondition, SourcePlatform
 from mekiki_engine.models import CardIndexEntry, CardmarketProduct, SettingRow
 from mekiki_engine.scanner import availability, card_index, links
 from mekiki_engine.scanner.identify import CardIdentity, identify
@@ -87,6 +87,17 @@ GAME_NAMES = {Game.POKEMON: "Pokémon", Game.ONE_PIECE: "One Piece"}
 # Listings checked on their marketplace per discovery: a few seconds each (see PoliteClient),
 # so a parcel full of sold listings cannot hold the result back for long.
 MAX_CHECKS = 30
+# Sites whose search results leave the condition out: it is read on the listing's page,
+# when the listing makes the parcel.
+CONDITION_ON_PAGE = frozenset({SourcePlatform.RAKUMA})
+CONDITION_NAMES = {
+    ListingCondition.NEW: "neuve",
+    ListingCondition.LIKE_NEW: "quasi neuve",
+    ListingCondition.GOOD: "en bon état",
+    ListingCondition.FAIR: "avec de légères traces",
+    ListingCondition.POOR: "abîmée",
+    ListingCondition.BAD: "en mauvais état",
+}
 # Below this share of the market price, a listing is almost always a reproduction, an
 # accessory or another version of the card, not a bargain.
 SUSPICIOUS_PRICE_SHARE = 0.2
@@ -227,7 +238,7 @@ def discover(
     )
     on_progress(run)
 
-    needs_index = request.game is Game.POKEMON and not card_index.indexed_count(session)
+    needs_index = request.game is Game.POKEMON and card_index.needs_rebuild(session)
     if needs_index:
         note(run, "Téléchargement de l'index des cartes Pokémon japonaises (TCGdex)…")
         on_progress(run)
@@ -338,7 +349,10 @@ def discover(
     while run.totals is not None and run.totals.landed_cents > request.budget_cents:
         picked.pop()
         run.picks, run.totals = price_parcel(settings, picked)
-    if candidates and not picked:
+    # The budget is to blame only when listings reaching the target, still for sale and in
+    # the condition asked, could not fit it.
+    fitting = [c for c in candidates if not (c.below_target or c.warning or id(c) in gone)]
+    if fitting and not picked:
         run.errors.append(
             "Budget trop serré : les frais fixes du colis (envoi, emballage, frais de "
             f"dossier) coûtent déjà environ {fixed_parcel_costs_eur(settings):.0f} €. "
@@ -365,7 +379,12 @@ def discover(
         if id(candidate) not in left_out and not candidate.below_target
     ][:MAX_ALTERNATIVES]
     run.stopped = should_stop()
-    note(run, f"Terminé : {len(run.alternatives)} autres annonces rentables à côté du colis.")
+    note(
+        run,
+        f"Terminé : {counted(len(run.alternatives), 'autre annonce')} à voir à côté du colis."
+        if run.picks
+        else "Terminé : aucun colis ne remplit les conditions.",
+    )
     run.status = "done"
     run.finished_at = utc_now()
     return run
@@ -399,7 +418,14 @@ def evaluate(
     candidates: list[Candidate] = []
     for listing in listings:
         minimum = request.min_condition
-        if minimum and not (listing.condition and listing.condition.at_least(minimum)):
+        # Without a condition in the results, the listing's page is checked if it makes the
+        # parcel (see compose_available_parcel).
+        unknown_until_checked = listing.condition is None and listing.source in CONDITION_ON_PAGE
+        if (
+            minimum
+            and not unknown_until_checked
+            and not (listing.condition and listing.condition.at_least(minimum))
+        ):
             dropped["condition"] += 1
             continue
         identity = identify(listing.title, request.game)
@@ -439,6 +465,8 @@ def evaluate(
             Candidate(listing, identity, resolution, reference[0], estimate, warning, below)
         )
     above = sum(1 for c in candidates if not c.below_target and not c.warning)
+    below = sum(1 for c in candidates if c.below_target and not c.warning)
+    suspicious = sum(1 for c in candidates if c.warning)
     note(
         run,
         "Écartées : "
@@ -462,8 +490,14 @@ def evaluate(
         f"{counted(run.listings_priced, 'cotée')} sur Cardmarket, "
         f"{dropped['loss']} à perte, "
         f"{counted(above, 'rentable')} à {percent(target)} ou plus, "
-        f"{counted(len(candidates) - above, 'autre')} rentable"
-        f"{'s' if len(candidates) - above > 1 else ''} en dessous.",
+        f"{counted(below, 'autre')} rentable{'s' if below > 1 else ''} en dessous"
+        + (
+            f", {counted(suspicious, 'signalée')} (prix sous 20 % de la cote : reproduction ou "
+            "autre version ?)"
+            if suspicious
+            else ""
+        )
+        + ".",
     )
     # Confident identifications first, then the best return per euro spent.
     return sorted(
@@ -589,7 +623,7 @@ def short_of_target(
     if SourcePlatform.RAKUMA not in platforms:
         ideas.append("Rakuma")
     if request.min_condition is not None:
-        ideas.append("un état minimum moins strict (il écarte aussi toutes les annonces Rakuma)")
+        ideas.append("un état minimum moins strict")
     ideas.append("un ROI minimum plus bas")
     return message + " Pour plus de choix : " + ", ".join(ideas) + "."
 
@@ -610,7 +644,11 @@ def compose_available_parcel(
     request at a time, and a sold one gives its place to the next candidate. A listing that
     could not be checked keeps its place, as do those past ``MAX_CHECKS``. Stopping the
     discovery skips what is left to check.
+
+    With a minimum condition, a listing whose condition only shows on its page (Rakuma) keeps
+    its place once that page shows a condition good enough, and gives it up otherwise.
     """
+    minimum = request.min_condition
     gone: set[int] = set()
     checked: set[int] = set()
     while True:
@@ -619,7 +657,8 @@ def compose_available_parcel(
         picked = fill_parcel(settings, picked, remaining, request.budget_cents, request.card_count)
         unchecked = [c for c in picked if id(c) not in checked]
         if not unchecked or should_stop() or len(checked) >= MAX_CHECKS:
-            return picked, gone
+            # Unchecked, a listing without a condition cannot be shown to meet the minimum.
+            return [c for c in picked if not minimum or c.listing.condition], gone
         run.verifying = True
         note(run, f"Vérification des {len(unchecked)} annonces du colis : encore en vente ?")
         on_progress(run)
@@ -634,10 +673,19 @@ def compose_available_parcel(
             name = (candidate.resolution.product.name or listing.title[:40]).split(" [")[0]
             label = f"{name} · {candidate.resolution.label}"
             site = SOURCE_LABELS[listing.source]
+            condition = listing.condition or result.condition
             if result.available is False:
                 gone.add(id(candidate))
                 run.listings_gone += 1
                 note(run, f"{label} ({site}) : déjà vendue, remplacée par la suivante.")
+            elif minimum and not (condition and condition.at_least(minimum)):
+                gone.add(id(candidate))
+                state = (
+                    f"{CONDITION_NAMES[condition]}, sous l'état demandé"
+                    if condition
+                    else "état illisible sur l'annonce"
+                )
+                note(run, f"{label} ({site}) : {state}, remplacée par la suivante.")
             else:
                 note(
                     run,
