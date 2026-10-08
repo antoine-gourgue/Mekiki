@@ -59,11 +59,14 @@ cd desktop && npm run lint && npm run format:check && npm run typecheck && npm r
   l'index couvre entièrement, ou quand le titre nomme l'extension (code ou nom japonais, même
   coupé par « … ») ; confiance « medium ». Mesurer toute règle de reconnaissance sur de vraies
   annonces avant de la garder.
-- TCGdex n'a pas les cartes japonaises de beaucoup d'extensions Épée et Bouclier (S10b, S4,
-  S6a, S10D… : seulement l'impression chinoise, sans lien Cardmarket) ; les produits japonais
-  de Cardmarket n'ont pas de numéro. Ne pas les relier en devinant l'ordre des produits : une
-  version alternative mal rangée donne une cote fausse. `INDEX_FORMAT` (`card_index.py`) force
-  la reconstruction de l'index quand il stocke une nouvelle donnée.
+- TCGdex n'a pas les cartes japonaises de beaucoup d'extensions (S10b, S4, S6a, S10D, XY,
+  BW… : seulement l'impression chinoise, sans lien Cardmarket), et les produits japonais de
+  Cardmarket n'ont pas de numéro. `tcgplayer.py` les relie par la liste numérotée de TCGplayer
+  (export public TCGCSV, catégorie 85) : nom anglais identique, et versions rangées pareil par
+  numéro, par `idProduct` et par prix sur les deux sites ; sinon rien n'est relié (811 cartes
+  justes sur 811 vérifiées contre TCGdex). Le nom japonais vient de PokéAPI (`names.py`), donc
+  seulement pour les Pokémon. Une panne de TCGCSV laisse l'index TCGdex intact.
+  `INDEX_FORMAT` (`card_index.py`) force la reconstruction de l'index quand il change.
 - Un colis trop court porte trop de frais fixes : `fill_parcel` le complète avec des annonces
   sous l'objectif qui relèvent son ROI ; sous l'objectif, `short_of_target` explique pourquoi.
   Chaque étape va dans `DiscoveryRun.log` (`note()`), affiché par `ActivityLog.vue`.

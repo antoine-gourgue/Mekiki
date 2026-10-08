@@ -1,14 +1,13 @@
 ## Nouveautés
 
-- Rakuma n'est plus écarté par l'« État minimum » : ses annonces sont gardées, et l'état de
-  celles qui entrent dans le colis est lu sur leur page. Une carte en dessous de l'état demandé
-  laisse sa place à la suivante.
-- Mekiki reconnaît encore plus de cartes : le nom de l'extension écrit dans le titre, même
-  coupé (« … ワイルドフォ… »), départage les cartes de même nom et de même rareté. Sur 643
-  annonces Mercari réelles, 184 cartes reconnues au lieu de 154.
+- Les cartes japonaises d'une quarantaine d'extensions que Mekiki ne reconnaissait pas sont
+  maintenant lues, avec la cote Cardmarket de leur version exacte (normale, full art ou
+  alternative) : Pokémon GO, Eevee Heroes, Time Gazer, VMAX Rising, Shiny Star V, Amazing
+  Volt Tackle, les extensions XY et Noir & Blanc… Mekiki les relie grâce à la liste numérotée
+  de TCGplayer, seulement quand tout concorde : vérifié sur 811 cartes déjà connues, sans une
+  erreur.
 
 ## À savoir
 
-- Les cartes de plusieurs extensions Épée et Bouclier (Pokémon GO, Eevee Heroes, Time Gazer…)
-  restent non reconnues : la base de cartes ouverte qu'utilise Mekiki n'a pas leur version
-  japonaise. Mekiki préfère les ignorer plutôt que de leur donner une cote peut-être fausse.
+- Au premier lancement après la mise à jour, l'index des cartes se reconstruit : environ deux
+  minutes, une seule fois. Une recherche lancée pendant ce temps l'indique dans son journal.
