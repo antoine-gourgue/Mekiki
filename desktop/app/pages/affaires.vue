@@ -295,6 +295,7 @@ const viewItems = computed(() => [
           :listed-at="deal.listed_at"
           :ends-at="deal.ends_at"
           :bids="deal.bids"
+          :condition="deal.condition"
           :landed-cost="deal.landed_cost"
           :sale="deal.sale"
           :target-roi="targetRoi"

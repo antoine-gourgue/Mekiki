@@ -68,6 +68,7 @@ interface ListingLike {
   listed_at: string | null
   ends_at: string | null
   bids: number | null
+  condition: FavoriteCreate['condition']
 }
 
 /** A favorite from any listing card: discovery pick, scanner deal or search result. */
@@ -86,6 +87,7 @@ export function listingToFavorite(
     listed_at: listing.listed_at,
     ends_at: listing.ends_at,
     bids: listing.bids,
+    condition: listing.condition,
     ...extra,
   }
 }

@@ -6,6 +6,7 @@ import type {
   DiscoveryRun,
   Game,
   ItemCreate,
+  ListingCondition,
   ScannableSource,
 } from '~/types/engine'
 
@@ -23,6 +24,7 @@ const form = reactive({
   min_roi_percent: null as number | null,
   sources: [...DEFAULT_SOURCES] as ScannableSource[],
   depth: 'quick' as DiscoveryDepth,
+  min_condition: 'all' as ListingCondition | 'all',
 })
 
 const depthItems: { value: DiscoveryDepth; label: string; description: string }[] = [
@@ -55,6 +57,7 @@ function prefill(current: DiscoveryRun | null) {
     min_roi_percent: request.min_roi_percent ?? form.min_roi_percent,
     sources: request.sources?.length ? [...request.sources] : form.sources,
     depth: request.depth ?? form.depth,
+    min_condition: request.min_condition ?? 'all',
   })
 }
 
@@ -73,6 +76,8 @@ onBeforeUnmount(() => clearTimeout(timer))
 
 const running = computed(() => run.value?.status === 'running')
 
+const alternatives = useListingFilter(() => run.value?.alternatives ?? [])
+
 async function start() {
   if (!form.budget_cents || !form.card_count) return
   try {
@@ -83,6 +88,7 @@ async function start() {
       min_roi_percent: form.min_roi_percent,
       sources: form.sources,
       depth: form.depth,
+      min_condition: form.min_condition === 'all' ? null : form.min_condition,
     })
     void poll()
   } catch (error) {
@@ -185,7 +191,7 @@ const gameItems = selectItems(GAME_LABELS)
     <template #body>
       <UCard :ui="{ body: 'sm:p-5' }">
         <form class="space-y-5" @submit.prevent="start">
-          <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5">
             <UFormField label="Jeu">
               <SegmentedControl
                 v-model="form.game"
@@ -202,6 +208,12 @@ const gameItems = selectItems(GAME_LABELS)
             </UFormField>
             <UFormField label="ROI minimum">
               <PercentInput v-model="form.min_roi_percent" :max="1000" />
+            </UFormField>
+            <UFormField
+              label="État minimum"
+              :hint="form.min_condition === 'all' ? undefined : 'sans Rakuma'"
+            >
+              <USelect v-model="form.min_condition" :items="MIN_CONDITION_ITEMS" class="w-full" />
             </UFormField>
           </div>
 
@@ -360,6 +372,7 @@ const gameItems = selectItems(GAME_LABELS)
             :listed-at="pick.listed_at"
             :ends-at="pick.ends_at"
             :bids="pick.bids"
+            :condition="pick.condition"
             :landed-cost="pick.landed_cost"
             :sale="pick.sale"
             :target-roi="targetRoi"
@@ -380,9 +393,15 @@ const gameItems = selectItems(GAME_LABELS)
               plus ou à la place d’une carte du colis.
             </p>
           </div>
+          <ListingFilterBar
+            v-model:min-condition="alternatives.minCondition.value"
+            v-model:sort-by="alternatives.sortBy.value"
+            :hidden="alternatives.hidden.value"
+            :hidden-without-condition="alternatives.hiddenWithoutCondition.value"
+          />
           <div class="space-y-2.5">
             <DealCard
-              v-for="pick in run.alternatives"
+              v-for="pick in alternatives.visible.value"
               :key="`${pick.source}-${pick.external_id}`"
               :title="pick.title"
               :heading="pick.product.name"
@@ -396,6 +415,7 @@ const gameItems = selectItems(GAME_LABELS)
               :listed-at="pick.listed_at"
               :ends-at="pick.ends_at"
               :bids="pick.bids"
+              :condition="pick.condition"
               :landed-cost="pick.landed_cost"
               :sale="pick.sale"
               :target-roi="targetRoi"

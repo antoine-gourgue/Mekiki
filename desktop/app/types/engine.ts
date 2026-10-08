@@ -10,6 +10,8 @@ export type SourcePlatform = 'mercari' | 'yahoo_auctions' | 'yahoo_fleamarket' |
 export type SalePlatform = 'cardmarket' | 'ebay' | 'vinted' | 'leboncoin' | 'other'
 export type LotStatus = 'purchasing' | 'shipped' | 'received'
 export type ItemStatus = 'incoming' | 'in_stock' | 'listed' | 'sold'
+/** The six conditions of Japanese flea markets, best first (新品、未使用 … 全体的に状態が悪い). */
+export type ListingCondition = 'new' | 'like_new' | 'good' | 'fair' | 'poor' | 'bad'
 
 export interface PlatformFeeSettings {
   percent: number
@@ -326,6 +328,7 @@ export interface Deal {
   listed_at: string | null
   ends_at: string | null
   bids: number | null
+  condition: ListingCondition | null
   triage: ListingTriage
   first_seen_at: string
   last_seen_at: string
@@ -390,6 +393,7 @@ export interface SearchResult {
   listed_at: string | null
   ends_at: string | null
   bids: number | null
+  condition: ListingCondition | null
   matched: boolean
   reject_reason: string | null
   landed_cost: LandedCost
@@ -417,6 +421,8 @@ export interface DiscoveryRequest {
   sources?: ScannableSource[] | null
   /** quick: ~1 500 listings in 1-2 min; deep: ~5 000 in ~5 min; max: 10 000+ in ~15 min. */
   depth?: DiscoveryDepth
+  /** Only listings in this condition or better; those that do not say are left out too. */
+  min_condition?: ListingCondition | null
 }
 
 export type DiscoveryDepth = 'quick' | 'deep' | 'max'
@@ -433,6 +439,7 @@ export interface DiscoveryPick {
   listed_at: string | null
   ends_at: string | null
   bids: number | null
+  condition: ListingCondition | null
   /** What the title was read as, e.g. "SV2A 201/165 · SAR". */
   card_label: string
   product: MarketPrice
@@ -489,6 +496,7 @@ export interface FavoriteFields {
   listed_at: string | null
   ends_at: string | null
   bids: number | null
+  condition: ListingCondition | null
   /** What the listing was read as, e.g. "SV2a 201/165 · SAR". */
   card_label: string | null
   cardmarket_product_id: number | null

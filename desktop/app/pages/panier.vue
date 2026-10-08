@@ -170,6 +170,7 @@ function openAllOnNeokyo() {
               :listed-at="item.listed_at"
               :ends-at="item.ends_at"
               :bids="item.bids"
+              :condition="item.condition"
               :landed-cost="item.landed_cost"
               :sale="item.sale"
               :target-roi="targetRoi"

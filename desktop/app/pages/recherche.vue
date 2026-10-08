@@ -69,7 +69,8 @@ function toFavorite(result: SearchResult) {
   })
 }
 
-const visible = computed(() =>
+// The engine sends the matching listings first, best ROI first.
+const { minCondition, sortBy, visible, hidden, hiddenWithoutCondition } = useListingFilter(() =>
   (response.value?.results ?? []).filter((result) => showRejected.value || result.matched),
 )
 const rejectedCount = computed(
@@ -261,6 +262,13 @@ const sourceItems = SCANNABLE_SOURCE_ITEMS.map(({ value, label }) => ({ value, l
           </div>
         </div>
 
+        <ListingFilterBar
+          v-model:min-condition="minCondition"
+          v-model:sort-by="sortBy"
+          :hidden="hidden"
+          :hidden-without-condition="hiddenWithoutCondition"
+        />
+
         <div class="space-y-2.5">
           <DealCard
             v-for="result in visible"
@@ -275,6 +283,7 @@ const sourceItems = SCANNABLE_SOURCE_ITEMS.map(({ value, label }) => ({ value, l
             :listed-at="result.listed_at"
             :ends-at="result.ends_at"
             :bids="result.bids"
+            :condition="result.condition"
             :landed-cost="result.landed_cost"
             :sale="result.sale"
             :target-roi="targetRoi"

@@ -1,4 +1,4 @@
-import type { Game, SourcePlatform } from '~/types/engine'
+import type { Game, ListingCondition, SourcePlatform } from '~/types/engine'
 
 /** A Japanese listing seen in a discovery, a search, the deals or the cart. */
 export interface ListingPreview {
@@ -9,6 +9,7 @@ export interface ListingPreview {
   url: string
   neokyo_url: string | null
   thumbnail_url: string | null
+  condition: ListingCondition | null
   game: Game
   /** The Cardmarket product it was read as, if any. */
   product_id: number | null

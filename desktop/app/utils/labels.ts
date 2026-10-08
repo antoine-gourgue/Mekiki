@@ -2,6 +2,7 @@ import type { BadgeProps } from '@nuxt/ui'
 import type {
   Game,
   ItemStatus,
+  ListingCondition,
   LotStatus,
   SalePlatform,
   ScannableSource,
@@ -53,6 +54,50 @@ export const ITEM_STATUS_COLORS: Record<ItemStatus, BadgeProps['color']> = {
   in_stock: 'neutral',
   listed: 'primary',
   sold: 'success',
+}
+
+/** Condition of a Japanese listing, best first. */
+export const CONDITION_LABELS: Record<ListingCondition, string> = {
+  new: 'Neuve',
+  like_new: 'Quasi neuve',
+  good: 'Bon état',
+  fair: 'Légères traces',
+  poor: 'Abîmée',
+  bad: 'Mauvais état',
+}
+
+/** The marketplace's own wording, shown on hover. */
+export const CONDITION_JAPANESE: Record<ListingCondition, string> = {
+  new: '新品、未使用',
+  like_new: '未使用に近い',
+  good: '目立った傷や汚れなし',
+  fair: 'やや傷や汚れあり',
+  poor: '傷や汚れあり',
+  bad: '全体的に状態が悪い',
+}
+
+export const CONDITION_COLORS: Record<ListingCondition, BadgeProps['color']> = {
+  new: 'success',
+  like_new: 'success',
+  good: 'neutral',
+  fair: 'warning',
+  poor: 'error',
+  bad: 'error',
+}
+
+/** Choices of a minimum condition; `all` keeps the listings that do not say. */
+export const MIN_CONDITION_ITEMS: { value: ListingCondition | 'all'; label: string }[] = [
+  { value: 'all', label: 'Tous les états' },
+  { value: 'new', label: 'Neuve uniquement' },
+  { value: 'like_new', label: 'Quasi neuve ou mieux' },
+  { value: 'good', label: 'Bon état ou mieux' },
+  { value: 'fair', label: 'Légères traces ou mieux' },
+]
+
+/** 0 for the best condition; listings that do not say come last. */
+export function conditionRank(condition: ListingCondition | null | undefined): number {
+  const order = Object.keys(CONDITION_LABELS)
+  return condition ? order.indexOf(condition) : order.length
 }
 
 /** Turns a label map into `USelect` items, keeping the map's order. */

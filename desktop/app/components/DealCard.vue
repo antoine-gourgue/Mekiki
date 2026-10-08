@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { DropdownMenuItem } from '@nuxt/ui'
-import type { LandedCost, SaleBreakdown, SourcePlatform } from '~/types/engine'
+import type { LandedCost, ListingCondition, SaleBreakdown, SourcePlatform } from '~/types/engine'
 
 /**
  * One listing with what it would earn. Used for scanner deals, one-off search results and
@@ -21,6 +21,8 @@ const props = withDefaults(
     listedAt?: string | null
     endsAt?: string | null
     bids?: number | null
+    /** Unknown on Rakuma and Yahoo Auctions, whose results do not say. */
+    condition?: ListingCondition | null
     landedCost: LandedCost
     sale: SaleBreakdown | null
     /** ROI the scanner aims for, as a fraction (0.3). */
@@ -42,6 +44,7 @@ const props = withDefaults(
     listedAt: null,
     endsAt: null,
     bids: null,
+    condition: null,
     note: null,
     menu: undefined,
     layout: 'row',
@@ -106,6 +109,14 @@ const meta = computed(() =>
       >
         ROI {{ formatRatio(sale.roi) }}
       </span>
+      <UBadge
+        v-if="condition"
+        :color="CONDITION_COLORS[condition]"
+        variant="soft"
+        :label="CONDITION_LABELS[condition]"
+        :title="CONDITION_JAPANESE[condition]"
+        class="absolute bottom-2.5 left-2.5"
+      />
       <UButton
         v-if="favoritable"
         :color="favorite ? 'primary' : 'neutral'"
@@ -236,6 +247,14 @@ const meta = computed(() =>
           >
             Plus en ligne
           </span>
+          <UBadge
+            v-if="condition"
+            :color="CONDITION_COLORS[condition]"
+            variant="soft"
+            size="sm"
+            :label="CONDITION_LABELS[condition]"
+            :title="CONDITION_JAPANESE[condition]"
+          />
         </div>
         <p v-if="heading" class="mt-0.5 truncate text-[13px] text-dimmed" :title="title">
           {{ title }}
