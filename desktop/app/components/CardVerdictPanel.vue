@@ -81,6 +81,16 @@ const SITE_NAMES: Record<BrowserSite, string> = { vinted: 'Vinted', ebay: 'eBay'
 const SHOWN_LISTINGS = 6
 const expanded = reactive<Partial<Record<BrowserSite, boolean>>>({})
 
+// eBay's own listings, read with the account's eBay keys when it has some.
+const ebayLive = computed(() =>
+  result.value?.prices.ebay.configured ? result.value.prices.ebay : null,
+)
+const ebayExpanded = ref(false)
+const shownEbay = computed(() => {
+  const listings = ebayLive.value?.listings ?? []
+  return ebayExpanded.value ? listings : listings.slice(0, SHOWN_LISTINGS)
+})
+
 function shownListings(read: BrowserPrices) {
   const relevant = read.listings.filter((listing) => listing.relevant)
   return expanded[read.site] ? relevant : relevant.slice(0, SHOWN_LISTINGS)
@@ -342,6 +352,81 @@ const costLine = computed(() => {
         >
           * Offre acceptée : le prix réel était plus bas.
         </p>
+      </section>
+
+      <section v-if="ebayLive" class="space-y-2.5 rounded-xl border border-default p-4">
+        <div class="flex flex-wrap items-baseline justify-between gap-2">
+          <p class="font-semibold text-highlighted">En vente sur eBay</p>
+          <p v-if="ebayLive.median_cents != null" class="text-xs text-muted">
+            médiane
+            <span class="font-semibold text-highlighted tabular-nums">
+              {{ formatCents(ebayLive.median_cents) }}
+            </span>
+            · {{ ebayLive.listings.length }} annonce{{ ebayLive.listings.length > 1 ? 's' : '' }}
+            ·
+            <span class="tabular-nums">
+              {{ formatCents(ebayLive.min_cents) }} à {{ formatCents(ebayLive.max_cents) }}
+            </span>
+          </p>
+        </div>
+        <p class="text-xs text-dimmed">
+          Prix demandés en ce moment, lus avec vos clés eBay : une vente se conclut souvent plus
+          bas.
+        </p>
+        <p v-if="ebayLive.error" class="text-sm text-error">{{ ebayLive.error }}</p>
+        <p v-else-if="!ebayLive.listings.length" class="text-sm text-muted">
+          Aucune annonce eBay de cette carte en ce moment.
+        </p>
+        <ul class="space-y-1.5">
+          <li v-for="listing in shownEbay" :key="listing.item_id">
+            <button
+              type="button"
+              class="group flex w-full items-center gap-3 rounded-lg bg-elevated p-2 text-left text-sm transition-colors hover:bg-accented"
+              title="Ouvrir l’annonce sur eBay"
+              @click="openExternal(listing.url)"
+            >
+              <span
+                class="flex h-13 w-10 shrink-0 items-center justify-center overflow-hidden rounded-md bg-accented"
+              >
+                <img
+                  v-if="listing.image_url"
+                  :src="listing.image_url"
+                  alt=""
+                  loading="lazy"
+                  referrerpolicy="no-referrer"
+                  class="size-full object-cover"
+                />
+                <UIcon v-else name="i-lucide-image-off" class="size-4 text-dimmed" />
+              </span>
+              <span class="min-w-0 flex-1">
+                <span class="line-clamp-1 text-highlighted" :title="listing.title">
+                  {{ listing.title }}
+                </span>
+                <span class="block text-xs text-dimmed">
+                  {{ [listing.condition, listing.country].filter(Boolean).join(' · ') }}
+                  <template v-if="listing.shipping_cents">
+                    · + {{ formatCents(listing.shipping_cents) }} de port
+                  </template>
+                </span>
+              </span>
+              <span class="shrink-0 font-semibold tabular-nums">
+                {{ formatCents(listing.price_cents) }}
+              </span>
+              <UIcon
+                name="i-lucide-arrow-up-right"
+                class="size-4 shrink-0 text-dimmed group-hover:text-highlighted"
+              />
+            </button>
+          </li>
+        </ul>
+        <UButton
+          v-if="ebayLive.listings.length > SHOWN_LISTINGS"
+          size="sm"
+          color="neutral"
+          variant="ghost"
+          :label="ebayExpanded ? 'Voir moins' : `Voir les ${ebayLive.listings.length} annonces`"
+          @click="ebayExpanded = !ebayExpanded"
+        />
       </section>
     </template>
 

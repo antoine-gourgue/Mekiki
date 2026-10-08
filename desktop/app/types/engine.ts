@@ -595,6 +595,22 @@ export interface EbayListing {
   country: string | null
 }
 
+/** The account's eBay developer keys, as sent from the settings. */
+export interface EbayKeysUpdate {
+  client_id: string
+  /** Left null, the secret already saved is kept: the engine never sends it back. */
+  client_secret?: string | null
+  marketplace?: string
+}
+
+export interface EbayStatus {
+  configured: boolean
+  /** "account": the account's own keys; "server": the engine's .env, for every account. */
+  source: 'account' | 'server' | null
+  client_id: string | null
+  marketplace: string | null
+}
+
 export interface EbayPrices {
   /** False when the engine has no eBay application keys: only the links work then. */
   configured: boolean

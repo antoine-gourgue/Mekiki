@@ -36,6 +36,7 @@ const sections = [
   { id: 'achat', label: 'Achat au Japon' },
   { id: 'import', label: 'Import' },
   { id: 'revente', label: 'Revente et cotisations' },
+  { id: 'ebay', label: 'Clés eBay' },
   { id: 'scanner', label: 'Scanner' },
 ]
 // The panel body scrolls, not the window: a #hash link would not move it.
@@ -189,6 +190,8 @@ function scrollTo(id: string) {
               </div>
             </div>
           </UCard>
+
+          <EbayKeysCard />
 
           <UCard id="scanner" :ui="{ body: 'space-y-4 sm:p-5' }">
             <div class="flex flex-wrap items-start justify-between gap-3">
