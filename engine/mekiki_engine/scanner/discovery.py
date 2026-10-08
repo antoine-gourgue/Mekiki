@@ -14,6 +14,7 @@ from collections import Counter
 from collections.abc import Callable, Iterable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, replace
+from decimal import Decimal
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
@@ -57,6 +58,7 @@ from mekiki_engine.schemas import (
     DiscoveryRequest,
     DiscoveryRun,
     DiscoveryTotals,
+    LogLine,
 )
 from mekiki_engine.services.portfolio import parcel_landed_cost, project_sale
 from mekiki_engine.services.settings_service import load_settings
@@ -78,6 +80,10 @@ MAX_SAME_PRODUCT = 2
 # A site failing this many searches in a row is down or has changed: stop browsing it.
 MAX_FAILURES_IN_A_ROW = 3
 MAX_ALTERNATIVES = 30
+# The log keeps the latest lines only: a maximal discovery reads hundreds of pages.
+MAX_LOG_LINES = 400
+DEPTH_LABELS = {"quick": "rapide", "deep": "approfondie", "max": "maximale"}
+GAME_NAMES = {Game.POKEMON: "Pokémon", Game.ONE_PIECE: "One Piece"}
 # Listings checked on their marketplace per discovery: a few seconds each (see PoliteClient),
 # so a parcel full of sold listings cannot hold the result back for long.
 MAX_CHECKS = 30
@@ -98,6 +104,8 @@ class Candidate:
     expected_cents: int
     estimate: DealEstimate
     warning: str | None = None
+    # Under the ROI target on its own: only used to fill a parcel left short of cards.
+    below_target: bool = False
 
     @property
     def landed_cents(self) -> int:
@@ -111,6 +119,33 @@ class Candidate:
     @property
     def roi(self) -> float:
         return self.margin_cents / self.landed_cents if self.landed_cents else 0.0
+
+
+def note(run: DiscoveryRun, text: str) -> None:
+    """Adds a step to the discovery's log, which the app shows as it runs."""
+    run.log.append(LogLine(at=utc_now(), text=text))
+    del run.log[:-MAX_LOG_LINES]
+
+
+def euros(cents: int) -> str:
+    """12345 → "123,45 €", French style."""
+    return f"{cents / 100:,.2f}".replace(",", " ").replace(".", ",") + " €"
+
+
+def percent(rate: Decimal) -> str:
+    """0.3 → "30 %", 0.165 → "16,5 %"."""
+    return f"{rate * 100:.1f}".rstrip("0").rstrip(".").replace(".", ",") + " %"
+
+
+def yen(amount: int) -> str:
+    return f"{amount:,}".replace(",", " ") + " ¥"
+
+
+def counted(count: int, words: str) -> str:
+    """counted(3, "annonce écartée") → "3 annonces écartées", with French spacing."""
+    if count > 1:
+        words = " ".join(word if word.endswith("s") else word + "s" for word in words.split())
+    return f"{count:,}".replace(",", " ") + " " + words
 
 
 def search_plan(session: Session, game: Game, depth: str) -> list[tuple[str, int]]:
@@ -183,16 +218,33 @@ def discover(
     settings = load_settings(session, user_id)
     platforms = request.sources or settings.scanner.sources
     run = DiscoveryRun(status="running", request=request, started_at=utc_now())
+    sites = ", ".join(SOURCE_LABELS[platform] for platform in platforms)
+    note(
+        run,
+        f"Recherche lancée : {GAME_NAMES[request.game]}, budget {euros(request.budget_cents)}, "
+        f"{request.card_count} cartes, profondeur {DEPTH_LABELS[request.depth]}, "
+        f"sur {sites}.",
+    )
     on_progress(run)
 
     needs_index = request.game is Game.POKEMON and not card_index.indexed_count(session)
-    if needs_index and (error := card_index.refresh(session, client)):
-        run.errors.append(error)
+    if needs_index:
+        note(run, "Téléchargement de l'index des cartes Pokémon japonaises (TCGdex)…")
+        on_progress(run)
+        if error := card_index.refresh(session, client):
+            run.errors.append(error)
+            note(run, error)
+        else:
+            note(run, f"Index prêt : {card_index.indexed_count(session)} cartes.")
     plan = search_plan(session, request.game, request.depth)
     run.searches_total = len(platforms) * sum(pages for _query, pages in plan)
-    on_progress(run)
-
     price_min, price_max = price_window_jpy(settings, request)
+    note(
+        run,
+        f"{len(plan)} recherches prévues par site, {run.searches_total} pages au plus, "
+        f"annonces entre {yen(price_min)} et {yen(price_max)}.",
+    )
+    on_progress(run)
     found: dict[tuple[str, str], FoundListing] = {}
     lock = threading.Lock()
 
@@ -229,6 +281,11 @@ def discover(
                     with lock:
                         report(platform, error)
                         run.searches_done += skipped
+                        note(
+                            run,
+                            f"{SOURCE_LABELS[platform]} : {error}"
+                            + (", site abandonné." if give_up else ", recherche suivante."),
+                        )
                         on_progress(run)
                     if give_up:
                         return
@@ -236,11 +293,18 @@ def discover(
                     break
                 skipped = 0 if items else pages - page - 1
                 with lock:
+                    before = len(found)
                     for item in items:
                         found.setdefault((item.source.value, item.external_id), item)
                     # An empty page ends this search: its next pages would be empty too.
                     run.searches_done += 1 + skipped
                     run.listings_seen = len(found)
+                    note(
+                        run,
+                        f"{SOURCE_LABELS[platform]} : « {query or 'toutes les cartes'} », "
+                        f"page {page + 1} : {counted(len(items), 'annonce')}, "
+                        f"{counted(len(found) - before, 'nouvelle')}.",
+                    )
                     on_progress(run)
                 remaining -= 1 + skipped
                 if skipped:
@@ -250,9 +314,23 @@ def discover(
     with ThreadPoolExecutor(max_workers=len(platforms) or 1) as pool:
         list(pool.map(browse, platforms))
 
+    if should_stop():
+        note(run, "Arrêt demandé : les annonces déjà lues sont évaluées.")
+    note(
+        run,
+        f"{counted(run.listings_seen, 'annonce lue')} au total : lecture des titres et des cotes…",
+    )
+    on_progress(run)
     candidates = evaluate(session, settings, request, found.values(), run)
+    on_progress(run)
     picked, gone = compose_available_parcel(
-        client, run, candidates, request, on_progress=on_progress, should_stop=should_stop
+        client,
+        run,
+        settings,
+        candidates,
+        request,
+        on_progress=on_progress,
+        should_stop=should_stop,
     )
     run.picks, run.totals = price_parcel(settings, picked)
     # Picked cards were priced as if the parcel held ``card_count`` cards; with fewer, each
@@ -266,16 +344,39 @@ def discover(
             f"dossier) coûtent déjà environ {fixed_parcel_costs_eur(settings):.0f} €. "
             "Augmentez le budget ou réduisez le nombre de cartes."
         )
+        note(run, run.errors[-1])
+    if run.totals is not None:
+        fillers = sum(1 for candidate in picked if candidate.below_target)
+        note(
+            run,
+            f"Colis proposé : {len(run.picks)} cartes"
+            + (f" dont {fillers} pour le compléter" if fillers else "")
+            + f", coût {euros(run.totals.landed_cents)}, marge {euros(run.totals.margin_cents)}, "
+            f"ROI {percent(run.totals.roi) if run.totals.roi is not None else '?'}.",
+        )
+        target = target_roi(settings, request)
+        if run.totals.roi is not None and run.totals.roi < target:
+            run.errors.append(short_of_target(settings, request, platforms, candidates, picked))
+            note(run, run.errors[-1])
     left_out = {id(candidate) for candidate in picked} | gone
     run.alternatives = [
         _pick(candidate, candidate.estimate.landed, candidate.estimate.sale)
         for candidate in candidates
-        if id(candidate) not in left_out
+        if id(candidate) not in left_out and not candidate.below_target
     ][:MAX_ALTERNATIVES]
     run.stopped = should_stop()
+    note(run, f"Terminé : {len(run.alternatives)} autres annonces rentables à côté du colis.")
     run.status = "done"
     run.finished_at = utc_now()
     return run
+
+
+def target_roi(settings: AppSettings, request: DiscoveryRequest) -> Decimal:
+    return percent_to_fraction(
+        request.min_roi_percent
+        if request.min_roi_percent is not None
+        else settings.scanner.min_roi_percent
+    )
 
 
 def evaluate(
@@ -285,25 +386,30 @@ def evaluate(
     listings: Iterable[FoundListing],
     run: DiscoveryRun,
 ) -> list[Candidate]:
-    """Listings recognised, priced and reaching the ROI target, best return first."""
+    """Listings recognised and priced at a profit, best return first.
+
+    Those under the ROI target come last, flagged ``below_target``: they only fill a parcel
+    that would otherwise stay short of cards.
+    """
     resolver = CatalogResolver(session)
     noise = MatchRule(global_excluded=split_keywords(settings.scanner.excluded_keywords))
-    target = percent_to_fraction(
-        request.min_roi_percent
-        if request.min_roi_percent is not None
-        else settings.scanner.min_roi_percent
-    )
+    target = target_roi(settings, request)
+    # Why the other listings were left out, for the log: most never become a candidate.
+    dropped: Counter[str] = Counter()
     candidates: list[Candidate] = []
     for listing in listings:
         minimum = request.min_condition
         if minimum and not (listing.condition and listing.condition.at_least(minimum)):
+            dropped["condition"] += 1
             continue
         identity = identify(listing.title, request.game)
         # Graded copies and lots are other products; the noise rule rejects both.
         if identity.graded or not match_title(listing.title, noise).matched:
+            dropped["noise"] += 1
             continue
         resolution = resolver.resolve(identity)
         if resolution is None:
+            dropped["unknown"] += 1
             continue
         run.listings_identified += 1
         reference = reference_price(resolution.product)
@@ -321,18 +427,50 @@ def evaluate(
         sale = project_sale(settings, settings.scanner.resale_platform, reference[0])
         estimate = DealEstimate(landed=landed, sale=sale)
         margin = estimate.margin_cents
-        if margin is None or landed.total_cents <= 0 or margin < target * landed.total_cents:
+        if margin is None or landed.total_cents <= 0 or margin <= 0:
+            dropped["loss"] += 1
             continue
         price_cents = listing.price_jpy / settings.fx_jpy_per_eur * 100
         warning = (
             SUSPICIOUS_WARNING if price_cents < SUSPICIOUS_PRICE_SHARE * reference[0] else None
         )
-        candidates.append(Candidate(listing, identity, resolution, reference[0], estimate, warning))
+        below = margin < target * landed.total_cents
+        candidates.append(
+            Candidate(listing, identity, resolution, reference[0], estimate, warning, below)
+        )
+    above = sum(1 for c in candidates if not c.below_target and not c.warning)
+    note(
+        run,
+        "Écartées : "
+        + (
+            ", ".join(
+                f"{counted(count, 'annonce')} {why}"
+                for count, why in (
+                    (dropped["condition"], "par l'état (insuffisant ou non précisé)"),
+                    (dropped["noise"], "en lot, gradée ou avec un mot exclu"),
+                    (dropped["unknown"], "sans carte reconnue dans le titre"),
+                )
+                if count
+            )
+            or "aucune"
+        )
+        + ".",
+    )
+    note(
+        run,
+        f"{counted(run.listings_identified, 'carte reconnue')}, "
+        f"{counted(run.listings_priced, 'cotée')} sur Cardmarket, "
+        f"{dropped['loss']} à perte, "
+        f"{counted(above, 'rentable')} à {percent(target)} ou plus, "
+        f"{counted(len(candidates) - above, 'autre')} rentable"
+        f"{'s' if len(candidates) - above > 1 else ''} en dessous.",
+    )
     # Confident identifications first, then the best return per euro spent.
     return sorted(
         candidates,
         key=lambda c: (
             c.warning is not None,
+            c.below_target,
             c.resolution.confidence != "high",
             -c.roi,
             -c.margin_cents,
@@ -347,6 +485,7 @@ def compose_parcel(candidates: list[Candidate], budget_cents: int, count: int) -
     expensive card cannot eat the whole budget; when the budget cannot hold ``count`` cards
     anyway, a second pass fills what it can.
     """
+    candidates = [c for c in candidates if not c.below_target and not c.warning]
     if not candidates:
         return []
     cheapest = min(c.landed_cents for c in candidates)
@@ -360,7 +499,7 @@ def compose_parcel(candidates: list[Candidate], budget_cents: int, count: int) -
             if slots_left == 0:
                 return
             product_id = candidate.resolution.product.id_product
-            if candidate.warning or candidate in picked:
+            if candidate.warning or candidate.below_target or candidate in picked:
                 continue
             if per_product[product_id] >= MAX_SAME_PRODUCT:
                 continue
@@ -377,9 +516,88 @@ def compose_parcel(candidates: list[Candidate], budget_cents: int, count: int) -
     return picked
 
 
+def fill_parcel(
+    settings: AppSettings,
+    picked: list[Candidate],
+    candidates: list[Candidate],
+    budget_cents: int,
+    count: int,
+) -> list[Candidate]:
+    """Completes a parcel left short of ``count`` cards with listings under the ROI target.
+
+    Shipping, packing and handling cost the same for 3 cards or 15: candidates were priced
+    as one card of a full parcel, so a short one spreads those costs over too few cards and
+    misses the target its cards reached alone. A filler only goes in when it raises the
+    parcel's return, so it never makes the parcel worse.
+    """
+    if not picked:
+        return picked
+    picked = list(picked)
+    per_product = Counter(c.resolution.product.id_product for c in picked)
+    _picks, totals = price_parcel(settings, picked)
+    for candidate in candidates:
+        if len(picked) >= count:
+            break
+        product_id = candidate.resolution.product.id_product
+        if not candidate.below_target or candidate.warning:
+            continue
+        if per_product[product_id] >= MAX_SAME_PRODUCT:
+            continue
+        _picks, trial = price_parcel(settings, [*picked, candidate])
+        assert trial is not None and totals is not None
+        if trial.landed_cents > budget_cents or (trial.roi or 0) <= (totals.roi or 0):
+            continue
+        picked.append(candidate)
+        per_product[product_id] += 1
+        totals = trial
+    return picked
+
+
+def short_of_target(
+    settings: AppSettings,
+    request: DiscoveryRequest,
+    platforms: Iterable[SourcePlatform],
+    candidates: list[Candidate],
+    picked: list[Candidate],
+) -> str:
+    """Why the parcel misses the ROI target, and what to change to find more cards."""
+    target = percent(target_roi(settings, request))
+    above = sum(1 for c in candidates if not c.below_target and not c.warning)
+    fillers = sum(1 for c in picked if c.below_target)
+    fixed = fixed_parcel_costs_eur(settings)
+    if above < request.card_count:
+        reason = (
+            f"seules {above} annonces les dépassent"
+            if above > 1
+            else "une seule annonce les dépasse"
+        ) + f", chiffrées comme une carte d'un colis de {request.card_count}"
+    else:
+        reason = f"le budget ne laisse place qu'à {len(picked)} cartes"
+    message = (
+        f"Le colis n'atteint pas les {target} demandés : {reason}. Les frais fixes du colis "
+        f"(envoi international, emballage, frais de dossier : environ {fixed:.0f} €, plus la "
+        "TVA) pèsent alors sur moins de cartes."
+    )
+    if fillers:
+        message += (
+            f" {fillers} carte{'s' if fillers > 1 else ''} un peu moins rentable"
+            f"{'s le complètent' if fillers > 1 else ' le complète'} pour mieux les partager."
+        )
+    ideas = []
+    if request.depth != "max":
+        ideas.append("une recherche plus profonde")
+    if SourcePlatform.RAKUMA not in platforms:
+        ideas.append("Rakuma")
+    if request.min_condition is not None:
+        ideas.append("un état minimum moins strict (il écarte aussi toutes les annonces Rakuma)")
+    ideas.append("un ROI minimum plus bas")
+    return message + " Pour plus de choix : " + ", ".join(ideas) + "."
+
+
 def compose_available_parcel(
     client: PoliteClient,
     run: DiscoveryRun,
+    settings: AppSettings,
     candidates: list[Candidate],
     request: DiscoveryRequest,
     *,
@@ -398,10 +616,12 @@ def compose_available_parcel(
     while True:
         remaining = [c for c in candidates if id(c) not in gone]
         picked = compose_parcel(remaining, request.budget_cents, request.card_count)
+        picked = fill_parcel(settings, picked, remaining, request.budget_cents, request.card_count)
         unchecked = [c for c in picked if id(c) not in checked]
         if not unchecked or should_stop() or len(checked) >= MAX_CHECKS:
             return picked, gone
         run.verifying = True
+        note(run, f"Vérification des {len(unchecked)} annonces du colis : encore en vente ?")
         on_progress(run)
         for candidate in unchecked:
             if should_stop() or len(checked) >= MAX_CHECKS:
@@ -410,12 +630,23 @@ def compose_available_parcel(
             result = availability.check_listing(client, listing.source, listing.external_id)
             checked.add(id(candidate))
             run.listings_checked += 1
+            # Cardmarket names Pokémon cards after their attacks: "Umbreon V [Mean Look | …]".
+            name = (candidate.resolution.product.name or listing.title[:40]).split(" [")[0]
+            label = f"{name} · {candidate.resolution.label}"
+            site = SOURCE_LABELS[listing.source]
             if result.available is False:
                 gone.add(id(candidate))
                 run.listings_gone += 1
-            elif listing.condition is None and result.condition is not None:
-                # Rakuma only gives the condition on the listing's own page.
-                candidate.listing = replace(listing, condition=result.condition)
+                note(run, f"{label} ({site}) : déjà vendue, remplacée par la suivante.")
+            else:
+                note(
+                    run,
+                    f"{label} ({site}) : "
+                    + ("encore en vente." if result.available else "non vérifiable, gardée."),
+                )
+                if listing.condition is None and result.condition is not None:
+                    # Rakuma only gives the condition on the listing's own page.
+                    candidate.listing = replace(listing, condition=result.condition)
             on_progress(run)
         run.verifying = False
 
@@ -524,7 +755,8 @@ class DiscoveryJob:
 
     def _execute(self, request: DiscoveryRequest) -> None:
         def publish(run: DiscoveryRun) -> None:
-            self.run = run.model_copy()
+            # The lists keep growing in the worker thread while the API serialises the copy.
+            self.run = run.model_copy(update={"log": list(run.log), "errors": list(run.errors)})
 
         try:
             with self._session_factory() as session:
@@ -543,6 +775,7 @@ class DiscoveryJob:
             failed.status = "failed"
             failed.finished_at = utc_now()
             failed.errors = [*failed.errors, f"Erreur inattendue : {error}"]
+            note(failed, failed.errors[-1])
             self.run = failed
         with self._session_factory() as session:
             save_last_run(session, self._user_id, self.run)

@@ -9,11 +9,11 @@ from mekiki_engine.deps import DataDirDep, SessionDep, UserDep
 from mekiki_engine.domain import Game, SalePlatform
 from mekiki_engine.schemas import (
     BrowserActivity,
-    BrowserLogLine,
     BrowserPricesOut,
     BrowserPricesRequest,
     BrowserSite,
     BrowserStatus,
+    LogLine,
     MarketListingOut,
     PublishJobOut,
     PublishRequest,
@@ -48,7 +48,7 @@ def browser_activity(request: Request, user: UserDep) -> BrowserActivity:
         activity=current.doing,
         running=current.running,
         visible=current.visible,
-        log=[BrowserLogLine(at=line.at, text=line.text) for line in current.log],
+        log=[LogLine(at=line.at, text=line.text) for line in current.log],
     )
 
 

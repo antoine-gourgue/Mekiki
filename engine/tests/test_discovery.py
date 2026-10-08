@@ -301,3 +301,45 @@ def test_sold_listings_give_their_place_in_the_parcel(
     assert run["verifying"] is False
     # The sold listing is not offered as an alternative either.
     assert run["alternatives"] == []
+
+
+def test_a_short_parcel_is_completed_and_explained(
+    client: TestClient, marketplace: FakeMarketplace
+) -> None:
+    index_pokemon_cards(client)
+    marketplace.listings[SourcePlatform.MERCARI] = LISTINGS
+
+    run = discover(client, budget_cents=50000, card_count=3, min_roi_percent=45)
+
+    # Only m1 reaches 45 % as a card of a 3-card parcel; alone, it would carry every fixed
+    # cost of the parcel. m2, under the target on its own, shares them and lifts the return.
+    assert [p["external_id"] for p in run["picks"]] == ["m1", "m2"]
+    assert run["totals"]["roi"] < 0.45
+    [message] = run["errors"]
+    assert message.startswith(
+        "Le colis n'atteint pas les 45 % demandés : une seule annonce les dépasse"
+    )
+    assert "1 carte un peu moins rentable le complète" in message
+    # A filler is not offered as another profitable listing.
+    assert run["alternatives"] == []
+
+
+def test_discovery_logs_each_step(client: TestClient, marketplace: FakeMarketplace) -> None:
+    index_pokemon_cards(client)
+    marketplace.listings[SourcePlatform.MERCARI] = LISTINGS
+
+    run = discover(client, budget_cents=15000, card_count=2, min_roi_percent=10)
+
+    log = [line["text"] for line in run["log"]]
+    assert log[0] == (
+        "Recherche lancée : Pokémon, budget 150,00 €, 2 cartes, profondeur rapide, sur Mercari."
+    )
+    assert "Mercari : « toutes les cartes », page 1 : 6 annonces, 6 nouvelles." in log
+    assert "Mercari : « SAR », page 1 : 6 annonces, 0 nouvelle." in log
+    assert (
+        "Écartées : 2 annonces en lot, gradée ou avec un mot exclu, "
+        "1 annonce sans carte reconnue dans le titre." in log
+    )
+    assert any(line.startswith("Colis proposé : 2 cartes, coût ") for line in log)
+    assert log[-1].startswith("Terminé")
+    assert all(line["at"].endswith("Z") for line in run["log"])

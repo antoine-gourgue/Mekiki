@@ -655,6 +655,13 @@ class DiscoveryTotals(BaseModel):
     unpriced_count: int = 0
 
 
+class LogLine(BaseModel):
+    """One step of a long task, shown in the app's logs."""
+
+    at: str
+    text: str
+
+
 class DiscoveryRun(BaseModel):
     status: Literal["idle", "running", "done", "failed"]
     request: DiscoveryRequest | None = None
@@ -678,6 +685,8 @@ class DiscoveryRun(BaseModel):
     errors: list[str] = Field(default_factory=list)
     # Stopped by the user: the results cover the listings browsed until then.
     stopped: bool = False
+    # Every step, oldest first: what the app shows while the discovery runs.
+    log: list[LogLine] = Field(default_factory=list)
 
 
 class FavoriteFields(BaseModel):
@@ -987,11 +996,6 @@ class PublishJobOut(BaseModel):
     error: str | None
 
 
-class BrowserLogLine(BaseModel):
-    at: str
-    text: str
-
-
 class BrowserActivity(BaseModel):
     """What Mekiki's Chrome window is doing, for the progress log in the app."""
 
@@ -1001,4 +1005,4 @@ class BrowserActivity(BaseModel):
     # The window is on screen (sign-in, a form to finish, a bot check to pass).
     visible: bool
     # The latest steps and outcomes, oldest first.
-    log: list[BrowserLogLine]
+    log: list[LogLine]
