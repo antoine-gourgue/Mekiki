@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+from typing import Any
+
 from sqlalchemy.orm import Session
 
+from mekiki_engine.browser import markets
 from mekiki_engine.browser.service import Browsers
 from mekiki_engine.domain import Game, SalePlatform
 from mekiki_engine.models import CardmarketProduct
@@ -20,6 +23,7 @@ from mekiki_engine.schemas import (
     ResalePrices,
 )
 from mekiki_engine.services.portfolio import get_item, item_detail
+from mekiki_engine.services.settings_service import load_ebay_keys
 
 
 def resale_links(query: str) -> ResaleLinks:
@@ -38,25 +42,60 @@ def product_query(session: Session, product_id: int, label: str | None) -> str |
     return drafts.search_query(product.name, drafts.number_in_label(label))
 
 
-def resale_prices(ebay: EbayBrowse | None, query: str) -> ResalePrices:
-    return ResalePrices(query=query, links=resale_links(query), ebay=ebay_prices(ebay, query))
+def ebay_for(state: Any, session: Session, user_id: int) -> tuple[EbayBrowse | None, str | None]:
+    """The eBay client of the account's own keys, else the engine's (its .env), with where
+    the keys come from: "account", "server" or None."""
+    keys = load_ebay_keys(session, user_id)
+    if keys is None:
+        return state.ebay, ("server" if state.ebay is not None else None)
+    key = (keys.client_id, keys.client_secret, keys.marketplace)
+    if key not in state.ebay_clients:
+        state.ebay_clients[key] = EbayBrowse(state.http, *key)
+    return state.ebay_clients[key], "account"
 
 
-def ebay_prices(ebay: EbayBrowse | None, query: str) -> EbayPrices:
+def resale_prices(
+    ebay: EbayBrowse | None,
+    query: str,
+    card_number: str | None = None,
+    names: list[str] | None = None,
+) -> ResalePrices:
+    return ResalePrices(
+        query=query,
+        links=resale_links(query),
+        ebay=ebay_prices(ebay, query, card_number, names),
+    )
+
+
+def ebay_prices(
+    ebay: EbayBrowse | None,
+    query: str,
+    card_number: str | None = None,
+    names: list[str] | None = None,
+) -> EbayPrices:
     if ebay is None:
         return EbayPrices(configured=False)
     try:
         search = ebay.search(query)
     except SourceError as error:
         return EbayPrices(configured=True, error=str(error))
-    prices = search.prices
+    listings = search.listings
+    # As for the listings read in Chrome, once the card's number is known only its own
+    # single, ungraded copies count: a search also brings other printings, lots and slabs.
+    if card_number:
+        listings = [
+            listing
+            for listing in listings
+            if markets.is_relevant(listing.title, card_number, names)
+        ]
+    prices = sorted(listing.price_cents for listing in listings)
     return EbayPrices(
         configured=True,
         total=search.total,
         min_cents=prices[0] if prices else None,
-        median_cents=search.median_cents,
+        median_cents=markets.robust_median(prices),
         max_cents=prices[-1] if prices else None,
-        listings=[EbayListingOut.model_validate(listing) for listing in search.listings],
+        listings=[EbayListingOut.model_validate(listing) for listing in listings],
     )
 
 
@@ -104,10 +143,11 @@ def verdict(
         for site, site_query in queries.items():
             if (read := browsers.cached(user_id, site_query).get(site)) is not None:
                 market[site] = read
+    names_of_card = card_names(session, product, typed_name)
     result = card_verdict(
         settings,
         product,
-        resale_prices(ebay, query),
+        resale_prices(ebay, query, card_number, names_of_card),
         price_jpy=price_jpy,
         shipping_included=shipping_included,
         landed_cents=landed_cents,
@@ -115,7 +155,7 @@ def verdict(
         market=market,
     )
     result.card_number = card_number
-    result.card_names = card_names(session, product, typed_name)
+    result.card_names = names_of_card
     result.market_queries = queries
     return result
 

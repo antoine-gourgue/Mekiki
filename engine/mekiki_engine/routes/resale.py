@@ -29,7 +29,8 @@ def resale_prices(
         query = service.product_query(session, product_id, label) or ""
     if not query:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, detail="recherche vide")
-    return service.resale_prices(request.app.state.ebay, query)
+    ebay, _source = service.ebay_for(request.app.state, session, _user.id)
+    return service.resale_prices(ebay, query)
 
 
 @router.get("/resale/verdict")
@@ -50,10 +51,11 @@ def resale_verdict(
     # Vinted is searched with French names, which need the Pokémon name list.
     if not names.species_count(session):
         names.refresh(session, request.app.state.http)
+    ebay, _source = service.ebay_for(request.app.state, session, user.id)
     result = service.verdict(
         session,
         settings,
-        request.app.state.ebay,
+        ebay,
         user.id,
         item_id=item_id,
         product_id=product_id,

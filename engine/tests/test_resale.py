@@ -197,3 +197,90 @@ def test_env_files_fill_missing_variables_only(tmp_path, monkeypatch) -> None:  
 
     assert os.environ["MEKIKI_EBAY_CLIENT_ID"] == "app-id"
     assert os.environ["MEKIKI_EBAY_CLIENT_SECRET"] == "from-env"
+
+
+class FakeEbaySearch(FakeEbay):
+    """Answers a card search with other printings, a lot and a graded copy among its own."""
+
+    def __call__(self, request: httpx.Request) -> httpx.Response:
+        if str(request.url) == TOKEN_URL:
+            return httpx.Response(200, json={"access_token": "app-token", "expires_in": 7200})
+        titles = {
+            "a": "Pikachu 201/165 SAR japonaise",
+            "b": "Pikachu 201/165 SAR japanese NM",
+            "c": "Pikachu 173/165 AR",
+            "d": "Lot de 3 Pikachu 201/165",
+            "e": "PSA 10 Pikachu 201/165",
+        }
+        prices = {"a": "40.00", "b": "44.00", "c": "9.00", "d": "95.00", "e": "250.00"}
+        items = [ebay_summary(i, prices[i]) | {"title": title} for i, title in titles.items()]
+        return httpx.Response(200, json={"total": 5, "itemSummaries": items})
+
+
+def test_ebay_listings_count_only_the_card_once_its_number_is_known() -> None:
+    from mekiki_engine.resale.service import ebay_prices
+
+    prices = ebay_prices(browse(FakeEbaySearch()), "Pikachu 201/165", "201/165", ["Pikachu"])
+
+    assert [listing.item_id for listing in prices.listings] == ["a", "b"]
+    assert prices.median_cents == 4200
+    assert prices.total == 5
+
+
+def use_fake_ebay(client: TestClient, fake: object) -> None:
+    client.app.state.http = PoliteClient(  # type: ignore[attr-defined]
+        intervals_s={},
+        default_interval_s=0,
+        transport=httpx.MockTransport(fake),  # type: ignore[arg-type]
+    )
+
+
+def test_each_account_saves_its_own_ebay_keys(client: TestClient) -> None:
+    fake = FakeEbay()
+    use_fake_ebay(client, fake)
+    assert client.get("/settings/ebay").json()["configured"] is False
+
+    saved = client.put(
+        "/settings/ebay", json={"client_id": "Antoine-Mekiki-PRD-1", "client_secret": "PRD-s3cret"}
+    )
+    prices = client.get("/resale/prices", params={"q": "Pikachu 201/165"}).json()
+
+    assert saved.status_code == 200
+    assert saved.json() == {
+        "configured": True,
+        "source": "account",
+        "client_id": "Antoine-Mekiki-PRD-1",
+        "marketplace": "EBAY_FR",
+    }
+    assert "s3cret" not in saved.text
+    assert prices["ebay"]["configured"] is True
+    assert fake.token_calls == 2
+
+    sign_in(client, "autre@exemple.fr")
+    assert client.get("/settings/ebay").json()["configured"] is False
+
+
+def test_sandbox_or_refused_ebay_keys_are_not_saved(client: TestClient) -> None:
+    sandbox = client.put(
+        "/settings/ebay", json={"client_id": "Antoine-Mekiki-SBX-1", "client_secret": "SBX-1"}
+    )
+    use_fake_ebay(client, lambda _request: httpx.Response(401, json={"error": "invalid_client"}))
+    refused = client.put(
+        "/settings/ebay", json={"client_id": "Antoine-Mekiki-PRD-1", "client_secret": "faux"}
+    )
+
+    assert sandbox.status_code == 422
+    assert "Sandbox" in sandbox.json()["detail"]
+    assert refused.status_code == 422
+    assert client.get("/settings/ebay").json()["configured"] is False
+
+
+def test_saved_ebay_keys_keep_their_secret_and_can_be_removed(client: TestClient) -> None:
+    use_fake_ebay(client, FakeEbay())
+    client.put("/settings/ebay", json={"client_id": "A-PRD-1", "client_secret": "PRD-1"})
+
+    again = client.put("/settings/ebay", json={"client_id": "A-PRD-1"})
+    removed = client.delete("/settings/ebay")
+
+    assert again.status_code == 200
+    assert removed.json()["configured"] is False

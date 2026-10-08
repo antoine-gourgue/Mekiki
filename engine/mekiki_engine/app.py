@@ -73,6 +73,8 @@ def create_app(
     app.state.discovery = DiscoveryJobs(sessions, http, source_factory=source_factory)
     app.state.sign_in_throttle = SignInThrottle()
     app.state.browsers = Browsers(config.data_dir)
+    # Clients for the accounts' own eBay keys, built on first use (see resale.service.ebay_for).
+    app.state.ebay_clients = {}
     app.state.ebay = (
         EbayBrowse(http, config.ebay_client_id, config.ebay_client_secret, config.ebay_marketplace)
         if config.ebay_client_id and config.ebay_client_secret

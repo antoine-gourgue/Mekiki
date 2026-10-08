@@ -5,7 +5,7 @@ from __future__ import annotations
 from sqlalchemy.orm import Session
 
 from mekiki_engine.models import SettingRow
-from mekiki_engine.schemas import AppSettings
+from mekiki_engine.schemas import AppSettings, EbayKeys
 
 
 def settings_key(user_id: int) -> str:
@@ -18,6 +18,28 @@ def load_settings(session: Session, user_id: int) -> AppSettings:
     if row is None:
         return AppSettings()
     return AppSettings.model_validate_json(row.value)
+
+
+def ebay_keys_key(user_id: int) -> str:
+    return f"ebay:{user_id}"
+
+
+def load_ebay_keys(session: Session, user_id: int) -> EbayKeys | None:
+    """The account's own eBay keys; kept apart from the settings, which the app reads whole."""
+    row = session.get(SettingRow, ebay_keys_key(user_id))
+    return EbayKeys.model_validate_json(row.value) if row is not None else None
+
+
+def save_ebay_keys(session: Session, user_id: int, keys: EbayKeys | None) -> None:
+    row = session.get(SettingRow, ebay_keys_key(user_id))
+    if keys is None:
+        if row is not None:
+            session.delete(row)
+    elif row is None:
+        session.add(SettingRow(key=ebay_keys_key(user_id), value=keys.model_dump_json()))
+    else:
+        row.value = keys.model_dump_json()
+    session.commit()
 
 
 def save_settings(session: Session, user_id: int, settings: AppSettings) -> AppSettings:

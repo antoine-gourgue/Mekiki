@@ -91,6 +91,10 @@ class EbayBrowse:
             self._cache[key] = (time.monotonic(), result)
         return result
 
+    def check(self) -> None:
+        """Asks eBay for an application token: raises ``SourceError`` when it refuses the keys."""
+        self._app_token()
+
     def _app_token(self) -> str:
         with self._lock:
             if self._token and time.monotonic() < self._token[1]:

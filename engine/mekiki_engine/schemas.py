@@ -810,6 +810,29 @@ class EbayPrices(BaseModel):
     listings: list[EbayListingOut] = []
 
 
+class EbayKeys(BaseModel):
+    """An account's eBay developer application (Production keyset), stored with its settings."""
+
+    client_id: Annotated[str, Field(min_length=1, max_length=200)]
+    client_secret: Annotated[str, Field(min_length=1, max_length=200)]
+    marketplace: str = "EBAY_FR"
+
+
+class EbayKeysUpdate(BaseModel):
+    client_id: Annotated[str, Field(min_length=1, max_length=200)]
+    # Left empty, the secret already saved is kept: the app never reads it back.
+    client_secret: Annotated[str, Field(max_length=200)] | None = None
+    marketplace: str = "EBAY_FR"
+
+
+class EbayStatus(BaseModel):
+    configured: bool
+    # "account": the account's own keys; "server": the engine's .env, for every account.
+    source: Literal["account", "server"] | None = None
+    client_id: str | None = None
+    marketplace: str | None = None
+
+
 class ResalePrices(BaseModel):
     query: str
     links: ResaleLinks
