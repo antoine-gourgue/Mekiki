@@ -1,13 +1,10 @@
-## Nouveautés
+## Corrections
 
-- Les cartes japonaises d'une quarantaine d'extensions que Mekiki ne reconnaissait pas sont
-  maintenant lues, avec la cote Cardmarket de leur version exacte (normale, full art ou
-  alternative) : Pokémon GO, Eevee Heroes, Time Gazer, VMAX Rising, Shiny Star V, Amazing
-  Volt Tackle, les extensions XY et Noir & Blanc… Mekiki les relie grâce à la liste numérotée
-  de TCGplayer, seulement quand tout concorde : vérifié sur 811 cartes déjà connues, sans une
-  erreur.
-
-## À savoir
-
-- Au premier lancement après la mise à jour, l'index des cartes se reconstruit : environ deux
-  minutes, une seule fois. Une recherche lancée pendant ce temps l'indique dans son journal.
+- La mise à jour ne bute plus sur « Erreur lors de l'ouverture du fichier en écriture » :
+  Mekiki arrête son moteur avant d'installer la nouvelle version, et l'installateur s'en
+  assure aussi. Cette correction vaut dès cette mise à jour-ci.
+- Quand eBay refuse des clés, Mekiki dit pourquoi et quoi faire : clé mal copiée, ou jeu de
+  clés Production encore désactivé chez eBay tant que les notifications de suppression de
+  compte ne sont pas réglées.
+- Si eBay ne répond pas pendant la vérification des clés, Mekiki ne dit plus que les clés
+  sont fausses.

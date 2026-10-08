@@ -123,6 +123,12 @@ cd desktop && npm run lint && npm run format:check && npm run typecheck && npm r
 - Les notes de version sont en français dans `desktop/release-notes.md` : la release et la
   fenêtre de mise à jour de l'app les affichent. Avant chaque push qui change l'app, les
   réécrire pour dire ce qui change pour l'utilisateur (titres `##`, puces `-`), sans jargon.
+- Une mise à jour remplace `mekiki-engine.exe`, ce que Windows refuse tant qu'il tourne. Or le
+  plugin updater ferme l'app par `std::process::exit` (sans `RunEvent::Exit`). D'où trois
+  gardes : la fenêtre de mise à jour télécharge, appelle `stop_engine` (arrêt propre, puis
+  `taskkill` si besoin, jusqu'à ce que le fichier soit libre), puis installe ; l'installateur
+  NSIS tue aussi le moteur (`src-tauri/windows/hooks.nsh`) ; `start_engine` le relance si
+  l'installation échoue.
 
 ## Pièges connus (Windows, octobre 2026)
 
@@ -140,3 +146,8 @@ cd desktop && npm run lint && npm run format:check && npm run typecheck && npm r
   TypeScript 7.
 - Dans Tauri, un lien `target="_blank"` n'ouvre rien : passer par `openExternal()`
   (`desktop/app/utils/external.ts`).
+- Ne pas tester un `taskkill /IM mekiki-engine.exe` sur la machine de développement : il
+  arrête aussi le moteur de l'app installée, qui reste ouverte sans lui.
+- Clés eBay refusées en `invalid_client` alors qu'elles sont bien copiées : le jeu Production
+  reste désactivé tant que les notifications de suppression de compte ne sont pas réglées
+  sur developer.ebay.com (l'exemption convient, Mekiki ne garde aucune donnée d'utilisateur).
