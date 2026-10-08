@@ -18,6 +18,8 @@ _POKEMON_SET = re.compile(
     r"cp\d{1,2}|xy\d{1,2}[a-z]?|bw\d{1,2}[a-z]?)(?![a-z0-9])"
 )
 _NUMBER_OVER_TOTAL = re.compile(r"(?<!\d)(\d{1,3})\s*/\s*(\d{2,3})(?!\d)")
+# Promos number their cards over the promo set: "086/S-P", "001/SV-P", "131/M-P".
+_PROMO_NUMBER = re.compile(r"(?<!\d)(\d{1,3})\s*/\s*(sv|sm|s|m)-?p(?![a-z])")
 # One Piece codes: OP05-119, ST10-005, EB01-061, PRB01-001, P-001.
 _ONE_PIECE_CODE = re.compile(r"(?<![a-z0-9])((?:op|st|eb|prb)\d{2}|p)-(\d{3})(?!\d)")
 
@@ -73,6 +75,8 @@ class CardIdentity:
     several_copies: bool = False
     # Pokémon mirror printing named in the title: "masterball", "pokeball", "reverse"…
     mirror: str | None = None
+    # The normalised title, for the resolver to find the card's name in it.
+    text: str = ""
 
     @property
     def identified(self) -> bool:
@@ -107,15 +111,19 @@ def identify(title: str, game: Game) -> CardIdentity:
     sets = set(_POKEMON_SET.findall(text))
     numbers = {(int(n), int(t)) for n, t in _NUMBER_OVER_TOTAL.findall(text)}
     number = total = None
+    set_code = sets.pop() if len(sets) == 1 else None
     if len(numbers) == 1:
         number, total = numbers.pop()
+    elif not numbers and (promo := _PROMO_NUMBER.search(text)):
+        number, set_code = int(promo[1]), f"{promo[2]}-p"
     return CardIdentity(
         game=game,
-        set_code=sets.pop() if len(sets) == 1 else None,
+        set_code=set_code,
         number=number,
         total=total,
         rarity=rarity,
         graded=graded,
         several_copies=several_copies,
         mirror=next((kind for word, kind in _MIRRORS if word in text), None),
+        text=text,
     )
