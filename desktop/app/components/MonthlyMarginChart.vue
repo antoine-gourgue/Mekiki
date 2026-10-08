@@ -59,7 +59,7 @@ const bars = computed(() => {
   const barWidth = Math.min(MAX_BAR, slot * 0.6)
   const baseline = scale.value.y(0)
   // Keep month labels from colliding when many months are shown.
-  const labelEvery = Math.ceil(36 / slot)
+  const labelEvery = Math.ceil(60 / slot)
   return props.months.map((month, index) => {
     const x = PADDING.left + slot * index + (slot - barWidth) / 2
     const top = scale.value.y(month.margin_cents / 100)
