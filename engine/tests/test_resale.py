@@ -272,7 +272,20 @@ def test_sandbox_or_refused_ebay_keys_are_not_saved(client: TestClient) -> None:
     assert sandbox.status_code == 422
     assert "Sandbox" in sandbox.json()["detail"]
     assert refused.status_code == 422
+    # eBay's reason, explained: wrong keys, or a Production keyset still disabled.
+    assert "Marketplace Account Deletion" in refused.json()["detail"]
     assert client.get("/settings/ebay").json()["configured"] is False
+
+
+def test_ebay_out_of_reach_is_not_blamed_on_the_keys(client: TestClient) -> None:
+    use_fake_ebay(client, lambda _request: httpx.Response(503, text="maintenance"))
+
+    refused = client.put(
+        "/settings/ebay", json={"client_id": "Antoine-Mekiki-PRD-1", "client_secret": "PRD-1"}
+    )
+
+    assert refused.status_code == 422
+    assert refused.json()["detail"].startswith("Clés non vérifiées : eBay ne répond pas")
 
 
 def test_saved_ebay_keys_keep_their_secret_and_can_be_removed(client: TestClient) -> None:

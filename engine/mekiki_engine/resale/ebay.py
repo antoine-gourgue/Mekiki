@@ -26,6 +26,14 @@ CACHE_S = 30 * 60
 TOKEN_MARGIN_S = 120
 
 
+class EbayKeysRefused(SourceError):
+    """eBay turned the application keys down; ``code`` is its OAuth error, "invalid_client"."""
+
+    def __init__(self, code: str, description: str | None) -> None:
+        super().__init__(f"{code} : {description}" if description else code)
+        self.code = code
+
+
 @dataclass(frozen=True, slots=True)
 class EbayListing:
     item_id: str
@@ -104,8 +112,17 @@ class EbayBrowse:
             TOKEN_URL,
             auth=self.credentials,
             data={"grant_type": "client_credentials", "scope": PUBLIC_SCOPE},
+            accept=(400, 401),
         )
-        payload = response.json()
+        try:
+            payload = response.json()
+        except ValueError:
+            payload = {}
+        if response.status_code in (400, 401):
+            raise EbayKeysRefused(
+                str(payload.get("error") or response.status_code),
+                payload.get("error_description"),
+            )
         token = payload.get("access_token")
         if not isinstance(token, str):
             raise SourceError("eBay n'a pas fourni de jeton : vérifiez les clés de l'application")

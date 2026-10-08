@@ -3,13 +3,30 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Request, status
 
 from mekiki_engine.deps import SessionDep, SettingsDep, UserDep
-from mekiki_engine.resale.ebay import EbayBrowse
+from mekiki_engine.resale.ebay import EbayBrowse, EbayKeysRefused
 from mekiki_engine.resale.service import ebay_for
 from mekiki_engine.scanner.sources.base import SourceError
 from mekiki_engine.schemas import AppSettings, EbayKeys, EbayKeysUpdate, EbayStatus
 from mekiki_engine.services.settings_service import load_ebay_keys, save_ebay_keys, save_settings
 
 router = APIRouter(prefix="/settings", tags=["settings"])
+
+# eBay's OAuth errors, explained. "invalid_client" also answers keys that are right but
+# belong to a Production keyset eBay keeps disabled until its developer has dealt with the
+# account deletion notifications every application must handle.
+REFUSED_KEYS = {
+    "invalid_client": (
+        "eBay ne reconnaît pas ce couple de clés de Production. Vérifiez que le Cert ID est bien "
+        "le Client Secret (et non le Dev ID), copié en entier. Si les clés sont justes, le jeu "
+        "Production est sans doute encore désactivé : sur developer.ebay.com, eBay demande "
+        "d'abord de régler les notifications de suppression de compte (« Marketplace Account "
+        "Deletion »). Mekiki ne garde aucune donnée d'utilisateur eBay : l'exemption convient."
+    ),
+    "invalid_scope": (
+        "Ces clés n'ont pas accès à la recherche d'annonces d'eBay (API Browse) : vérifiez que "
+        "le jeu de clés Production est actif sur developer.ebay.com."
+    ),
+}
 
 
 @router.get("")
@@ -59,10 +76,18 @@ def save_ebay(
         EbayBrowse(
             request.app.state.http, keys.client_id, keys.client_secret, keys.marketplace
         ).check()
+    except EbayKeysRefused as error:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            REFUSED_KEYS.get(
+                error.code,
+                f"eBay refuse ces clés ({error}) : vérifiez l'App ID et le Cert ID de Production",
+            ),
+        ) from error
     except SourceError as error:
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_CONTENT,
-            f"eBay refuse ces clés ({error}) : vérifiez l'App ID et le Cert ID de Production",
+            f"Clés non vérifiées : eBay ne répond pas ({error}). Réessayez dans un moment.",
         ) from error
     save_ebay_keys(session, user.id, keys)
     return ebay_status(request, session, user)
