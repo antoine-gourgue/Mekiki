@@ -95,6 +95,10 @@ _OTHER_LANGUAGE = re.compile(
 _SEVERAL = re.compile(r"\b(lot|lots|x\s?[2-9]|[2-9]\s?x|bundle)\b", re.IGNORECASE)
 
 
+# Latin letters, accented ones included, end before this code point.
+LATIN_END = 0x250
+# Pages read per search: Vinted shows 96 listings a page, eBay 120 sold ones.
+PAGES = {"vinted": 3, "ebay": 2}
 # Prices this many times away from the median are left out of it, from this many listings.
 OUTLIER_RATIO = 5
 OUTLIER_MIN_COUNT = 4
@@ -116,9 +120,14 @@ class MarketListing:
     relevant: bool = True
 
 
-def search_url(site: Site, query: str) -> str:
+def search_url(site: Site, query: str, page: int = 1) -> str:
     if site == "vinted":
-        params = {"search_text": query, "catalog[]": VINTED_SINGLE_CARDS_CATALOG}
+        params: dict[str, str | int] = {
+            "search_text": query,
+            "catalog[]": VINTED_SINGLE_CARDS_CATALOG,
+        }
+        if page > 1:
+            params["page"] = page
         return f"https://www.vinted.fr/catalog?{urlencode(params)}"
     params = {
         "_nkw": query,
@@ -127,7 +136,21 @@ def search_url(site: Site, query: str) -> str:
         "LH_Complete": 1,
         "_ipg": 120,
     }
+    if page > 1:
+        params["_pgn"] = page
     return f"https://www.ebay.fr/sch/i.html?{urlencode(params)}"
+
+
+def search_queries(query: str, card_number: str | None, names: list[str] | None) -> list[str]:
+    """The search as asked, then the number with each Latin name of the card: Japanese cards
+    are rare among the results, and sellers name them in French or in English."""
+    queries = [query]
+    if card_number:
+        queries += [f"{name} {card_number}" for name in names or [] if _latin(name)]
+    unique: dict[str, str] = {}
+    for each in queries:
+        unique.setdefault(" ".join(each.lower().split()), " ".join(each.split()))
+    return list(unique.values())
 
 
 def is_connected(tab: Tab, site: Site) -> bool:
@@ -139,18 +162,32 @@ def is_connected(tab: Tab, site: Site) -> bool:
         return False
 
 
-def read_listings(tab: Tab, site: Site, query: str) -> list[dict[str, Any]]:
-    """The raw listings of a search page, as the page shows them."""
-    tab.navigate(search_url(site, query))
-    if site == "ebay" and "signin" in tab.url():
-        raise ChromeError("connectez-vous à eBay dans la fenêtre Chrome de Mekiki")
+def read_listings(
+    tab: Tab, site: Site, queries: list[str], *, pages: int = 1
+) -> list[dict[str, Any]]:
+    """The raw listings of the searches, over a few pages each, as the pages show them.
+
+    A search stops at the first page bringing nothing new.
+    """
     script = VINTED_ITEMS if site == "vinted" else EBAY_SOLD_ITEMS
-    # Results render after the page itself: wait for them, or for an empty search.
-    try:
-        tab.wait_for(f"({script}).length > 0", timeout=10)
-    except ChromeError:
-        return []
-    return list(tab.evaluate(script) or [])
+    found: dict[str, dict[str, Any]] = {}
+    for query in queries:
+        for page in range(1, pages + 1):
+            tab.navigate(search_url(site, query, page))
+            if site == "ebay" and "signin" in tab.url():
+                raise ChromeError("connectez-vous à eBay dans la fenêtre Chrome de Mekiki")
+            # Results render after the page itself: wait for them, or for an empty search.
+            try:
+                tab.wait_for(f"({script}).length > 0", timeout=10)
+            except ChromeError:
+                break
+            items = list(tab.evaluate(script) or [])
+            new = [item for item in items if str(item.get("id")) not in found]
+            if not new:
+                break
+            for item in new:
+                found[str(item.get("id"))] = item
+    return list(found.values())
 
 
 def parse_listings(
@@ -235,6 +272,11 @@ def euro_cents(text: str) -> int | None:
 
 def utc_now() -> str:
     return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _latin(text: str) -> bool:
+    """Written in Latin letters, accents included ("Mélofée", not "リザードン")."""
+    return all(ord(char) < LATIN_END for char in text)
 
 
 def _compact(text: str) -> str:

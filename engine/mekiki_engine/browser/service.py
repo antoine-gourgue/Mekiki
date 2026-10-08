@@ -105,8 +105,9 @@ class Browsers:
         if cached and time.monotonic() - cached.at < CACHE_S:
             return cached.prices
         try:
+            queries = markets.search_queries(query, card_number, names)
             with self.session(user_id).page() as tab:
-                raw = markets.read_listings(tab, site, query)
+                raw = markets.read_listings(tab, site, queries, pages=markets.PAGES[site])
         except ChromeError as error:
             return MarketPrices(site, query, [], None, markets.utc_now(), error=str(error))
         listings = markets.parse_listings(site, raw, card_number, names)

@@ -209,3 +209,16 @@ def test_prices_far_from_the_others_are_left_out_of_the_median() -> None:
     listings = parse_listings("vinted", raw, "201/165", ["Dracaufeu"])
 
     assert median_cents(listings) == 6500
+
+
+def test_searches_add_the_number_with_each_latin_name() -> None:
+    from mekiki_engine.browser.markets import search_queries
+
+    assert search_queries(
+        "Dracaufeu ex 201/165", "201/165", ["Charizard", "Dracaufeu", "リザードンex"]
+    ) == [
+        "Dracaufeu ex 201/165",
+        "Charizard 201/165",
+        "Dracaufeu 201/165",
+    ]
+    assert search_queries("Pikachu", None, ["Pikachu"]) == ["Pikachu"]
