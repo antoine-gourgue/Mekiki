@@ -19,6 +19,7 @@ from pydantic import (
 from mekiki_engine.domain import (
     Game,
     ItemStatus,
+    ListingCondition,
     ListingTriage,
     LotStatus,
     SalePlatform,
@@ -503,6 +504,7 @@ class DealOut(BaseModel):
     listed_at: str | None
     ends_at: str | None
     bids: int | None
+    condition: ListingCondition | None = None
     triage: ListingTriage
     first_seen_at: str
     last_seen_at: str
@@ -569,6 +571,7 @@ class SearchResultOut(BaseModel):
     listed_at: str | None
     ends_at: str | None
     bids: int | None
+    condition: ListingCondition | None = None
     matched: bool
     reject_reason: str | None
     landed_cost: LandedCostOut
@@ -598,6 +601,8 @@ class DiscoveryRequest(BaseModel):
     sources: list[SourcePlatform] | None = None
     # quick: ~1 500 listings in 1-2 min; deep: ~5 000 in ~5 min; max: 10 000+ in ~15 min.
     depth: Literal["quick", "deep", "max"] = "quick"
+    # Only listings in this condition or better; those that do not say are left out too.
+    min_condition: ListingCondition | None = None
 
 
 class DiscoveryPick(BaseModel):
@@ -612,6 +617,7 @@ class DiscoveryPick(BaseModel):
     listed_at: str | None
     ends_at: str | None
     bids: int | None
+    condition: ListingCondition | None = None
     # What the title was read as, e.g. "SV2a 201/165 · SAR" or "OP05-119 · parallèle".
     card_label: str
     product: MarketPriceOut
@@ -669,6 +675,7 @@ class FavoriteFields(BaseModel):
     listed_at: str | None = None
     ends_at: str | None = None
     bids: int | None = None
+    condition: ListingCondition | None = None
     # What the listing was read as, e.g. "SV2a 201/165 · SAR".
     card_label: str | None = None
     cardmarket_product_id: int | None = None

@@ -125,3 +125,9 @@ def test_last_discovery_survives_a_restart(
     assert run["status"] == "done"
     assert run["request"]["budget_cents"] == 15000
     assert [p["external_id"] for p in run["picks"]] == ["m1"]
+
+
+def test_favorites_keep_the_listing_condition(client: TestClient) -> None:
+    response = client.post("/favorites", json=favorite("m1", 4000, condition="good")).json()
+
+    assert response["items"][0]["condition"] == "good"

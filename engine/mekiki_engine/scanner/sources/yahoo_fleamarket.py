@@ -8,13 +8,17 @@ from __future__ import annotations
 
 from typing import Any
 
-from mekiki_engine.domain import Game, SourcePlatform
+from mekiki_engine.domain import Game, ListingCondition, SourcePlatform
 from mekiki_engine.scanner.sources.base import FoundListing, PoliteClient, SourceError
 
 SEARCH_URL = "https://paypayfleamarket.yahoo.co.jp/api/v1/search"
 ITEM_URL = "https://paypayfleamarket.yahoo.co.jp/item/{id}"
 TRADING_CARDS_CATEGORY = 2420
 BRAND_IDS = {Game.POKEMON: 167473, Game.ONE_PIECE: 167521}
+# The API's codes for the six conditions, best first.
+CONDITIONS = dict(
+    zip(("new", "used10", "used20", "used40", "used60", "used80"), ListingCondition, strict=True)
+)
 
 
 class YahooFleamarketSource:
@@ -82,4 +86,5 @@ def parse_item(item: dict[str, Any]) -> FoundListing | None:
         # Yahoo Fleamarket prices include shipping.
         shipping_included=True,
         listed_at=item.get("openTime"),
+        condition=CONDITIONS.get(str(item.get("condition")).lower()),
     )

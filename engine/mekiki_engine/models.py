@@ -201,6 +201,7 @@ class Listing(Base):
     listed_at: Mapped[str | None]
     ends_at: Mapped[str | None]
     bids: Mapped[int | None]
+    condition: Mapped[str | None]
     triage: Mapped[str] = mapped_column(default="new")
     first_seen_at: Mapped[str]
     last_seen_at: Mapped[str]
@@ -256,6 +257,7 @@ class Favorite(Base):
     listed_at: Mapped[str | None]
     ends_at: Mapped[str | None]
     bids: Mapped[int | None]
+    condition: Mapped[str | None]
     card_label: Mapped[str | None]
     cardmarket_product_id: Mapped[int | None]
     # Resale price chosen by hand; left empty, the Cardmarket price of the product.

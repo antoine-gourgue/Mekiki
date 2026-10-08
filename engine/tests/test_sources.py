@@ -6,7 +6,7 @@ from pathlib import Path
 import httpx
 import pytest
 
-from mekiki_engine.domain import Game, SourcePlatform
+from mekiki_engine.domain import Game, ListingCondition, SourcePlatform
 from mekiki_engine.scanner import links
 from mekiki_engine.scanner.sources import rakuma, yahoo_auctions, yahoo_fleamarket
 from mekiki_engine.scanner.sources.base import (
@@ -72,6 +72,8 @@ def test_yahoo_fleamarket_items() -> None:
     assert first.price_jpy == 10000
     assert first.shipping_included is True
     assert first.url == "https://paypayfleamarket.yahoo.co.jp/item/z612422448"
+    assert first.condition is ListingCondition.GOOD
+    assert listings[1] is not None and listings[1].condition is ListingCondition.NEW
 
 
 def test_mercari_item_parsing() -> None:
@@ -84,6 +86,7 @@ def test_mercari_item_parsing() -> None:
         "thumbnails": ["https://static.mercdn.net/thumb/item/webp/m12596979108_1.jpg"],
         "itemType": "ITEM_TYPE_MERCARI",
         "shippingPayerId": "2",
+        "itemConditionId": "2",
         "isNoPrice": False,
         "auction": {"bidDeadline": "2026-10-08T11:00:00Z", "totalBid": "5"},
     }
@@ -96,6 +99,8 @@ def test_mercari_item_parsing() -> None:
     assert listing.bids == 5
     assert listing.ends_at == "2026-10-08T11:00:00Z"
     assert listing.listed_at is not None
+    assert listing.condition is ListingCondition.LIKE_NEW
+    assert parse_item({**item, "itemConditionId": None}).condition is None  # type: ignore[union-attr]
     # Mercari Shops products and placeholder prices are left out.
     assert (
         parse_item({**item, "itemType": "ITEM_TYPE_BEYOND", "id": "2JXpLn8XDAiTfTs9f7YgdD"}) is None

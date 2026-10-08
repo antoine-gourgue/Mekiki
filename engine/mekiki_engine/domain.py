@@ -42,3 +42,18 @@ class ListingTriage(StrEnum):
     SEEN = "seen"
     DISMISSED = "dismissed"
     BOUGHT = "bought"
+
+
+class ListingCondition(StrEnum):
+    """The six conditions every Japanese flea market offers, best first."""
+
+    NEW = "new"  # 新品、未使用
+    LIKE_NEW = "like_new"  # 未使用に近い
+    GOOD = "good"  # 目立った傷や汚れなし
+    FAIR = "fair"  # やや傷や汚れあり
+    POOR = "poor"  # 傷や汚れあり
+    BAD = "bad"  # 全体的に状態が悪い
+
+    def at_least(self, minimum: ListingCondition) -> bool:
+        order = list(ListingCondition)
+        return order.index(self) <= order.index(minimum)

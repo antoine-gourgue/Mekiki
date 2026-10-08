@@ -219,6 +219,7 @@ def search_once(
                     listed_at=item.listed_at,
                     ends_at=item.ends_at,
                     bids=item.bids,
+                    condition=item.condition,
                     matched=match.matched,
                     reject_reason=match.reason,
                     landed_cost=landed_cost_out(estimate),

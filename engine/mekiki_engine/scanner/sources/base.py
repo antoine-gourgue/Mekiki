@@ -7,13 +7,23 @@ from typing import Protocol
 
 import httpx
 
-from mekiki_engine.domain import SourcePlatform
+from mekiki_engine.domain import ListingCondition, SourcePlatform
 
 # A desktop browser identity: the marketplaces serve their regular pages and APIs to it.
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36"
 )
+
+# The wording Mercari, Rakuma and Yahoo Fleamarket all use on their item pages.
+JAPANESE_CONDITIONS = {
+    "新品、未使用": ListingCondition.NEW,
+    "未使用に近い": ListingCondition.LIKE_NEW,
+    "目立った傷や汚れなし": ListingCondition.GOOD,
+    "やや傷や汚れあり": ListingCondition.FAIR,
+    "傷や汚れあり": ListingCondition.POOR,
+    "全体的に状態が悪い": ListingCondition.BAD,
+}
 
 
 class SourceError(RuntimeError):
@@ -37,6 +47,8 @@ class FoundListing:
     listed_at: str | None = None
     ends_at: str | None = None
     bids: int | None = None
+    # None when the results page does not give it (Rakuma, Yahoo Auctions).
+    condition: ListingCondition | None = None
 
 
 class Source(Protocol):

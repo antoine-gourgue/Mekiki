@@ -10,7 +10,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
 from mekiki_engine.costing.sale import roi
-from mekiki_engine.domain import Game, ListingTriage, SourcePlatform
+from mekiki_engine.domain import Game, ListingCondition, ListingTriage, SourcePlatform
 from mekiki_engine.models import CardIndexEntry, CardmarketProduct, Listing, TrackedCard
 from mekiki_engine.scanner import links, names, tracking
 from mekiki_engine.scanner.identify import identify
@@ -376,6 +376,7 @@ def record_found_listings(
         listing.listed_at = item.listed_at
         listing.ends_at = item.ends_at
         listing.bids = item.bids
+        listing.condition = item.condition.value if item.condition else None
         listing.last_seen_at = now
 
     unchecked = set(unchecked_sources)
@@ -475,6 +476,7 @@ def _deal_out(
         listed_at=listing.listed_at,
         ends_at=listing.ends_at,
         bids=listing.bids,
+        condition=ListingCondition(listing.condition) if listing.condition else None,
         triage=ListingTriage(listing.triage),
         first_seen_at=listing.first_seen_at,
         last_seen_at=listing.last_seen_at,

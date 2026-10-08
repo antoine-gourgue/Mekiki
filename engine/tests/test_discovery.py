@@ -1,10 +1,11 @@
+from dataclasses import replace
 from typing import Any
 
 import httpx
 from conftest import FakeMarketplace
 from fastapi.testclient import TestClient
 
-from mekiki_engine.domain import Game, SourcePlatform
+from mekiki_engine.domain import Game, ListingCondition, SourcePlatform
 from mekiki_engine.models import CardmarketProduct
 from mekiki_engine.scanner.identify import identify
 from mekiki_engine.scanner.resolver import CatalogResolver
@@ -260,3 +261,22 @@ def test_rakuma_pages_past_the_end_are_empty() -> None:
     client = PoliteClient(intervals_s={}, default_interval_s=0, transport=transport)
 
     assert RakumaSource(client, Game.POKEMON).search("sv2a", page=29) == []
+
+
+def test_discovery_keeps_listings_in_the_condition_asked(
+    client: TestClient, marketplace: FakeMarketplace
+) -> None:
+    index_pokemon_cards(client)
+    marketplace.listings[SourcePlatform.MERCARI] = [
+        replace(LISTINGS[0], condition=ListingCondition.FAIR),
+        replace(LISTINGS[1], condition=ListingCondition.LIKE_NEW),
+        # No condition given: it cannot be vouched for.
+        mercari("m7", "リザードンex RR 006/165", 4500),
+    ]
+
+    run = discover(
+        client, budget_cents=15000, card_count=2, min_roi_percent=10, min_condition="good"
+    )
+
+    assert [p["external_id"] for p in run["picks"]] == ["m2"]
+    assert run["picks"][0]["condition"] == "like_new"

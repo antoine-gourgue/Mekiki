@@ -94,6 +94,7 @@ def add_favorite(session: Session, user_id: int, payload: FavoriteCreate) -> Non
     values = payload.model_dump()
     values["game"] = payload.game.value
     values["source"] = payload.source.value
+    values["condition"] = payload.condition.value if payload.condition else None
     if favorite is None:
         session.add(Favorite(**values, user_id=user_id))
     else:

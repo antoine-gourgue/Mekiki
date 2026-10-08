@@ -3,7 +3,7 @@ from typing import Any
 from conftest import FakeMarketplace
 from fastapi.testclient import TestClient
 
-from mekiki_engine.domain import SourcePlatform
+from mekiki_engine.domain import ListingCondition, SourcePlatform
 from mekiki_engine.scanner.sources.base import FoundListing
 
 
@@ -236,3 +236,26 @@ def test_scanner_settings_are_validated(client: TestClient) -> None:
 
     settings["scanner"]["sources"] = ["mercari", "other"]
     assert client.put("/settings", json=settings).status_code == 422
+
+
+def test_listing_condition_is_kept_and_reserved_listings_left_out(
+    client: TestClient, marketplace: FakeMarketplace
+) -> None:
+    track_charizard(client)
+    marketplace.listings[SourcePlatform.MERCARI] = [
+        mercari("m1", "リザードンex RR 006/165", 4000, condition=ListingCondition.LIKE_NEW),
+        mercari("m2", "リザードンex RR 006/165 たろう様専用", 4000),
+    ]
+
+    scan(client)
+    deals = client.get("/deals").json()
+    results = client.post(
+        "/search", json={"query": "リザードン", "card_number": "006/165", "sources": ["mercari"]}
+    ).json()["results"]
+
+    assert [(d["external_id"], d["condition"]) for d in deals] == [("m1", "like_new")]
+    assert [(r["external_id"], r["condition"], r["matched"]) for r in results] == [
+        ("m1", "like_new", True),
+        ("m2", None, False),
+    ]
+    assert results[1]["reject_reason"] == "annonce réservée (専用)"

@@ -19,7 +19,7 @@ from typing import Any
 from ecdsa import NIST256p, SigningKey
 from ecdsa.util import sigencode_string
 
-from mekiki_engine.domain import Game, SourcePlatform
+from mekiki_engine.domain import Game, ListingCondition, SourcePlatform
 from mekiki_engine.scanner.sources.base import FoundListing, PoliteClient, SourceError
 
 SEARCH_URL = "https://api.mercari.jp/v2/entities:search"
@@ -28,6 +28,8 @@ ITEM_URL = "https://jp.mercari.com/item/{id}"
 # search also returns sleeves, figures and books.
 CATEGORY_IDS = {Game.POKEMON: 1289, Game.ONE_PIECE: 1409}
 SHIPPING_INCLUDED = "2"  # shippingPayerId: 1 = buyer pays (着払い), 2 = 送料込み
+# itemConditionId, from 新品、未使用 (1) to 全体的に状態が悪い (6).
+CONDITIONS = dict(zip("123456", ListingCondition, strict=True))
 
 
 def _b64url(data: bytes) -> str:
@@ -185,6 +187,7 @@ def parse_item(item: dict[str, Any]) -> FoundListing | None:
         listed_at=_epoch_to_iso(item.get("created")),
         ends_at=auction.get("bidDeadline") if auction else None,
         bids=int(auction["totalBid"]) if auction and auction.get("totalBid") else None,
+        condition=CONDITIONS.get(str(item.get("itemConditionId"))),
     )
 
 

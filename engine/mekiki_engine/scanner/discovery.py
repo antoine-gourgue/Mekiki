@@ -290,6 +290,9 @@ def evaluate(
     )
     candidates: list[Candidate] = []
     for listing in listings:
+        minimum = request.min_condition
+        if minimum and not (listing.condition and listing.condition.at_least(minimum)):
+            continue
         identity = identify(listing.title, request.game)
         # Graded copies and lots are other products; the noise rule rejects both.
         if identity.graded or not match_title(listing.title, noise).matched:
@@ -416,6 +419,7 @@ def _pick(
         listed_at=listing.listed_at,
         ends_at=listing.ends_at,
         bids=listing.bids,
+        condition=listing.condition,
         card_label=candidate.resolution.label,
         product=market_price_out(candidate.resolution.product),
         confidence=candidate.resolution.confidence,
