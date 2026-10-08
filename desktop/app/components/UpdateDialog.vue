@@ -29,22 +29,23 @@ interface NoteLine {
 }
 
 /** The notes are the Markdown of the release page: titles, bullets and lines are enough here. */
-const notes = computed<NoteLine[]>(() =>
-  (update.value?.body ?? '')
-    .split(/\r?\n/)
-    .map((line) =>
-      line
-        .trim()
-        .replace(/\*\*(.+?)\*\*/g, '$1')
-        .replace(/`([^`]+)`/g, '$1'),
-    )
-    .filter(Boolean)
-    .map((line) => {
-      if (/^#{1,6}\s/.test(line)) return { kind: 'title', text: line.replace(/^#+\s*/, '') }
-      if (/^[-*]\s/.test(line)) return { kind: 'item', text: line.slice(2) }
-      return { kind: 'text', text: line }
-    }),
-)
+const notes = computed<NoteLine[]>(() => {
+  const lines: NoteLine[] = []
+  for (const raw of (update.value?.body ?? '').split(/\r?\n/)) {
+    const line = raw
+      .trim()
+      .replace(/\*\*(.+?)\*\*/g, '$1')
+      .replace(/`([^`]+)`/g, '$1')
+    const previous = lines.at(-1)
+    if (!line) continue
+    if (/^#{1,6}\s/.test(line)) lines.push({ kind: 'title', text: line.replace(/^#+\s*/, '') })
+    else if (/^[-*]\s/.test(line)) lines.push({ kind: 'item', text: line.slice(2) })
+    // An indented line carries on the bullet above it, wrapped in the file.
+    else if (previous?.kind === 'item' && /^\s/.test(raw)) previous.text += ` ${line}`
+    else lines.push({ kind: 'text', text: line })
+  }
+  return lines
+})
 
 const subtitle = computed(() => {
   const current = update.value
