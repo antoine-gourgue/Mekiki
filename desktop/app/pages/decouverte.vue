@@ -211,7 +211,7 @@ const gameItems = selectItems(GAME_LABELS)
             </UFormField>
             <UFormField
               label="État minimum"
-              :hint="form.min_condition === 'all' ? undefined : 'sans Rakuma'"
+              :hint="form.min_condition === 'all' ? undefined : 'Rakuma : lu sur l’annonce'"
               :help="
                 form.min_condition === 'new' || form.min_condition === 'like_new'
                   ? 'Écarte environ 6 annonces Mercari sur 10 : la plupart des cartes parfaites y sont en « Bon état ».'
