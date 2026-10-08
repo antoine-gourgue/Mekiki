@@ -127,7 +127,6 @@ function toFavorite(deal: Deal) {
   })
 }
 
-const showResale = useResaleModal()
 const drawer = useDrawer()
 
 function openDeal(deal: Deal) {
@@ -139,17 +138,7 @@ function openDeal(deal: Deal) {
 
 function menu(deal: Deal): DropdownMenuItem[] {
   return [
-    {
-      label: 'Prix en Europe (eBay, Vinted)',
-      icon: 'i-lucide-euro',
-      onSelect: () =>
-        showResale(
-          deal.card_name,
-          deal.cardmarket_product_id
-            ? { product_id: deal.cardmarket_product_id, label: deal.card_name }
-            : { q: deal.card_name },
-        ),
-    },
+    { label: 'Faut-il l’acheter ?', icon: 'i-lucide-scale', onSelect: () => openDeal(deal) },
     {
       label: 'Acheté : ajouter au stock',
       icon: 'i-lucide-package-plus',

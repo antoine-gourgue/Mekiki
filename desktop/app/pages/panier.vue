@@ -61,7 +61,6 @@ function bought(item: Favorite) {
   buying.value = true
 }
 
-const showResale = useResaleModal()
 const drawer = useDrawer()
 
 function openFavorite(item: Favorite) {
@@ -74,17 +73,7 @@ function openFavorite(item: Favorite) {
 function menu(item: Favorite): DropdownMenuItem[] {
   return [
     { label: 'Prix de revente…', icon: 'i-lucide-pencil', onSelect: () => editPrice(item) },
-    {
-      label: 'Prix en Europe (eBay, Vinted)',
-      icon: 'i-lucide-euro',
-      onSelect: () =>
-        showResale(
-          item.card_label ?? item.title,
-          item.cardmarket_product_id
-            ? { product_id: item.cardmarket_product_id, label: item.card_label ?? undefined }
-            : { q: item.card_label ?? item.title },
-        ),
-    },
+    { label: 'Faut-il l’acheter ?', icon: 'i-lucide-scale', onSelect: () => openFavorite(item) },
     ...(item.product
       ? [
           {

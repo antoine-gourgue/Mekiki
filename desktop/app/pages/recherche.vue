@@ -76,7 +76,6 @@ const rejectedCount = computed(
   () => (response.value?.results ?? []).filter((result) => !result.matched).length,
 )
 
-const showResale = useResaleModal()
 const drawer = useDrawer()
 
 function openResult(result: SearchResult) {
@@ -89,17 +88,6 @@ function openResult(result: SearchResult) {
       label: searched.value?.product?.name ?? null,
     },
   })
-}
-function resaleOfSearch() {
-  const number = form.card_number.trim() || undefined
-  if (product.value) {
-    showResale(product.value.name ?? form.query, {
-      product_id: product.value.id_product,
-      label: number,
-    })
-  } else {
-    showResale(form.query, { q: [form.query.trim(), number].filter(Boolean).join(' ') })
-  }
 }
 
 // "Suivre cette carte" turns the current search into a tracked card.
@@ -263,11 +251,12 @@ const sourceItems = SCANNABLE_SOURCE_ITEMS.map(({ value, label }) => ({ value, l
               @click="showRejected = !showRejected"
             />
             <UButton
+              v-if="searched?.product"
               color="neutral"
               variant="outline"
-              icon="i-lucide-euro"
-              label="Prix en Europe"
-              @click="resaleOfSearch"
+              icon="i-lucide-scale"
+              label="Faut-il l’acheter ?"
+              @click="drawer.open({ kind: 'product', id: searched.product.id_product })"
             />
           </div>
         </div>

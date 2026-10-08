@@ -128,7 +128,6 @@ function bought(pick: DiscoveryPick) {
   buying.value = true
 }
 
-const showResale = useResaleModal()
 const drawer = useDrawer()
 
 function openPick(pick: DiscoveryPick) {
@@ -145,15 +144,7 @@ function openPick(pick: DiscoveryPick) {
 
 function menu(pick: DiscoveryPick): DropdownMenuItem[] {
   return [
-    {
-      label: 'Prix en Europe (eBay, Vinted)',
-      icon: 'i-lucide-euro',
-      onSelect: () =>
-        showResale(pick.card_label, {
-          product_id: pick.product.id_product,
-          label: pick.card_label,
-        }),
-    },
+    { label: 'Faut-il l’acheter ?', icon: 'i-lucide-scale', onSelect: () => openPick(pick) },
     {
       label: 'Voir la cote sur Cardmarket',
       icon: 'i-lucide-chart-line',

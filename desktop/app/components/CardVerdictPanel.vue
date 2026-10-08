@@ -10,7 +10,7 @@ import type {
 
 /**
  * "Faut-il l'acheter ?": the verdict on a card, its resale on each outlet with the most to
- * pay in Japan, warning signals, then European prices (eBay, Vinted).
+ * pay in Japan, warning signals, then what sells on Vinted and eBay, read in Chrome.
  */
 const props = defineProps<{ query: VerdictQuery }>()
 
@@ -328,8 +328,6 @@ const costLine = computed(() => {
           * Offre acceptée : le prix réel était plus bas.
         </p>
       </section>
-
-      <ResalePanel :query="{ q: result.prices.query }" :initial="result.prices" />
     </template>
 
     <div v-else-if="loading" class="flex justify-center py-6">

@@ -36,8 +36,6 @@ import type {
   PublishJob,
   PublishRequest,
   RegisterRequest,
-  ResalePrices,
-  ResaleQuery,
   SaleUpsert,
   ScanStatus,
   SearchRequest,
@@ -173,8 +171,6 @@ export function useEngine() {
       request<Favorites>(`/favorites/${id}`, { method: 'PATCH', body }),
     deleteFavorite: (id: number) => request<Favorites>(`/favorites/${id}`, { method: 'DELETE' }),
     emptyCart: () => request<Favorites>('/favorites/empty-cart', { method: 'POST', body: {} }),
-    resalePrices: (query: ResaleQuery) =>
-      request<ResalePrices>('/resale/prices', { query, timeout: 30_000 }),
     verdict: (query: VerdictQuery) =>
       request<CardVerdict>('/resale/verdict', { query, timeout: 30_000 }),
     listingDraft: (itemId: number, platform: ListingSite) =>

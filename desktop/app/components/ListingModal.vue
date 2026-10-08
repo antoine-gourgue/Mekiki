@@ -33,7 +33,6 @@ watch(open, (isOpen) => {
   state.platform = props.item.listing_platform ?? 'cardmarket'
   state.price_cents = props.item.listing_price_cents
   photos.value = [...props.item.photos]
-  showPrices.value = false
 })
 
 const SITES: Record<ListingSite, string> = { ebay: 'eBay', vinted: 'Vinted' }
@@ -43,7 +42,6 @@ const site = computed(() =>
 
 const draft = ref<ListingDraft | null>(null)
 const loadingDraft = ref(false)
-const showPrices = ref(false)
 
 watch(
   [open, site],
@@ -219,14 +217,6 @@ const platformItems = selectItems(PLATFORM_LABELS)
                   label="Copier la description"
                   @click="copy(draft.description, 'Description')"
                 />
-                <UButton
-                  icon="i-lucide-euro"
-                  color="neutral"
-                  variant="outline"
-                  size="md"
-                  :label="showPrices ? 'Masquer les prix' : 'Prix du marché'"
-                  @click="showPrices = !showPrices"
-                />
                 <span class="flex-1" />
                 <UButton
                   trailing-icon="i-lucide-arrow-up-right"
@@ -237,7 +227,6 @@ const platformItems = selectItems(PLATFORM_LABELS)
                   @click="openExternal(draft.new_listing_url)"
                 />
               </div>
-              <ResalePanel v-if="showPrices" :query="{ q: draft.query }" />
             </template>
           </template>
         </div>
