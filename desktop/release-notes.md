@@ -1,13 +1,18 @@
 ## Nouveautés
 
-- Clés eBay dans Paramètres : chaque compte saisit les siennes, et les fiches des cartes
-  montrent alors les annonces eBay en direct, sans passer par Chrome.
-- Les annonces eBay comptées dans le prix médian sont triées comme celles lues dans Chrome :
-  seulement la carte elle-même, sans lots ni cartes gradées.
+- Mekiki reconnaît bien plus de cartes. Le nom japonais de la carte départage les extensions
+  de même taille, et les titres sans numéro (« タケルライコex SAR … ») ou de promo
+  (« 086/S-P ») sont lus. Sur 643 annonces Mercari réelles : 50 % de cartes reconnues en plus.
+- « Trouver des cartes » tient un journal de la recherche : chaque page lue, les annonces
+  écartées et pourquoi (état, lots, titre non reconnu), les cartes rentables, la vérification
+  des annonces du colis. Il reste consultable une fois la recherche finie.
 
 ## Corrections
 
-- Mekiki lit Vinted beaucoup plus doucement (une page par recherche, des pauses entre les
-  pages, des prix gardés six heures) pour ne plus se faire bloquer.
-- Si Vinted bloque malgré tout l'accès, Mekiki n'y retourne plus pendant six heures et le dit,
-  au lieu d'aggraver le blocage.
+- Un colis qui manque de cartes n'est plus proposé sous le ROI demandé sans explication. Il est
+  complété par des cartes rentables qui partagent ses frais fixes, et Mekiki dit quoi changer
+  pour en trouver plus.
+- Les cartes anciennes (BW, Platine, LEGEND…) ne sont plus prises pour une carte récente qui
+  porte le même numéro.
+- Sous « État minimum », un avertissement : « Quasi neuve » écarte environ 6 annonces Mercari
+  sur 10, la plupart des cartes parfaites y étant en « Bon état ».

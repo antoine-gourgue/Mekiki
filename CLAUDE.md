@@ -53,6 +53,14 @@ cd desktop && npm run lint && npm run format:check && npm run typecheck && npm r
   produit Cardmarket. Pokémon passe par `card_index.py` (archive TCGdex, rafraîchie chaque
   semaine) ; One Piece par le nom Cardmarket (« (OP05-119) ») dans les extensions japonaises
   (« Non-English » / « Asia Region Legal »), les versions étant rangées par `idProduct`.
+- Pokémon sans code d'extension : le nom japonais de l'index doit figurer dans le titre (il
+  départage les extensions de même taille et écarte les cartes anciennes absentes de l'index).
+  Sans numéro, le nom suivi de la rareté suffit, mais seulement pour les ères SV et MEGA, que
+  l'index couvre entièrement (confiance « medium »). Mesurer toute règle de reconnaissance sur
+  de vraies annonces avant de la garder.
+- Un colis trop court porte trop de frais fixes : `fill_parcel` le complète avec des annonces
+  sous l'objectif qui relèvent son ROI ; sous l'objectif, `short_of_target` explique pourquoi.
+  Chaque étape va dans `DiscoveryRun.log` (`note()`), affiché par `ActivityLog.vue`.
 - Une annonce à moins de 20 % de la cote est presque toujours une reproduction ou un
   accessoire : elle est signalée et n'entre jamais dans un colis proposé.
 - Une annonce réservée (« 様専用 », « 取り置き », « 即購入不可 »…) est écartée par `matching.py` :
