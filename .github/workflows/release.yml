@@ -92,6 +92,17 @@ jobs:
           uv sync --locked --group bundle
           uv run python scripts/build_sidecar.py
 
+      # The notes are written in French for the release page and the app's update dialog.
+      - name: Read the release notes
+        id: notes
+        if: steps.key.outputs.ready == 'true'
+        shell: pwsh
+        run: |
+          $notes = (Get-Content desktop/release-notes.md -Raw -Encoding utf8).Trim()
+          if (-not $notes) { $notes = 'Corrections et améliorations.' }
+          $end = "NOTES_$([guid]::NewGuid().ToString('N'))"
+          "body<<$end`n$notes`n$end" >> $env:GITHUB_OUTPUT
+
       - name: Build the installer and publish the release
         if: steps.key.outputs.ready == 'true'
         uses: tauri-apps/tauri-action@v0
@@ -103,11 +114,7 @@ jobs:
           tagName: v${{ steps.version.outputs.number }}
           releaseName: Mekiki ${{ steps.version.outputs.number }}
           releaseCommitish: ${{ github.sha }}
-          releaseBody: |
-            Téléchargez **Mekiki-Setup.exe** et lancez-le pour installer Mekiki sur Windows.
-            Les versions déjà installées proposent cette mise à jour au démarrage.
-
-            ${{ github.event.head_commit.message }}
+          releaseBody: ${{ steps.notes.outputs.body }}
           releaseDraft: false
           prerelease: false
           includeUpdaterJson: true

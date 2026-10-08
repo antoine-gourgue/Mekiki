@@ -93,6 +93,9 @@ cd desktop && npm run lint && npm run format:check && npm run typecheck && npm r
   `npm run version:set -- X.Y.0` (dans `desktop/`) change la base.
 - La clé privée de signature des mises à jour ne quitte pas la machine (`~/.tauri/`) et le
   secret GitHub `TAURI_SIGNING_PRIVATE_KEY` ; ne jamais la committer.
+- Les notes de version sont en français dans `desktop/release-notes.md` : la release et la
+  fenêtre de mise à jour de l'app les affichent. Avant chaque push qui change l'app, les
+  réécrire pour dire ce qui change pour l'utilisateur (titres `##`, puces `-`), sans jargon.
 
 ## Pièges connus (Windows, octobre 2026)
 

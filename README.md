@@ -69,6 +69,8 @@ vérifications de la CI, puis le moteur et l'installateur Windows (NSIS, en fran
 droits administrateur), la signature de la mise à jour et la release `vX.Y.N`. `X.Y` vient de
 `desktop/package.json`, `N` du numéro d'exécution du workflow, si bien que chaque version est
 plus récente que la précédente. Les apps installées la proposent au démarrage.
+Ses notes, en français, viennent de `desktop/release-notes.md` : la page de la release et la
+fenêtre de mise à jour de l'app les affichent.
 
 Pour passer à une nouvelle version majeure ou mineure, changer la base :
 `npm run version:set -- 0.2.0` dans `desktop/`, puis commit et push.
