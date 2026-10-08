@@ -1,10 +1,6 @@
 <script setup lang="ts">
 definePageMeta({ layout: 'public' })
 
-// Built and signed by the release workflow (.github/workflows/release.yml).
-const INSTALLER_URL =
-  'https://github.com/antoine-gourgue/Mekiki/releases/latest/download/Mekiki-Setup.exe'
-
 // Inside the desktop app, offering to download it makes no sense.
 const inDesktopApp = import.meta.client && '__TAURI_INTERNALS__' in window
 

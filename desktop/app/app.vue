@@ -4,7 +4,7 @@ import { fr } from '@nuxt/ui/locale'
 
 <template>
   <UApp :locale="fr" :toaster="{ position: 'bottom-right' }">
-    <UpdateBanner />
+    <UpdateDialog />
     <NuxtLayout>
       <NuxtPage />
     </NuxtLayout>
