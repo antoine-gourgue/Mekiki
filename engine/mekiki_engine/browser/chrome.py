@@ -5,7 +5,6 @@ from __future__ import annotations
 import itertools
 import json
 import os
-import socket
 import subprocess
 import threading
 import time
@@ -26,6 +25,8 @@ CHROME_PATHS = (
     Path(os.environ.get("LOCALAPPDATA", "")) / "Google/Chrome/Application/chrome.exe",
 )
 START_TIMEOUT_S = 20.0
+# Chrome writes the port it listens on there, in the profile folder.
+ACTIVE_PORT_FILE = "DevToolsActivePort"
 COMMAND_TIMEOUT_S = 30.0
 
 
@@ -204,21 +205,28 @@ class ChromeSession:
 
     @property
     def running(self) -> bool:
-        return self.process is not None and self.process.poll() is None and self._answers()
+        return self._answers()
 
     def start(self) -> None:
-        if self.running:
+        """Starts the window, or takes over the one a previous run of the engine left open."""
+        if self._answers():
+            return
+        left_open = self._profile_port()
+        if left_open is not None and self._answers(left_open):
+            self.port = left_open
             return
         chrome = self.chrome_path or find_chrome()
         if chrome is None:
             raise ChromeError("Google Chrome n'est pas installé sur cet ordinateur")
         self.profile_dir.mkdir(parents=True, exist_ok=True)
-        self.port = _free_port()
+        (self.profile_dir / ACTIVE_PORT_FILE).unlink(missing_ok=True)
+        # Port 0: Chrome picks a free port and writes it in the profile, where a later run
+        # of the engine finds it to take the window over.
         self.process = subprocess.Popen(
             [
                 str(chrome),
                 f"--user-data-dir={self.profile_dir}",
-                f"--remote-debugging-port={self.port}",
+                "--remote-debugging-port=0",
                 "--remote-allow-origins=*",
                 "--no-first-run",
                 "--no-default-browser-check",
@@ -226,9 +234,16 @@ class ChromeSession:
             ]
         )
         deadline = time.monotonic() + START_TIMEOUT_S
-        while not self._answers():
+        while True:
+            port = self._profile_port()
+            if port is not None and self._answers(port):
+                self.port = port
+                return
             if time.monotonic() > deadline or self.process.poll() is not None:
-                raise ChromeError("Chrome n'a pas démarré")
+                raise ChromeError(
+                    "Chrome n'a pas démarré : si une fenêtre Chrome de Mekiki est déjà "
+                    "ouverte, fermez-la puis réessayez"
+                )
             time.sleep(0.3)
 
     @contextmanager
@@ -267,7 +282,21 @@ class ChromeSession:
     def stop(self) -> None:
         if self.process is not None and self.process.poll() is None:
             self.process.terminate()
+        elif self._answers():
+            # A window taken over from a previous run: ask Chrome itself to close.
+            with suppress(ChromeError, httpx.HTTPError, KeyError):
+                version = self._http.get(f"http://127.0.0.1:{self.port}/json/version").json()
+                browser = Tab(str(version["webSocketDebuggerUrl"]))
+                browser.call("Browser.close")
         self.process = None
+        self.port = None
+
+    def _profile_port(self) -> int | None:
+        try:
+            first_line = (self.profile_dir / ACTIVE_PORT_FILE).read_text().splitlines()[0]
+            return int(first_line)
+        except (OSError, IndexError, ValueError):
+            return None
 
     def _page_target(self) -> str:
         targets = self._http.get(f"http://127.0.0.1:{self.port}/json/list").json()
@@ -277,16 +306,11 @@ class ChromeSession:
         created = self._http.put(f"http://127.0.0.1:{self.port}/json/new?about:blank").json()
         return str(created["webSocketDebuggerUrl"])
 
-    def _answers(self) -> bool:
-        if self.port is None:
+    def _answers(self, port: int | None = None) -> bool:
+        port = port or self.port
+        if port is None:
             return False
         try:
-            return self._http.get(f"http://127.0.0.1:{self.port}/json/version").is_success
+            return self._http.get(f"http://127.0.0.1:{port}/json/version").is_success
         except httpx.HTTPError:
             return False
-
-
-def _free_port() -> int:
-    with socket.socket() as probe:
-        probe.bind(("127.0.0.1", 0))
-        return int(probe.getsockname()[1])

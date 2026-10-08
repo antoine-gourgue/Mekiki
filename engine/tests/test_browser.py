@@ -130,6 +130,7 @@ def test_listings_count_only_ungraded_single_copies_of_the_card() -> None:
     assert median_cents(vinted) == 7000
     assert not is_relevant("Lot de 3 Dracaufeu ex 201/165", "201/165")
     assert is_relevant("Luffy OP05-119 parallèle", "OP05-119")
+    assert not is_relevant("Dracaufeu ex promo 29", None, ["Dracaufeu"])
 
 
 def test_ebay_accepted_offers_only_count_when_nothing_else_is_left() -> None:
@@ -193,3 +194,18 @@ def test_other_cards_and_languages_sharing_the_number_are_left_out() -> None:
     assert not is_relevant("Carte Pokémon Alakazam alternative 201/165", "201/165", names)
     assert not is_relevant("Dracaufeu ex SAR – SV2a 201/165 – Coréen", "201/165", names)
     assert not is_relevant("Charizard ex 201/165 sv2a KOR", "201/165", names)
+
+
+def test_prices_far_from_the_others_are_left_out_of_the_median() -> None:
+    raw = [
+        {
+            "id": str(i),
+            "summary": f"Dracaufeu ex 201/165 n°{i}, Marque: Pokémon",
+            "url": f"u{i}",
+            "price": price,
+        }
+        for i, price in enumerate(["60,00 €", "65,00 €", "70,00 €", "1,00 €", "2 000,00 €"])
+    ]
+    listings = parse_listings("vinted", raw, "201/165", ["Dracaufeu"])
+
+    assert median_cents(listings) == 6500

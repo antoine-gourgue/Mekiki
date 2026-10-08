@@ -95,6 +95,11 @@ _OTHER_LANGUAGE = re.compile(
 _SEVERAL = re.compile(r"\b(lot|lots|x\s?[2-9]|[2-9]\s?x|bundle)\b", re.IGNORECASE)
 
 
+# Prices this many times away from the median are left out of it, from this many listings.
+OUTLIER_RATIO = 5
+OUTLIER_MIN_COUNT = 4
+
+
 @dataclass(frozen=True, slots=True)
 class MarketListing:
     site: Site
@@ -181,26 +186,40 @@ def parse_listings(
 
 
 def is_relevant(title: str, card_number: str | None, names: list[str] | None = None) -> bool:
-    """Whether a listing sells one ungraded copy of the card numbered ``card_number``.
+    """Whether a listing sells one ungraded copy of the card numbered ``card_number``;
+    never without a number.
 
     With ``names`` (the card's name in several languages), the title must also name it: two
     cards of different sets can share a number.
     """
     if _GRADED.search(title) or _SEVERAL.search(title) or _OTHER_LANGUAGE.search(title):
         return False
+    # Without the number, a name alone matches every printing of the card.
+    if not card_number:
+        return False
     compact = _compact(title)
-    if card_number and _compact(card_number) not in compact:
+    if _compact(card_number) not in compact:
         return False
     return not names or any(_compact(name) in compact for name in names if name.strip())
 
 
 def median_cents(listings: list[MarketListing]) -> int | None:
-    """Median of the relevant listings; accepted offers only when nothing else is left."""
+    """Median of the relevant listings, without the prices far from the others.
+
+    Accepted offers only count when nothing else is left. A price five times above or
+    below the first median is another product slipping through (a sleeve, a lot, a graded
+    copy described without its grade) and is left out.
+    """
     relevant = [listing for listing in listings if listing.relevant]
     priced = [listing for listing in relevant if not listing.best_offer] or relevant
-    if not priced:
+    prices = [listing.price_cents for listing in priced]
+    if not prices:
         return None
-    return round(statistics.median(listing.price_cents for listing in priced))
+    first = statistics.median(prices)
+    if len(prices) >= OUTLIER_MIN_COUNT:
+        kept = [p for p in prices if first / OUTLIER_RATIO <= p <= first * OUTLIER_RATIO]
+        prices = kept or prices
+    return round(statistics.median(prices))
 
 
 def euro_cents(text: str) -> int | None:
