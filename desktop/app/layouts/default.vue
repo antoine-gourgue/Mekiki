@@ -78,17 +78,28 @@ watch(
 )
 onBeforeUnmount(() => clearInterval(statusTimer))
 
+// Collapsed, the sidebar is a column of square icons: the expanded paddings would push
+// them off center and make their hover box narrower than tall.
+const collapsed = ref(false)
+const COLLAPSED_SIDEBAR = { header: 'px-3 justify-center', body: 'px-3', footer: 'px-3' }
+
 const initial = computed(() => (auth.user.value?.display_name ?? '?').slice(0, 1).toUpperCase())
 </script>
 
 <template>
   <UDashboardGroup unit="rem">
-    <UDashboardSidebar collapsible resizable :default-size="16">
-      <template #header="{ collapsed }">
+    <UDashboardSidebar
+      v-model:collapsed="collapsed"
+      collapsible
+      resizable
+      :default-size="16"
+      :ui="collapsed ? COLLAPSED_SIDEBAR : undefined"
+    >
+      <template #header>
         <AppLogo :collapsed="collapsed" :class="collapsed ? 'mx-auto' : ''" />
       </template>
 
-      <template #default="{ collapsed }">
+      <template #default>
         <UDashboardSearchButton
           :collapsed="collapsed"
           label="Rechercher…"
@@ -103,13 +114,16 @@ const initial = computed(() => (auth.user.value?.display_name ?? '?').slice(0, 1
           :ui="{
             label:
               'mt-4 px-3 pb-1 text-[11px] font-semibold tracking-[0.14em] uppercase text-dimmed',
-            link: 'h-10 gap-3 px-3 text-muted before:rounded-md aria-[current=page]:text-highlighted aria-[current=page]:before:bg-elevated',
+            link: [
+              'h-10 text-muted before:rounded-md hover:before:bg-elevated aria-[current=page]:text-highlighted aria-[current=page]:before:bg-elevated aria-[current=page]:before:ring-1 aria-[current=page]:before:ring-default',
+              collapsed ? 'w-10 justify-center px-0' : 'gap-3 px-3',
+            ].join(' '),
             linkLeadingIcon: 'size-[18px] group-aria-[current=page]:text-primary',
           }"
         />
       </template>
 
-      <template #footer="{ collapsed }">
+      <template #footer>
         <div class="flex w-full flex-col gap-2">
           <NuxtLink
             v-if="!collapsed"
@@ -127,7 +141,8 @@ const initial = computed(() => (auth.user.value?.display_name ?? '?').slice(0, 1
 
           <NuxtLink
             to="/compte"
-            class="flex items-center gap-2.5 rounded-md p-2 transition-colors hover:bg-elevated/50"
+            class="flex items-center gap-2.5 rounded-md transition-colors hover:bg-elevated"
+            :class="collapsed ? 'size-10 justify-center' : 'p-2'"
             active-class="bg-elevated"
             :aria-label="collapsed ? 'Mon compte' : undefined"
           >
