@@ -75,6 +75,7 @@ class FakeTab:
     def __init__(self, pages: dict[str, list[dict[str, Any]]], connected: bool) -> None:
         self.pages = pages
         self.connected = connected
+        self.challenge = False
         self.visited: list[str] = []
 
     def navigate(self, url: str, *, timeout: float = 30) -> None:
@@ -91,6 +92,8 @@ class FakeTab:
         return bool(self._current())
 
     def evaluate(self, expression: str, *, await_promise: bool = False) -> Any:
+        if expression == markets.CHALLENGE_CHECK:
+            return self.challenge
         return self._current()
 
     def _current(self) -> list[dict[str, Any]]:
@@ -103,6 +106,7 @@ class FakeSession:
     def __init__(self, tab: FakeTab) -> None:
         self.tab = tab
         self.running = False
+        self.visible = False
         self.pages_opened = 0
 
     @contextmanager
@@ -113,6 +117,12 @@ class FakeSession:
 
     def stop(self) -> None:
         self.running = False
+
+    def set_visible(self, visible: bool) -> None:
+        self.visible = visible
+
+    def screenshot(self) -> bytes | None:
+        return b"\xff\xd8\xff fake jpeg" if self.running else None
 
 
 @pytest.fixture
@@ -222,3 +232,43 @@ def test_searches_add_the_number_with_each_latin_name() -> None:
         "Dracaufeu 201/165",
     ]
     assert search_queries("Pikachu", None, ["Pikachu"]) == ["Pikachu"]
+
+
+def test_the_window_shows_to_sign_in_and_hides_once_signed_in(
+    client: TestClient, chrome: FakeSession
+) -> None:
+    client.post("/browser/vinted/open")
+    assert chrome.visible is True
+    assert client.get("/browser/activity").json() == {
+        "activity": None,
+        "running": True,
+        "visible": True,
+    }
+
+    assert client.post("/browser/vinted/check").json()["connected"] is True
+    assert chrome.visible is False
+    assert client.post("/browser/show").json()["visible"] is True
+    assert client.post("/browser/hide").json()["visible"] is False
+
+
+def test_the_preview_shows_what_chrome_shows(client: TestClient, chrome: FakeSession) -> None:
+    assert client.get("/browser/preview").status_code == 204
+
+    client.post("/browser/vinted/check")
+    preview = client.get("/browser/preview")
+
+    assert preview.status_code == 200
+    assert preview.headers["content-type"] == "image/jpeg"
+    assert preview.headers["cache-control"] == "no-store"
+
+
+def test_a_bot_check_is_left_to_the_user(client: TestClient, chrome: FakeSession) -> None:
+    chrome.tab.challenge = True
+
+    read = client.post(
+        "/browser/vinted/prices", json={"query": "Pikachu 173/165", "card_number": "173/165"}
+    ).json()
+
+    assert "vérification anti-robot" in read["error"]
+    assert chrome.visible is True
+    assert client.get("/browser/activity").json()["activity"] is None

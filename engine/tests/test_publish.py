@@ -19,6 +19,7 @@ class FakeSession:
         self.opened = 0
         self.closed: list[str] = []
         self.running = True
+        self.visible = False
 
     @contextmanager
     def new_tab(self, url: str = "about:blank") -> Iterator[tuple[object, str]]:
@@ -31,6 +32,9 @@ class FakeSession:
     def stop(self) -> None:
         self.running = False
 
+    def set_visible(self, visible: bool) -> None:
+        self.visible = visible
+
 
 @pytest.fixture
 def chrome(client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
@@ -38,11 +42,11 @@ def chrome(client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
     client.app.state.browsers = Browsers(tmp_path, session_factory=lambda _profile: session)  # type: ignore[attr-defined,arg-type,return-value]
     seen: dict[str, Any] = {"session": session, "listings": []}
 
-    def fake_vinted(_tab: object, listing: publish.Listing) -> str:
+    def fake_vinted(_tab: object, listing: publish.Listing, **_options: object) -> str:
         seen["listings"].append(listing)
         return "https://www.vinted.fr/items/42-pikachu"
 
-    def failing_ebay(_tab: object, _listing: publish.Listing) -> str:
+    def failing_ebay(_tab: object, _listing: publish.Listing, **_options: object) -> str:
         raise ChromeError("mise en vente eBay : le site n'a pas confirmé la publication")
 
     monkeypatch.setitem(service.PUBLISHERS, "vinted", fake_vinted)
@@ -103,6 +107,8 @@ def test_a_failed_publication_leaves_the_form_open(
     assert job["status"] == "failed"
     assert "n'a pas confirmé" in job["error"]
     assert chrome["session"].closed == []
+    # The form left open shows, for the user to finish it.
+    assert chrome["session"].visible is True
     assert client.get(f"/items/{item['id']}").json()["listing_platform"] is None
     assert client.get("/browser/ebay/publish/999").json() is None
     other = client.post("/browser/vinted/publish/999", json=body)

@@ -933,3 +933,13 @@ class PublishJobOut(BaseModel):
     # The published listing, once done.
     url: str | None
     error: str | None
+
+
+class BrowserActivity(BaseModel):
+    """What Mekiki's Chrome window is doing, for the live preview in the app."""
+
+    # "Vinted : « Dracaufeu 201/165 », page 2", or None when idle.
+    activity: str | None
+    running: bool
+    # The window is on screen (sign-in, a form to finish, a bot check to pass).
+    visible: bool

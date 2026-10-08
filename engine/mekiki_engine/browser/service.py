@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Literal
 
 from mekiki_engine.browser import markets, publish
-from mekiki_engine.browser.chrome import ChromeError, ChromeSession, Tab, find_chrome
+from mekiki_engine.browser.chrome import ChromeError, ChromeSession, find_chrome
 from mekiki_engine.browser.markets import MarketListing, Site
 
 # Prices read in Chrome are reused for an hour: reading them again means loading the page.
@@ -43,7 +43,7 @@ class PublishJob:
     error: str | None = None
 
 
-PUBLISHERS: dict[Site, Callable[[Tab, publish.Listing], str]] = {
+PUBLISHERS: dict[Site, Callable[..., str]] = {
     "vinted": publish.publish_vinted,
     "ebay": publish.publish_ebay,
 }
@@ -64,6 +64,8 @@ class Browsers:
     _sessions: dict[int, ChromeSession] = field(default_factory=dict)
     _cache: dict[tuple[int, Site, str], _Cached] = field(default_factory=dict)
     _jobs: dict[tuple[int, int, Site], PublishJob] = field(default_factory=dict)
+    # What Chrome is doing for each account, shown with the live preview.
+    _activity: dict[int, str] = field(default_factory=dict)
     _lock: threading.Lock = field(default_factory=threading.Lock)
 
     @staticmethod
@@ -83,13 +85,44 @@ class Browsers:
         return session is not None and session.running
 
     def open_login(self, user_id: int, site: Site) -> None:
-        """Shows the site's sign-in page in the window, for the user to sign in."""
-        with self.session(user_id).page() as tab:
+        """Brings the window on screen on the site's sign-in page, for the user to sign in."""
+        session = self.session(user_id)
+        with session.page() as tab:
             tab.navigate(markets.LOGIN_URLS[site])
+        session.set_visible(True)
 
     def is_connected(self, user_id: int, site: Site) -> bool:
-        with self.session(user_id).page() as tab:
-            return markets.is_connected(tab, site)
+        session = self.session(user_id)
+        with session.page() as tab:
+            connected = markets.is_connected(tab, site)
+        # Signed in: the window can work out of sight again.
+        if connected:
+            session.set_visible(False)
+        return connected
+
+    def activity(self, user_id: int) -> tuple[str | None, bool, bool]:
+        """(what Chrome is doing, whether it is open, whether its window shows)."""
+        with self._lock:
+            session = self._sessions.get(user_id)
+            doing = self._activity.get(user_id)
+        if session is None:
+            return doing, False, False
+        return doing, session.running, session.visible
+
+    def preview(self, user_id: int) -> bytes | None:
+        with self._lock:
+            session = self._sessions.get(user_id)
+        return session.screenshot() if session is not None else None
+
+    def set_visible(self, user_id: int, visible: bool) -> None:
+        self.session(user_id).set_visible(visible)
+
+    def _doing(self, user_id: int, step: str | None) -> None:
+        with self._lock:
+            if step is None:
+                self._activity.pop(user_id, None)
+            else:
+                self._activity[user_id] = step
 
     def prices(
         self,
@@ -107,9 +140,19 @@ class Browsers:
         try:
             queries = markets.search_queries(query, card_number, names)
             with self.session(user_id).page() as tab:
-                raw = markets.read_listings(tab, site, queries, pages=markets.PAGES[site])
+                raw = markets.read_listings(
+                    tab,
+                    site,
+                    queries,
+                    pages=markets.PAGES[site],
+                    progress=lambda step: self._doing(user_id, step),
+                )
         except ChromeError as error:
+            if isinstance(error, markets.BotChallenge):
+                self.session(user_id).set_visible(True)
             return MarketPrices(site, query, [], None, markets.utc_now(), error=str(error))
+        finally:
+            self._doing(user_id, None)
         listings = markets.parse_listings(site, raw, card_number, names)
         prices = MarketPrices(
             site=site,
@@ -158,7 +201,9 @@ class Browsers:
         def run() -> None:
             try:
                 with session.new_tab() as (tab, target):
-                    url = PUBLISHERS[site](tab, listing)
+                    url = PUBLISHERS[site](
+                        tab, listing, progress=lambda step: self._doing(user_id, step)
+                    )
                 session.close_tab(target)
                 job.url = url
                 # The card is marked for sale before the job reads as done.
@@ -171,10 +216,14 @@ class Browsers:
             except ChromeError as error:
                 job.error = str(error)
                 job.status = "failed"
+                # The form stays open: show it for the user to finish.
+                session.set_visible(True)
             # A job must always end, or the app would wait on it forever.
             except Exception as error:
                 job.error = f"erreur inattendue : {error}"
                 job.status = "failed"
+            finally:
+                self._doing(user_id, None)
 
         threading.Thread(target=run, name=f"publish-{site}-{item_id}", daemon=True).start()
         return job

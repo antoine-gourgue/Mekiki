@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import itertools
 import json
 import os
@@ -27,6 +28,10 @@ CHROME_PATHS = (
 START_TIMEOUT_S = 20.0
 # Chrome writes the port it listens on there, in the profile folder.
 ACTIVE_PORT_FILE = "DevToolsActivePort"
+# The window works off-screen; it only shows when the user has something to do in it.
+OFFSCREEN = {"left": -32000, "top": -32000, "width": 1280, "height": 900}
+ONSCREEN = {"left": 80, "top": 60, "width": 1280, "height": 900}
+PREVIEW_QUALITY = 55
 COMMAND_TIMEOUT_S = 30.0
 
 
@@ -201,6 +206,9 @@ class ChromeSession:
         self.port: int | None = None
         self.process: subprocess.Popen[bytes] | None = None
         self.lock = threading.Lock()
+        self.visible = False
+        # The tab an action is using, for the live preview in the app.
+        self.current_target: str | None = None
         self._http = httpx.Client(timeout=5)
 
     @property
@@ -230,9 +238,16 @@ class ChromeSession:
                 "--remote-allow-origins=*",
                 "--no-first-run",
                 "--no-default-browser-check",
+                f"--window-position={OFFSCREEN['left']},{OFFSCREEN['top']}",
+                f"--window-size={OFFSCREEN['width']},{OFFSCREEN['height']}",
+                # Off-screen, Chrome would otherwise pause the page's rendering and timers.
+                "--disable-backgrounding-occluded-windows",
+                "--disable-renderer-backgrounding",
+                "--disable-background-timer-throttling",
                 "about:blank",
             ]
         )
+        self.visible = False
         deadline = time.monotonic() + START_TIMEOUT_S
         while True:
             port = self._profile_port()
@@ -251,7 +266,9 @@ class ChromeSession:
         """The window's first tab, started if needed; one caller at a time."""
         with self.lock:
             self.start()
-            tab = Tab(self._page_target())
+            target_id, url = self._page_target()
+            self.current_target = target_id
+            tab = Tab(url)
             try:
                 tab.call("Page.enable")
                 tab.call("Page.bringToFront")
@@ -266,6 +283,7 @@ class ChromeSession:
         with self.lock:
             self.start()
             target = self._http.put(f"http://127.0.0.1:{self.port}/json/new?{url}").json()
+            self.current_target = str(target["id"])
             tab = Tab(str(target["webSocketDebuggerUrl"]))
             try:
                 tab.call("Page.enable")
@@ -285,11 +303,62 @@ class ChromeSession:
         elif self._answers():
             # A window taken over from a previous run: ask Chrome itself to close.
             with suppress(ChromeError, httpx.HTTPError, KeyError):
-                version = self._http.get(f"http://127.0.0.1:{self.port}/json/version").json()
-                browser = Tab(str(version["webSocketDebuggerUrl"]))
-                browser.call("Browser.close")
+                self._browser().call("Browser.close")
         self.process = None
         self.port = None
+
+    def set_visible(self, visible: bool) -> None:
+        """Brings the window on screen, for the user to sign in or finish a form, or back
+        off screen once done."""
+        if not self._answers():
+            return
+        with suppress(ChromeError, httpx.HTTPError, KeyError, StopIteration):
+            target_id = self.current_target or self._page_target()[0]
+            browser = self._browser()
+            try:
+                window = browser.call("Browser.getWindowForTarget", targetId=target_id)
+                # A minimized window has to be restored before it can move.
+                browser.call(
+                    "Browser.setWindowBounds",
+                    windowId=window["windowId"],
+                    bounds={"windowState": "normal"},
+                )
+                browser.call(
+                    "Browser.setWindowBounds",
+                    windowId=window["windowId"],
+                    bounds=ONSCREEN if visible else OFFSCREEN,
+                )
+            finally:
+                browser.close()
+            self.visible = visible
+
+    def screenshot(self) -> bytes | None:
+        """What the tab in use shows right now, as a JPEG; None when Chrome is closed."""
+        if not self._answers():
+            return None
+        try:
+            target_id = self.current_target or self._page_target()[0]
+            targets = self._http.get(f"http://127.0.0.1:{self.port}/json/list").json()
+            target = next(t for t in targets if t.get("id") == target_id)
+            tab = Tab(str(target["webSocketDebuggerUrl"]))
+        except (ChromeError, httpx.HTTPError, StopIteration, KeyError):
+            return None
+        try:
+            data = tab.call(
+                "Page.captureScreenshot",
+                format="jpeg",
+                quality=PREVIEW_QUALITY,
+                optimizeForSpeed=True,
+            )["data"]
+            return base64.b64decode(data)
+        except ChromeError:
+            return None
+        finally:
+            tab.close()
+
+    def _browser(self) -> Tab:
+        version = self._http.get(f"http://127.0.0.1:{self.port}/json/version").json()
+        return Tab(str(version["webSocketDebuggerUrl"]))
 
     def _profile_port(self) -> int | None:
         try:
@@ -298,13 +367,14 @@ class ChromeSession:
         except (OSError, IndexError, ValueError):
             return None
 
-    def _page_target(self) -> str:
+    def _page_target(self) -> tuple[str, str]:
+        """The first tab of the window, as (target id, websocket address)."""
         targets = self._http.get(f"http://127.0.0.1:{self.port}/json/list").json()
         pages = [t for t in targets if t.get("type") == "page" and t.get("webSocketDebuggerUrl")]
         if pages:
-            return str(pages[0]["webSocketDebuggerUrl"])
+            return str(pages[0]["id"]), str(pages[0]["webSocketDebuggerUrl"])
         created = self._http.put(f"http://127.0.0.1:{self.port}/json/new?about:blank").json()
-        return str(created["webSocketDebuggerUrl"])
+        return str(created["id"]), str(created["webSocketDebuggerUrl"])
 
     def _answers(self, port: int | None = None) -> bool:
         port = port or self.port

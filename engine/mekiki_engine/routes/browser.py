@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, HTTPException, Request, Response, status
 
 from mekiki_engine.browser import publish
 from mekiki_engine.browser.chrome import ChromeError
@@ -8,6 +8,7 @@ from mekiki_engine.browser.service import Browsers, MarketPrices
 from mekiki_engine.deps import DataDirDep, SessionDep, UserDep
 from mekiki_engine.domain import Game, SalePlatform
 from mekiki_engine.schemas import (
+    BrowserActivity,
     BrowserPricesOut,
     BrowserPricesRequest,
     BrowserSite,
@@ -37,6 +38,34 @@ def browser_status(request: Request, user: UserDep) -> BrowserStatus:
     return BrowserStatus(
         chrome_installed=browsers.chrome_installed(), running=browsers.running(user.id)
     )
+
+
+@router.get("/activity")
+def browser_activity(request: Request, user: UserDep) -> BrowserActivity:
+    activity, running, visible = _browsers(request).activity(user.id)
+    return BrowserActivity(activity=activity, running=running, visible=visible)
+
+
+@router.get("/preview", response_model=None)
+def browser_preview(request: Request, user: UserDep) -> Response:
+    """What the window shows right now, as a JPEG, even when it works off screen."""
+    image = _browsers(request).preview(user.id)
+    if image is None:
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+    # Never cached: the app polls it while Chrome works.
+    return Response(content=image, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
+
+
+@router.post("/show")
+def show_window(request: Request, user: UserDep) -> BrowserActivity:
+    _browsers(request).set_visible(user.id, True)
+    return browser_activity(request, user)
+
+
+@router.post("/hide")
+def hide_window(request: Request, user: UserDep) -> BrowserActivity:
+    _browsers(request).set_visible(user.id, False)
+    return browser_activity(request, user)
 
 
 @router.post("/{site}/open")

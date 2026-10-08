@@ -9,6 +9,7 @@ from __future__ import annotations
 import re
 import statistics
 import unicodedata
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Literal
@@ -82,6 +83,18 @@ EBAY_SOLD_ITEMS = r"""
 
 # French prices group thousands with narrow or plain no-break spaces: "1\u202f200,00 €".
 _SPACES = r"\s" + chr(0x202F) + chr(0x00A0)
+# Cloudflare's and DataDome's checks, which put a challenge page or frame in front.
+CHALLENGE_CHECK = (
+    "(() => /^(just a moment|un instant)/i.test(document.title) || "
+    '!!document.querySelector(\'iframe[src*="challenges.cloudflare.com"], '
+    'iframe[src*="captcha-delivery.com"], #challenge-form\'))()'
+)
+
+
+class BotChallenge(ChromeError):
+    """A site wants the user to prove they are human before going on."""
+
+
 _EUROS = re.compile(rf"(\d[\d{_SPACES}.]*,\d{{2}}|\d+)\s*(?:€|EUR)")
 _GRADED = re.compile(
     r"\b(psa|bgs|cgc|pca|ccc|sgc|beckett|collect\s?aura|grad(?:e|é|ée|ing)|gem mint)\b",
@@ -163,7 +176,12 @@ def is_connected(tab: Tab, site: Site) -> bool:
 
 
 def read_listings(
-    tab: Tab, site: Site, queries: list[str], *, pages: int = 1
+    tab: Tab,
+    site: Site,
+    queries: list[str],
+    *,
+    pages: int = 1,
+    progress: Callable[[str], None] = lambda _step: None,
 ) -> list[dict[str, Any]]:
     """The raw listings of the searches, over a few pages each, as the pages show them.
 
@@ -173,9 +191,11 @@ def read_listings(
     found: dict[str, dict[str, Any]] = {}
     for query in queries:
         for page in range(1, pages + 1):
+            progress(f"{SITE_LABELS[site]} : « {query} », page {page}")
             tab.navigate(search_url(site, query, page))
             if site == "ebay" and "signin" in tab.url():
                 raise ChromeError("connectez-vous à eBay dans la fenêtre Chrome de Mekiki")
+            check_bot_challenge(tab)
             # Results render after the page itself: wait for them, or for an empty search.
             try:
                 tab.wait_for(f"({script}).length > 0", timeout=10)
@@ -188,6 +208,16 @@ def read_listings(
             for item in new:
                 found[str(item.get("id"))] = item
     return list(found.values())
+
+
+def check_bot_challenge(tab: Tab) -> None:
+    """Stops when the site asks to prove a human is there: the user answers it in the
+    window, Mekiki never does."""
+    if tab.evaluate(CHALLENGE_CHECK):
+        raise BotChallenge(
+            "le site demande une vérification anti-robot : passez-la dans la fenêtre Chrome "
+            "de Mekiki, puis relancez"
+        )
 
 
 def parse_listings(

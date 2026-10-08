@@ -8,10 +8,12 @@ from __future__ import annotations
 
 import re
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
 from mekiki_engine.browser.chrome import ChromeError, Tab
+from mekiki_engine.browser.markets import check_bot_challenge
 from mekiki_engine.domain import Game
 
 VINTED_NEW = "https://www.vinted.fr/items/new"
@@ -66,23 +68,33 @@ def euros(cents: int) -> str:
     return f"{cents / 100:.2f}".replace(".", ",")
 
 
-def publish_vinted(tab: Tab, listing: Listing, *, submit: bool = True) -> str:
+def publish_vinted(
+    tab: Tab,
+    listing: Listing,
+    *,
+    submit: bool = True,
+    progress: Callable[[str], None] = lambda _step: None,
+) -> str:
     """Fills Vinted's form and adds the item; returns the item's page.
 
     Without ``submit`` the form is only filled, e.g. to check these steps still work.
     """
+    progress("Vinted : ouverture du formulaire")
     _step(tab.navigate, VINTED_NEW, step="ouverture du formulaire Vinted")
+    check_bot_challenge(tab)
     if "/member/" in tab.url() or "signup" in tab.url():
         raise ChromeError("connectez-vous à Vinted dans la fenêtre Chrome de Mekiki")
     tab.wait_for(
         "!!document.querySelector('[data-testid=\"add-photos-input\"]')", timeout=STEP_TIMEOUT_S
     )
 
+    progress("Vinted : photos, titre et description")
     if listing.photos:
         tab.set_files('[data-testid="add-photos-input"]', listing.photos)
     tab.type_text("#title", listing.title)
     tab.type_text("#description", listing.description)
 
+    progress("Vinted : catégorie, marque et état")
     tab.click('[data-testid="catalog-select-dropdown-input"]')
     for name in VINTED_CATEGORY_PATH:
         _pause()
@@ -94,6 +106,7 @@ def publish_vinted(tab: Tab, listing: Listing, *, submit: bool = True) -> str:
         _pick(tab, "#brand", f"#brand-radio-{VINTED_BRANDS[listing.game]}")
     grade = VINTED_CONDITIONS[condition_grade(listing.condition)]
     _pick(tab, "#condition", f"#condition-radio-{grade}")
+    progress("Vinted : prix et envoi")
     tab.type_text("#price", euros(listing.price_cents))
     # The smallest parcel: a card travels in a padded envelope.
     tab.click("#package_type_selector_1")
@@ -102,12 +115,19 @@ def publish_vinted(tab: Tab, listing: Listing, *, submit: bool = True) -> str:
 
     if not submit:
         return tab.url()
+    progress("Vinted : publication")
     tab.click('[data-testid="upload-form-save-button"]')
     item_url = _wait_url(tab, r"vinted\.fr/items/\d+", step="enregistrement de l'annonce Vinted")
     return item_url.split("?")[0]
 
 
-def publish_ebay(tab: Tab, listing: Listing, *, submit: bool = True) -> str:
+def publish_ebay(
+    tab: Tab,
+    listing: Listing,
+    *,
+    submit: bool = True,
+    progress: Callable[[str], None] = lambda _step: None,
+) -> str:
     """Goes through eBay's listing steps and lists the card; returns the confirmation page.
 
     Without ``submit`` the form is only filled (eBay keeps it as a draft).
@@ -116,7 +136,9 @@ def publish_ebay(tab: Tab, listing: Listing, *, submit: bool = True) -> str:
         raise ChromeError(
             "les cartes gradées se publient encore à la main sur eBay (organisme et note)"
         )
+    progress("eBay : ouverture de la mise en vente")
     _step(tab.navigate, EBAY_NEW, step="ouverture de la mise en vente eBay")
+    check_bot_challenge(tab)
     if "signin" in tab.url():
         raise ChromeError("connectez-vous à eBay dans la fenêtre Chrome de Mekiki")
     search = 'input[placeholder="Dites-nous ce que vous vendez"]'
@@ -130,6 +152,7 @@ def publish_ebay(tab: Tab, listing: Listing, *, submit: bool = True) -> str:
     )
     if _shows_text(tab, "Continuer sans objet correspondant"):
         tab.click_text("Continuer sans objet correspondant")
+    progress("eBay : état de la carte")
     _wait_text(tab, "Non gradée", step="choix de l'état eBay")
     condition = EBAY_CONDITIONS[condition_grade(listing.condition)]
     _choose_and_continue(tab, "Non gradée", until=condition, step="choix de l'état eBay")
@@ -137,6 +160,7 @@ def publish_ebay(tab: Tab, listing: Listing, *, submit: bool = True) -> str:
         tab, condition, until=None, step="état de la carte eBay", url_part="/lstng"
     )
 
+    progress("eBay : photos, titre, description et prix")
     tab.wait_for("!!document.querySelector('input[name=\"title\"]')", timeout=40)
     if listing.photos:
         tab.set_files("#fehelix-uploader", listing.photos)
@@ -160,6 +184,7 @@ def publish_ebay(tab: Tab, listing: Listing, *, submit: bool = True) -> str:
     tab.wait_for(f'!!document.querySelector("{button}")', timeout=STEP_TIMEOUT_S)
     if not submit:
         return tab.url()
+    progress("eBay : mise en vente")
     tab.click(button)
     return _wait_url(
         tab,
