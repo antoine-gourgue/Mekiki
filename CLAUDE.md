@@ -55,6 +55,13 @@ cd desktop && npm run lint && npm run format:check && npm run typecheck && npm r
   (« Non-English » / « Asia Region Legal »), les versions étant rangées par `idProduct`.
 - Une annonce à moins de 20 % de la cote est presque toujours une reproduction ou un
   accessoire : elle est signalée et n'entre jamais dans un colis proposé.
+- Une annonce réservée (« 様専用 », « 取り置き », « 即購入不可 »…) est écartée par `matching.py` :
+  l'achat par Neokyo serait annulé. L'état (`ListingCondition`, six niveaux des fripes
+  japonaises) vient des résultats Mercari et Yahoo Fleamarket ; Rakuma ne le donne que sur la
+  page de l'annonce.
+- `availability.py` demande au site si une annonce est encore en vente (Mercari, Rakuma) :
+  à l'ouverture de sa fiche, et pour chaque carte du colis proposé par la découverte, une
+  vendue cédant sa place à la suivante. Une requête par annonce, jamais en masse.
 - Yahoo! JAPAN bloque l'Europe (403) : ne pas tenter de contourner le blocage.
 - Les tests n'accèdent jamais au réseau : `create_app(..., http_transport=..., source_factory=...)`
   et `background_jobs=False` (voir `engine/tests/conftest.py`).
@@ -68,6 +75,8 @@ cd desktop && npm run lint && npm run format:check && npm run typecheck && npm r
 
 - `verdict.py` juge une carte (produit, annonce japonaise, carte en stock) sur chaque
   débouché : cote Cardmarket, eBay (API Browse si clés, sinon ventes lues dans Chrome), Vinted.
+  Les ventes réussies eBay, triées des plus récentes, donnent aussi la fréquence de vente
+  (ventes sur 30 et 90 jours).
 - `browser/` pilote une fenêtre Chrome hors écran (journal de ses étapes dans l'app), profil propre
   à Mekiki, par le protocole DevTools ; elle ne s'affiche que pour se connecter, finir un
   formulaire ou passer une vérification anti-robot. **Exception voulue par l'utilisateur** à la règle « jamais de connexion » : il s'y
