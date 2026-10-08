@@ -57,6 +57,15 @@ const SITE_LABELS: Record<BrowserSite, string> = {
 }
 const market = ref<BrowserPrices[]>([])
 const reading = ref(false)
+const SITE_NAMES: Record<BrowserSite, string> = { vinted: 'Vinted', ebay: 'eBay' }
+// A few listings at first, all of them on demand.
+const SHOWN_LISTINGS = 6
+const expanded = reactive<Partial<Record<BrowserSite, boolean>>>({})
+
+function shownListings(read: BrowserPrices) {
+  const relevant = read.listings.filter((listing) => listing.relevant)
+  return expanded[read.site] ? relevant : relevant.slice(0, SHOWN_LISTINGS)
+}
 
 async function readMarket() {
   const current = result.value
@@ -197,25 +206,51 @@ const costLine = computed(() => {
             <template v-else> : aucune annonce de cette carte</template>
           </p>
           <ul class="divide-y divide-default text-sm">
-            <li
-              v-for="listing in read.listings.filter((l) => l.relevant).slice(0, 6)"
-              :key="listing.external_id"
-            >
+            <li v-for="listing in shownListings(read)" :key="listing.external_id">
               <button
                 type="button"
-                class="flex w-full items-center gap-2 py-1.5 text-left hover:bg-elevated/50"
+                class="group flex w-full items-center gap-3 py-2 text-left hover:bg-elevated/50"
+                :title="`Ouvrir l’annonce sur ${SITE_NAMES[read.site]}`"
                 @click="openExternal(listing.url)"
               >
-                <span class="min-w-0 flex-1 truncate" :title="listing.title">
-                  {{ listing.title }}
+                <span class="size-12 shrink-0 overflow-hidden rounded-md bg-elevated">
+                  <img
+                    v-if="listing.image_url"
+                    :src="listing.image_url"
+                    alt=""
+                    loading="lazy"
+                    referrerpolicy="no-referrer"
+                    class="size-full object-cover"
+                  />
+                  <UIcon v-else name="i-lucide-image-off" class="m-auto mt-3.5 size-5 text-muted" />
                 </span>
-                <span class="shrink-0 text-xs text-muted">{{ listing.detail }}</span>
-                <span class="shrink-0 font-medium tabular-nums">
-                  {{ formatCents(listing.price_cents) }}{{ listing.best_offer ? '*' : '' }}
+                <span class="min-w-0 flex-1">
+                  <span class="line-clamp-2" :title="listing.title">{{ listing.title }}</span>
+                  <span class="block text-xs text-muted">{{ listing.detail }}</span>
                 </span>
+                <span class="shrink-0 text-right">
+                  <span class="block font-medium tabular-nums">
+                    {{ formatCents(listing.price_cents) }}{{ listing.best_offer ? '*' : '' }}
+                  </span>
+                  <span v-if="listing.shipping_cents" class="block text-xs text-muted tabular-nums">
+                    + {{ formatCents(listing.shipping_cents) }}
+                  </span>
+                </span>
+                <UIcon
+                  name="i-lucide-external-link"
+                  class="size-4 shrink-0 text-muted group-hover:text-highlighted"
+                />
               </button>
             </li>
           </ul>
+          <UButton
+            v-if="read.relevant_count > SHOWN_LISTINGS"
+            size="xs"
+            color="neutral"
+            variant="ghost"
+            :label="expanded[read.site] ? 'Voir moins' : `Voir les ${read.relevant_count} annonces`"
+            @click="expanded[read.site] = !expanded[read.site]"
+          />
         </div>
         <p
           v-if="market.some((r) => r.listings.some((l) => l.best_offer))"
