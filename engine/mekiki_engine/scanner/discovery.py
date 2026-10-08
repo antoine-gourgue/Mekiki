@@ -13,7 +13,7 @@ import threading
 from collections import Counter
 from collections.abc import Callable, Iterable
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
@@ -25,7 +25,7 @@ from mekiki_engine.costing.money import percent_to_fraction
 from mekiki_engine.costing.sale import SaleBreakdown
 from mekiki_engine.domain import Game, SourcePlatform
 from mekiki_engine.models import CardIndexEntry, CardmarketProduct, SettingRow
-from mekiki_engine.scanner import card_index, links
+from mekiki_engine.scanner import availability, card_index, links
 from mekiki_engine.scanner.identify import CardIdentity, identify
 from mekiki_engine.scanner.matching import MatchRule, match_title, split_keywords
 from mekiki_engine.scanner.pricing import (
@@ -78,6 +78,9 @@ MAX_SAME_PRODUCT = 2
 # A site failing this many searches in a row is down or has changed: stop browsing it.
 MAX_FAILURES_IN_A_ROW = 3
 MAX_ALTERNATIVES = 30
+# Listings checked on their marketplace per discovery: a few seconds each (see PoliteClient),
+# so a parcel full of sold listings cannot hold the result back for long.
+MAX_CHECKS = 30
 # Below this share of the market price, a listing is almost always a reproduction, an
 # accessory or another version of the card, not a bargain.
 SUSPICIOUS_PRICE_SHARE = 0.2
@@ -248,7 +251,9 @@ def discover(
         list(pool.map(browse, platforms))
 
     candidates = evaluate(session, settings, request, found.values(), run)
-    picked = compose_parcel(candidates, request.budget_cents, request.card_count)
+    picked, gone = compose_available_parcel(
+        client, run, candidates, request, on_progress=on_progress, should_stop=should_stop
+    )
     run.picks, run.totals = price_parcel(settings, picked)
     # Picked cards were priced as if the parcel held ``card_count`` cards; with fewer, each
     # one carries more of the parcel's fixed costs, so drop the weakest until it fits.
@@ -261,11 +266,11 @@ def discover(
             f"dossier) coûtent déjà environ {fixed_parcel_costs_eur(settings):.0f} €. "
             "Augmentez le budget ou réduisez le nombre de cartes."
         )
-    chosen = {id(candidate) for candidate in picked}
+    left_out = {id(candidate) for candidate in picked} | gone
     run.alternatives = [
         _pick(candidate, candidate.estimate.landed, candidate.estimate.sale)
         for candidate in candidates
-        if id(candidate) not in chosen
+        if id(candidate) not in left_out
     ][:MAX_ALTERNATIVES]
     run.stopped = should_stop()
     run.status = "done"
@@ -370,6 +375,49 @@ def compose_parcel(candidates: list[Candidate], budget_cents: int, count: int) -
     if len(picked) < count:
         fill(reserve=False)
     return picked
+
+
+def compose_available_parcel(
+    client: PoliteClient,
+    run: DiscoveryRun,
+    candidates: list[Candidate],
+    request: DiscoveryRequest,
+    *,
+    on_progress: Callable[[DiscoveryRun], None],
+    should_stop: Callable[[], bool],
+) -> tuple[list[Candidate], set[int]]:
+    """The best parcel among listings still for sale, and the ids of the candidates gone.
+
+    Good deals sell within minutes: each picked listing is checked on its marketplace, one
+    request at a time, and a sold one gives its place to the next candidate. A listing that
+    could not be checked keeps its place, as do those past ``MAX_CHECKS``. Stopping the
+    discovery skips what is left to check.
+    """
+    gone: set[int] = set()
+    checked: set[int] = set()
+    while True:
+        remaining = [c for c in candidates if id(c) not in gone]
+        picked = compose_parcel(remaining, request.budget_cents, request.card_count)
+        unchecked = [c for c in picked if id(c) not in checked]
+        if not unchecked or should_stop() or len(checked) >= MAX_CHECKS:
+            return picked, gone
+        run.verifying = True
+        on_progress(run)
+        for candidate in unchecked:
+            if should_stop() or len(checked) >= MAX_CHECKS:
+                break
+            listing = candidate.listing
+            result = availability.check_listing(client, listing.source, listing.external_id)
+            checked.add(id(candidate))
+            run.listings_checked += 1
+            if result.available is False:
+                gone.add(id(candidate))
+                run.listings_gone += 1
+            elif listing.condition is None and result.condition is not None:
+                # Rakuma only gives the condition on the listing's own page.
+                candidate.listing = replace(listing, condition=result.condition)
+            on_progress(run)
+        run.verifying = False
 
 
 def fixed_parcel_costs_eur(settings: AppSettings) -> float:

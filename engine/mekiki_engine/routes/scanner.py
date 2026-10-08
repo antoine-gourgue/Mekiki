@@ -6,9 +6,17 @@ from typing import Annotated
 from fastapi import APIRouter, HTTPException, Query, Request, status
 
 from mekiki_engine.deps import SessionDep, SettingsDep, UserDep
-from mekiki_engine.domain import Game, ListingTriage
+from mekiki_engine.domain import Game, ListingTriage, SourcePlatform
 from mekiki_engine.models import CardmarketProduct
-from mekiki_engine.scanner import card_index, cardmarket, favorites, names, service, tracking
+from mekiki_engine.scanner import (
+    availability,
+    card_index,
+    cardmarket,
+    favorites,
+    names,
+    service,
+    tracking,
+)
 from mekiki_engine.scanner.discovery import DiscoveryJob, DiscoveryJobs
 from mekiki_engine.scanner.runner import ScannerWorker, search_once
 from mekiki_engine.scanner.sources.base import PoliteClient
@@ -22,6 +30,7 @@ from mekiki_engine.schemas import (
     FavoriteCreate,
     FavoritesOut,
     FavoriteUpdate,
+    ListingAvailability,
     MarketPriceOut,
     ScanStatus,
     SearchRequest,
@@ -202,6 +211,14 @@ def search(
         payload,
         source_factory=request.app.state.source_factory,
     )
+
+
+@router.get("/listings/{source}/{external_id}/availability")
+def listing_availability(
+    source: SourcePlatform, external_id: str, request: Request, _user: UserDep
+) -> ListingAvailability:
+    """Asks the marketplace whether the listing is still for sale, and in what condition."""
+    return availability.check_listing(_client(request), source, external_id)
 
 
 @router.get("/discovery")

@@ -589,6 +589,18 @@ class SearchResponse(BaseModel):
     neokyo_search_urls: dict[str, str] = Field(default_factory=dict)
 
 
+class ListingAvailability(BaseModel):
+    """A Japanese listing checked on its marketplace just now."""
+
+    # None when the marketplace could not tell (blocked from Europe, unreachable…).
+    available: bool | None
+    # "en vente", "vendue", "supprimée"… or why it could not be checked.
+    status: str
+    condition: ListingCondition | None = None
+    price_jpy: int | None = None
+    checked_at: str
+
+
 class DiscoveryRequest(BaseModel):
     """Compose a parcel: ``card_count`` listings whose total landed cost fits ``budget_cents``."""
 
@@ -653,6 +665,11 @@ class DiscoveryRun(BaseModel):
     listings_seen: int = 0
     listings_identified: int = 0
     listings_priced: int = 0
+    # Once the parcel is composed, its listings are checked on their marketplace: sold ones
+    # are replaced by the next best candidates.
+    verifying: bool = False
+    listings_checked: int = 0
+    listings_gone: int = 0
     # The parcel: priced together, shared costs split by price as in a real lot.
     picks: list[DiscoveryPick] = Field(default_factory=list)
     totals: DiscoveryTotals | None = None

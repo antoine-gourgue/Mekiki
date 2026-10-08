@@ -205,6 +205,19 @@ class FakeMarketplace:
         self.failures: set[SourcePlatform] = set()
         self.failing_queries: set[str] = set()
         self.queries: list[tuple[SourcePlatform, str]] = []
+        # Mercari listings answered as sold when the engine checks them.
+        self.sold: set[str] = set()
+        self.checked: list[str] = []
+
+    def handle(self, request: httpx.Request) -> httpx.Response:
+        """Mercari's item API for availability checks; everything else as cardmarket_handler."""
+        if request.url.host == "api.mercari.jp" and request.url.path == "/items/get":
+            item_id = request.url.params["id"]
+            self.checked.append(item_id)
+            status = "sold_out" if item_id in self.sold else "on_sale"
+            data = {"id": item_id, "status": status, "item_condition": {"id": 3}}
+            return httpx.Response(200, json={"result": "OK", "data": data})
+        return cardmarket_handler(request)
 
     def factory(self) -> Callable[[SourcePlatform, PoliteClient, Game], FakeSource]:
         return lambda platform, _client, _game: FakeSource(self, platform)
@@ -219,7 +232,7 @@ def marketplace() -> FakeMarketplace:
 def client(tmp_path: Path, marketplace: FakeMarketplace) -> Iterator[TestClient]:
     app = create_app(
         load_config(data_dir=str(tmp_path), background_jobs=False),
-        http_transport=httpx.MockTransport(cardmarket_handler),
+        http_transport=httpx.MockTransport(marketplace.handle),
         source_factory=marketplace.factory(),
     )
     # Tests must not wait between fake requests.

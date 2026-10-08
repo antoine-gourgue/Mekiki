@@ -280,3 +280,24 @@ def test_discovery_keeps_listings_in_the_condition_asked(
 
     assert [p["external_id"] for p in run["picks"]] == ["m2"]
     assert run["picks"][0]["condition"] == "like_new"
+
+
+def test_sold_listings_give_their_place_in_the_parcel(
+    client: TestClient, marketplace: FakeMarketplace
+) -> None:
+    index_pokemon_cards(client)
+    marketplace.listings[SourcePlatform.MERCARI] = [
+        mercari("m100000001", "リザードンex RR SV2a 006/165", 4000),
+        mercari("m100000002", "リザードンex RR 006/165 美品", 4500),
+        mercari("m100000003", "リザードンex RR 006/165", 5000),
+    ]
+    marketplace.sold.add("m100000001")
+
+    run = discover(client, budget_cents=15000, card_count=2, min_roi_percent=10)
+
+    assert [p["external_id"] for p in run["picks"]] == ["m100000002", "m100000003"]
+    assert marketplace.checked == ["m100000001", "m100000002", "m100000003"]
+    assert (run["listings_checked"], run["listings_gone"]) == (3, 1)
+    assert run["verifying"] is False
+    # The sold listing is not offered as an alternative either.
+    assert run["alternatives"] == []
