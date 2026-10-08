@@ -95,6 +95,19 @@ class BotChallenge(ChromeError):
     """A site wants the user to prove they are human before going on."""
 
 
+# Vinted's page for an address it has blocked after automated browsing, in French or English.
+BLOCKED_CHECK = (
+    "(() => /session a été bloquée|activité inhabituelle ou automatisée|"
+    "session has been blocked|unusual or automated activity/i"
+    ".test(document.body ? document.body.innerText.slice(0, 3000) : ''))()"
+)
+
+
+class SiteBlocked(ChromeError):
+    """The site has blocked this address for automated browsing: reading on would only make
+    it last longer."""
+
+
 _EUROS = re.compile(rf"(\d[\d{_SPACES}.]*,\d{{2}}|\d+)\s*(?:€|EUR)")
 _GRADED = re.compile(
     r"\b(psa|bgs|cgc|pca|ccc|sgc|beckett|collect\s?aura|grad(?:e|é|ée|ing)|gem mint)\b",
@@ -119,8 +132,10 @@ FRENCH_MONTHS = {
 
 # Latin letters, accented ones included, end before this code point.
 LATIN_END = 0x250
-# Pages read per search: Vinted shows 96 listings a page, eBay 120 sold ones.
-PAGES = {"vinted": 3, "ebay": 2}
+# Pages read per search and searches per card: Vinted shows 96 listings a page, eBay 120 sold
+# ones. Vinted blocks an address that loads many searches in a row, so it gets the fewest.
+PAGES = {"vinted": 1, "ebay": 2}
+MAX_QUERIES = {"vinted": 2, "ebay": 3}
 # Prices this many times away from the median are left out of it, from this many listings.
 OUTLIER_RATIO = 5
 OUTLIER_MIN_COUNT = 4
@@ -195,20 +210,27 @@ def read_listings(
     *,
     pages: int = 1,
     progress: Callable[[str], None] = lambda _step: None,
+    pause: Callable[[], None] = lambda: None,
 ) -> list[dict[str, Any]]:
     """The raw listings of the searches, over a few pages each, as the pages show them.
 
-    A search stops at the first page bringing nothing new.
+    A search stops at the first page bringing nothing new; ``pause`` runs between two pages.
     """
     script = VINTED_ITEMS if site == "vinted" else EBAY_SOLD_ITEMS
     found: dict[str, dict[str, Any]] = {}
-    for query in queries:
+    loaded = 0
+    for query in queries[: MAX_QUERIES[site]]:
         for page in range(1, pages + 1):
+            if loaded:
+                pause()
+            loaded += 1
             progress(f"{SITE_LABELS[site]} : « {query} », page {page}")
             tab.navigate(search_url(site, query, page))
             if site == "ebay" and "signin" in tab.url():
                 raise ChromeError("connectez-vous à eBay dans la fenêtre Chrome de Mekiki")
             check_bot_challenge(tab)
+            if tab.evaluate(BLOCKED_CHECK):
+                raise SiteBlocked(f"{SITE_LABELS[site]} a bloqué la lecture automatique")
             # Results render after the page itself: wait for them, or for an empty search.
             try:
                 tab.wait_for(f"({script}).length > 0", timeout=10)
@@ -293,7 +315,11 @@ def median_cents(listings: list[MarketListing]) -> int | None:
     """
     relevant = [listing for listing in listings if listing.relevant]
     priced = [listing for listing in relevant if not listing.best_offer] or relevant
-    prices = [listing.price_cents for listing in priced]
+    return robust_median([listing.price_cents for listing in priced])
+
+
+def robust_median(prices: list[int]) -> int | None:
+    """Median of ``prices`` once those five times above or below the first median are out."""
     if not prices:
         return None
     first = statistics.median(prices)

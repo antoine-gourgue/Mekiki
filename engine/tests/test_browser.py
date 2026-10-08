@@ -83,6 +83,7 @@ class FakeTab:
         self.pages = pages
         self.connected = connected
         self.challenge = False
+        self.blocked = False
         self.visited: list[str] = []
 
     def navigate(self, url: str, *, timeout: float = 30) -> None:
@@ -101,6 +102,8 @@ class FakeTab:
     def evaluate(self, expression: str, *, await_promise: bool = False) -> Any:
         if expression == markets.CHALLENGE_CHECK:
             return self.challenge
+        if expression == markets.BLOCKED_CHECK:
+            return self.blocked
         return self._current()
 
     def _current(self) -> list[dict[str, Any]]:
@@ -132,7 +135,9 @@ class FakeSession:
 @pytest.fixture
 def chrome(client: TestClient, tmp_path: Path) -> FakeSession:
     session = FakeSession(FakeTab({"vinted": VINTED_RAW, "ebay": EBAY_RAW}, connected=True))
-    client.app.state.browsers = Browsers(tmp_path, session_factory=lambda _profile: session)  # type: ignore[attr-defined,arg-type,return-value]
+    client.app.state.browsers = Browsers(
+        tmp_path, session_factory=lambda _profile: session, pause_s=(0, 0)
+    )  # type: ignore[attr-defined,arg-type,return-value]
     return session
 
 
@@ -263,7 +268,7 @@ def test_the_log_lists_each_step_and_its_outcome(client: TestClient, chrome: Fak
     log = [line["text"] for line in client.get("/browser/activity").json()["log"]]
     assert log[0].startswith("Vinted : « Dracaufeu ex 201/165 », page 1")
     assert "Vinted : 4 annonces lues, 2 de cette carte" in log
-    assert log[-1] == "Vinted : prix déjà lus il y a moins d'une heure"
+    assert log[-1] == "Vinted : prix déjà lus il y a moins de six heures"
 
 
 def test_a_bot_check_is_left_to_the_user(client: TestClient, chrome: FakeSession) -> None:
@@ -329,3 +334,44 @@ def test_ebay_sales_frequency_joins_the_verdict(client: TestClient, chrome: Fake
     assert prices["sales_90_days"] is not None
     assert prices["listings"][0]["sold_on"] == "2026-10-06"
     assert any("sur 90 jours" in signal["text"] for signal in after["signals"])
+
+
+def test_a_blocked_site_is_left_alone_for_hours(client: TestClient, chrome: FakeSession) -> None:
+    chrome.tab.blocked = True
+    body = {"query": "Pikachu 173/165", "card_number": "173/165"}
+
+    first = client.post("/browser/vinted/prices", json=body).json()
+    loaded = len(chrome.tab.visited)
+    chrome.tab.blocked = False
+    again = client.post("/browser/vinted/prices", json=body).json()
+
+    assert "a bloqué la lecture automatique" in first["error"]
+    assert "a bloqué la lecture automatique" in again["error"]
+    assert len(chrome.tab.visited) == loaded
+    assert chrome.visible is False
+
+
+class NewResultsTab(FakeTab):
+    """Every page brings listings not seen before."""
+
+    def __init__(self) -> None:
+        super().__init__({}, connected=True)
+
+    def _current(self) -> list[dict[str, Any]]:
+        return [{"id": self.url()}]
+
+
+def test_vinted_reads_one_page_of_two_searches_at_most() -> None:
+    tab = NewResultsTab()
+    pauses: list[None] = []
+
+    markets.read_listings(
+        tab,
+        "vinted",
+        ["a 1/1", "b 1/1", "c 1/1"],
+        pages=markets.PAGES["vinted"],
+        pause=lambda: pauses.append(None),
+    )
+
+    assert len(tab.visited) == 2
+    assert len(pauses) == 1

@@ -39,7 +39,9 @@ class FakeSession:
 @pytest.fixture
 def chrome(client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     session = FakeSession()
-    client.app.state.browsers = Browsers(tmp_path, session_factory=lambda _profile: session)  # type: ignore[attr-defined,arg-type,return-value]
+    client.app.state.browsers = Browsers(
+        tmp_path, session_factory=lambda _profile: session, pause_s=(0, 0)
+    )  # type: ignore[attr-defined,arg-type,return-value]
     seen: dict[str, Any] = {"session": session, "listings": []}
 
     def fake_vinted(_tab: object, listing: publish.Listing, **_options: object) -> str:
