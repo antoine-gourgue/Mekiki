@@ -12,7 +12,8 @@
         "languages": ["French"],
         "displayLanguageSelector": false,
         "installerIcon": "icons/icon.ico",
-        "startMenuFolder": "Mekiki"
+        "startMenuFolder": "Mekiki",
+        "installerHooks": "windows/hooks.nsh"
       },
       "webviewInstallMode": {
         "type": "downloadBootstrapper",

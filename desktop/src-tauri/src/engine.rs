@@ -1,16 +1,29 @@
 //! The engine sidecar: the PyInstaller build of `engine/`, shipped from `binaries/`.
 
+use std::path::PathBuf;
 use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
-use tauri::{App, AppHandle, Manager};
+use tauri::{AppHandle, Manager};
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use tauri_plugin_shell::ShellExt;
 
-/// The running engine, kept so it can be stopped when the app exits.
-struct Engine(Mutex<Option<CommandChild>>);
+/// Time the engine gets to finish what it is writing once asked to stop.
+const GRACEFUL_STOP: Duration = Duration::from_secs(5);
+/// Time Windows gets to release the executable of a killed engine.
+const FORCED_STOP: Duration = Duration::from_secs(3);
 
-/// Starts the engine with its SQLite database in the app data folder.
-pub fn spawn(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
+/// The running engine, kept so it can be stopped when the app exits or updates.
+#[derive(Default)]
+pub struct Engine(Mutex<Option<CommandChild>>);
+
+/// Starts the engine with its SQLite database in the app data folder, unless it runs already.
+pub fn start(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
+    let engine = app.state::<Engine>();
+    let mut running = engine.0.lock().map_err(|_| "engine state poisoned")?;
+    if running.is_some() {
+        return Ok(());
+    }
     let data_dir = app.path().app_data_dir()?;
     std::fs::create_dir_all(&data_dir)?;
 
@@ -22,7 +35,7 @@ pub fn spawn(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
         .args(["--exit-with-parent"])
         .env("MEKIKI_DATA_DIR", &data_dir)
         .spawn()?;
-    app.manage(Engine(Mutex::new(Some(child))));
+    *running = Some(child);
 
     // Draining the output keeps the pipes from filling up and blocking the engine.
     tauri::async_runtime::spawn(async move {
@@ -41,15 +54,63 @@ pub fn spawn(app: &mut App) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-/// Stops the engine; called on `RunEvent::Exit`.
+/// Stops the engine and waits until its executable can be replaced, since an update's
+/// installer overwrites it right after. Called on `RunEvent::Exit` and before an update.
 pub fn stop(app: &AppHandle) {
-    let Some(engine) = app.try_state::<Engine>() else {
+    let Some(child) = take_child(app) else {
         return;
     };
-    // The semicolon ends the lock guard's temporary before `engine` goes out of scope.
-    if let Ok(mut running) = engine.0.lock() {
-        if let Some(child) = running.take() {
-            let _ = child.kill();
-        }
+    // Closing its stdin lets the engine finish what it is writing and stop by itself.
+    drop(child);
+    if wait_until_replaceable(GRACEFUL_STOP) {
+        return;
+    }
+    kill_engines();
+    wait_until_replaceable(FORCED_STOP);
+}
+
+fn take_child(app: &AppHandle) -> Option<CommandChild> {
+    let engine = app.try_state::<Engine>()?;
+    let child = engine.0.lock().ok()?.take();
+    child
+}
+
+/// Whether the engine's executable can be opened for writing within `timeout`: Windows
+/// refuses as long as a process runs from it.
+fn wait_until_replaceable(timeout: Duration) -> bool {
+    let Some(path) = engine_path() else {
+        return true;
     };
+    let deadline = Instant::now() + timeout;
+    loop {
+        if std::fs::OpenOptions::new().write(true).open(&path).is_ok() {
+            return true;
+        }
+        if Instant::now() >= deadline {
+            return false;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+}
+
+/// Tauri installs the sidecar next to the app, without its target triple.
+fn engine_path() -> Option<PathBuf> {
+    let path = std::env::current_exe()
+        .ok()?
+        .with_file_name("mekiki-engine.exe");
+    path.exists().then_some(path)
+}
+
+/// Kills every engine process: the PyInstaller bootloader runs Python in a child process of
+/// the same executable, and both keep it open.
+fn kill_engines() {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        let _ = std::process::Command::new("taskkill")
+            .args(["/F", "/T", "/IM", "mekiki-engine.exe"])
+            .creation_flags(CREATE_NO_WINDOW)
+            .status();
+    }
 }

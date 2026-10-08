@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { invoke } from '@tauri-apps/api/core'
 import type { Update } from '@tauri-apps/plugin-updater'
 
 /**
@@ -10,7 +11,8 @@ const update = shallowRef<Update | null>(null)
 const open = ref(false)
 const progress = ref<number | null>(null)
 const failure = ref<string | null>(null)
-const installing = computed(() => progress.value !== null && !failure.value)
+const step = ref<'idle' | 'download' | 'install'>('idle')
+const installing = computed(() => step.value !== 'idle')
 
 onMounted(async () => {
   if (!('__TAURI_INTERNALS__' in window)) return
@@ -74,21 +76,32 @@ async function install() {
   const pending = update.value
   if (!pending) return
   failure.value = null
+  step.value = 'download'
   progress.value = 0
   let total = 0
   let received = 0
+  let engineStopped = false
   try {
-    await pending.downloadAndInstall((event) => {
+    await pending.download((event) => {
       if (event.event === 'Started') total = event.data.contentLength ?? 0
       if (event.event === 'Progress') {
         received += event.data.chunkLength
         progress.value = total ? Math.round((received / total) * 100) : null
       }
     })
+    step.value = 'install'
+    progress.value = null
+    // The installer replaces the engine's executable, which Windows refuses while it runs;
+    // the updater would close the app before the engine had stopped.
+    await invoke('stop_engine')
+    engineStopped = true
+    await pending.install()
     const { relaunch } = await import('@tauri-apps/plugin-process')
     await relaunch()
   } catch (error) {
     console.error('Mise à jour impossible', error)
+    if (engineStopped) await invoke('start_engine').catch(() => undefined)
+    step.value = 'idle'
     progress.value = null
     failure.value = explain(error)
   }
@@ -131,8 +144,11 @@ async function install() {
 
       <div v-if="installing" class="space-y-2">
         <UProgress :model-value="progress ?? undefined" />
-        <p class="text-sm text-muted">
+        <p v-if="step === 'download'" class="text-sm text-muted">
           Téléchargement{{ progress ? ` ${progress} %` : '…' }}. Mekiki redémarrera tout seul.
+        </p>
+        <p v-else class="text-sm text-muted">
+          Installation : Mekiki se ferme, puis redémarre tout seul.
         </p>
       </div>
 
