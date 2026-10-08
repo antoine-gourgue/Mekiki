@@ -411,6 +411,17 @@ export interface SearchResponse {
   neokyo_search_urls: Record<string, string>
 }
 
+/** A Japanese listing checked on its marketplace just now. */
+export interface ListingAvailability {
+  /** `null` when the marketplace could not tell (blocked from Europe, unreachable…). */
+  available: boolean | null
+  /** "en vente", "vendue", "supprimée"… or why it could not be checked. */
+  status: string
+  condition: ListingCondition | null
+  price_jpy: number | null
+  checked_at: string
+}
+
 export interface DiscoveryRequest {
   game: Game
   /** Everything included: cards, proxy fees, parcel shipping, estimated import taxes. */
@@ -474,6 +485,10 @@ export interface DiscoveryRun {
   listings_seen: number
   listings_identified: number
   listings_priced: number
+  /** The parcel's listings are being checked on their marketplace; sold ones are replaced. */
+  verifying: boolean
+  listings_checked: number
+  listings_gone: number
   /** The parcel, priced as one real lot. */
   picks: DiscoveryPick[]
   totals: DiscoveryTotals | null

@@ -1,10 +1,50 @@
 <script setup lang="ts">
 import type { ListingPreview } from '~/composables/useDrawer'
+import type { ListingAvailability } from '~/types/engine'
 
-/** Side panel of a listing to buy in Japan: is its price worth it? */
+/**
+ * Side panel of a listing to buy in Japan: is it still for sale, in what condition, and is
+ * its price worth it?
+ */
 const props = defineProps<{ listing: ListingPreview }>()
 
 const engine = useEngine()
+
+// Results age (a discovery is kept, a favorite stays): the marketplace is asked again.
+const availability = ref<ListingAvailability | null>(null)
+const checking = ref(false)
+watch(
+  () => `${props.listing.source}:${props.listing.external_id}`,
+  async () => {
+    availability.value = null
+    checking.value = true
+    try {
+      availability.value = await engine.listingAvailability(
+        props.listing.source,
+        props.listing.external_id,
+      )
+    } catch (error) {
+      availability.value = {
+        available: null,
+        status: `vérification impossible : ${engineErrorMessage(error)}`,
+        condition: null,
+        price_jpy: null,
+        checked_at: new Date().toISOString(),
+      }
+    } finally {
+      checking.value = false
+    }
+  },
+  { immediate: true },
+)
+
+const condition = computed(() => availability.value?.condition ?? props.listing.condition)
+const priceChanged = computed(() => {
+  const now = availability.value?.price_jpy
+  return availability.value?.available && now != null && now !== props.listing.price_jpy
+    ? now
+    : null
+})
 
 // The product's Cardmarket page, loaded ahead so the link opens on the first click.
 const cardmarketUrl = ref<string | null>(null)
@@ -74,6 +114,18 @@ const verdictQuery = computed(() => ({
                   : 'port non précisé'
             }}
           </p>
+          <div class="mt-2.5 flex flex-wrap items-center gap-1.5">
+            <UBadge
+              v-if="condition"
+              :color="CONDITION_COLORS[condition]"
+              variant="soft"
+              :label="CONDITION_LABELS[condition]"
+            />
+            <span v-if="condition" class="text-xs text-dimmed">
+              {{ CONDITION_JAPANESE[condition] }}
+            </span>
+            <span v-else-if="!checking" class="text-xs text-dimmed">état non précisé</span>
+          </div>
           <UButton
             v-if="cardmarketUrl"
             icon="i-lucide-chart-line"
@@ -87,6 +139,30 @@ const verdictQuery = computed(() => ({
           />
         </div>
       </div>
+
+      <p v-if="checking" class="flex items-center gap-2 text-sm text-muted">
+        <UIcon name="i-lucide-loader-circle" class="size-4 animate-spin" />
+        Vérification sur {{ SOURCE_LABELS[listing.source] }}…
+      </p>
+      <UAlert
+        v-else-if="availability?.available === false"
+        color="error"
+        variant="subtle"
+        icon="i-lucide-circle-x"
+        :title="`Plus disponible : ${availability.status}`"
+        description="Elle a été vendue ou retirée depuis qu’elle a été trouvée."
+      />
+      <p v-else-if="availability?.available" class="flex items-center gap-2 text-sm text-success">
+        <UIcon name="i-lucide-circle-check" class="size-4" />
+        En vente sur {{ SOURCE_LABELS[listing.source] }}, vérifiée à l’instant
+        <span v-if="priceChanged" class="text-warning">
+          · prix actuel {{ formatYen(priceChanged) }}
+        </span>
+      </p>
+      <p v-else-if="availability" class="flex items-center gap-2 text-sm text-dimmed">
+        <UIcon name="i-lucide-circle-help" class="size-4" />
+        Disponibilité non vérifiée : {{ availability.status }}
+      </p>
 
       <section class="space-y-2.5">
         <h3 class="text-xs font-semibold tracking-[0.12em] text-dimmed uppercase">

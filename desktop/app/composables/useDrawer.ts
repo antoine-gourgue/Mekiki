@@ -4,6 +4,7 @@ import type { Game, ListingCondition, SourcePlatform } from '~/types/engine'
 export interface ListingPreview {
   title: string
   source: SourcePlatform
+  external_id: string
   price_jpy: number
   shipping_included: boolean | null
   url: string

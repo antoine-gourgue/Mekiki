@@ -29,6 +29,7 @@ import type {
   LotSummary,
   ListingTriage,
   LotUpdate,
+  ListingAvailability,
   ListingDraft,
   ListingSite,
   LoginRequest,
@@ -41,6 +42,7 @@ import type {
   SearchRequest,
   SearchResponse,
   SiteConnection,
+  SourcePlatform,
   SimulationRequest,
   SimulationResult,
   TrackedCard,
@@ -191,6 +193,11 @@ export function useEngine() {
       request<PublishJob | null>(`/browser/${site}/publish/${itemId}`),
     search: (body: SearchRequest) =>
       request<SearchResponse>('/search', { method: 'POST', body, timeout: 120_000 }),
+    listingAvailability: (source: SourcePlatform, externalId: string) =>
+      request<ListingAvailability>(
+        `/listings/${source}/${encodeURIComponent(externalId)}/availability`,
+        { timeout: 30_000 },
+      ),
   }
 }
 

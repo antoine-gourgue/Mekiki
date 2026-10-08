@@ -250,7 +250,8 @@ const gameItems = selectItems(GAME_LABELS)
             class="flex flex-wrap items-center justify-between gap-3 border-t border-default pt-4"
           >
             <p class="text-sm text-dimmed">
-              Les annonces changent vite : relancer dans quelques heures donne d’autres cartes.
+              Les cartes du colis sont vérifiées sur leur site avant d’être proposées : les bonnes
+              affaires partent en quelques minutes.
             </p>
             <UButton
               type="submit"
@@ -267,11 +268,22 @@ const gameItems = selectItems(GAME_LABELS)
       <UCard v-if="running && run" :ui="{ body: 'sm:p-5' }">
         <div class="space-y-3">
           <div class="flex flex-wrap items-center justify-between gap-3 text-sm">
-            <span class="font-medium text-highlighted">Recherche en cours…</span>
-            <span class="text-muted tabular-nums">
-              {{ run.searches_done }} / {{ run.searches_total }} recherches ·
-              {{ run.listings_seen.toLocaleString('fr-FR') }} annonces
-            </span>
+            <template v-if="run.verifying">
+              <span class="font-medium text-highlighted">
+                Vérification des annonces du colis sur leur site…
+              </span>
+              <span class="text-muted tabular-nums">
+                {{ run.listings_checked }} vérifiée{{ run.listings_checked > 1 ? 's' : '' }} ·
+                {{ run.listings_gone }} déjà vendue{{ run.listings_gone > 1 ? 's' : '' }}
+              </span>
+            </template>
+            <template v-else>
+              <span class="font-medium text-highlighted">Recherche en cours…</span>
+              <span class="text-muted tabular-nums">
+                {{ run.searches_done }} / {{ run.searches_total }} recherches ·
+                {{ run.listings_seen.toLocaleString('fr-FR') }} annonces
+              </span>
+            </template>
           </div>
           <UProgress :model-value="progress" />
           <div class="flex justify-end">
@@ -320,6 +332,14 @@ const gameItems = selectItems(GAME_LABELS)
             />
             {{ run.listings_seen.toLocaleString('fr-FR') }} annonces lues ·
             {{ run.listings_identified }} cartes reconnues · {{ run.listings_priced }} avec une cote
+            <template v-if="run.listings_checked">
+              · {{ run.listings_checked }} vérifiées sur leur site<template v-if="run.listings_gone"
+                >, {{ run.listings_gone }} déjà vendue{{
+                  run.listings_gone > 1 ? 's' : ''
+                }}
+                remplacée{{ run.listings_gone > 1 ? 's' : '' }}</template
+              >
+            </template>
             <template v-if="run.finished_at"> · {{ formatDateTime(run.finished_at) }}</template>
           </p>
         </div>
@@ -390,7 +410,8 @@ const gameItems = selectItems(GAME_LABELS)
             <h2 class="text-lg font-semibold text-highlighted">Autres annonces rentables</h2>
             <p class="mt-1 text-sm text-dimmed">
               Chiffrées comme une carte d’un colis de {{ run.request?.card_count }} : à prendre en
-              plus ou à la place d’une carte du colis.
+              plus ou à la place d’une carte du colis. Non vérifiées : leur fiche dit si elles sont
+              toujours en vente.
             </p>
           </div>
           <ListingFilterBar
