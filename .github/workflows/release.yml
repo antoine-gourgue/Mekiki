@@ -6,8 +6,12 @@ name: Release
 on:
   push:
     branches: [main]
+    # Docs, the website's Vercel settings and the workflows themselves do not change the app.
     paths-ignore:
       - "**.md"
+      - "desktop/vercel.json"
+      - "desktop/.vercelignore"
+      - ".github/**"
   # Publishes again by hand, e.g. after the signing key secret changed.
   workflow_dispatch:
 
