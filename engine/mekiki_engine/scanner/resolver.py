@@ -24,6 +24,9 @@ _CODE_IN_NAME = re.compile(r"\(\s*((?:OP|ST|EB|PRB)\d{2}|P)-(\d{3})\s*\)", re.IG
 SECRET_RARITIES = frozenset({"sar", "sr", "ar", "ur", "hr", "mur", "chr", "csr", "ssr"})
 # Card names this short ("ミュウ", "ex") are found inside too many other words.
 MIN_NAME_LENGTH = 3
+# A set name cut by the seller's listing tool ("ワイルドフォ...") still names the set when this
+# much of it is left; shorter, "ポケモン..." would name "ポケモンカード151".
+MIN_SET_PREFIX = 5
 # The index holds every set of the Scarlet & Violet and MEGA eras, but older ones only in
 # part: there, a name and a rarity may also fit a card of a set the index lacks.
 FULLY_INDEXED_SET = re.compile(r"^(?:sv|m)\d")
@@ -72,6 +75,8 @@ class CatalogResolver:
             # from the index too: the card's name in the title says which one, or none.
             title = compact(identity.text)
             rows = [row for row in rows if row.name and compact(row.name) in title]
+            if len({row.set_code for row in rows}) > 1:
+                rows = _in_named_set(rows, title) or rows
         if not rows or len({row.set_code for row in rows}) > 1:
             return None
         return self._resolution(rows, identity)
@@ -89,15 +94,20 @@ class CatalogResolver:
                     select(CardIndexEntry).where(CardIndexEntry.game == Game.POKEMON.value)
                 ).all()
             )
+        title = compact(identity.text)
         rows = [
             row
-            for row in self._names.followed_by(compact(identity.text), identity.rarity)
+            for row in self._names.followed_by(title, identity.rarity)
             if _rarity_fits(row, identity.rarity)
             and (identity.set_code is None or row.set_code == identity.set_code)
         ]
+        # "タケルライコex SAR … ワイルドフォース": the set's name settles reprints and versions.
+        named_set = _in_named_set(rows, title)
+        rows = named_set or rows
         if len({(row.set_code, row.number) for row in rows}) != 1:
             return None
-        if not identity.set_code and not FULLY_INDEXED_SET.match(rows[0].set_code):
+        explicit = identity.set_code is not None or bool(named_set)
+        if not explicit and not FULLY_INDEXED_SET.match(rows[0].set_code):
             return None
         return self._resolution(rows, identity, NAME_RARITY_NOTE)
 
@@ -240,6 +250,30 @@ class _NameIndex:
         if not found:
             return []
         return self.rows[max(found, key=len)]
+
+
+def _in_named_set(rows: list[CardIndexEntry], title: str) -> list[CardIndexEntry]:
+    """Rows whose set the compacted title names, in full or cut short by "..."."""
+    named = {}
+    for row in rows:
+        if row.set_code not in named:
+            named[row.set_code] = _names_set(title, row.set_name or "")
+    return [row for row in rows if named[row.set_code]]
+
+
+def _names_set(title: str, set_name: str) -> bool:
+    name = compact(set_name)
+    if len(name) < MIN_NAME_LENGTH:
+        return False
+    if name in title:
+        return True
+    cut = title.find("...")
+    while cut != -1:
+        before = title[:cut]
+        if any(before.endswith(name[:size]) for size in range(MIN_SET_PREFIX, len(name))):
+            return True
+        cut = title.find("...", cut + 1)
+    return False
 
 
 def _rarity_fits(row: CardIndexEntry, rarity: str) -> bool:

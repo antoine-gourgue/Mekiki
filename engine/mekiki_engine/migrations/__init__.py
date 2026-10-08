@@ -16,6 +16,7 @@ from mekiki_engine.migrations import (
     m0005_item_photos,
     m0006_pokemon_species,
     m0007_listing_condition,
+    m0008_card_set_names,
 )
 
 MIGRATIONS: tuple[tuple[int, str], ...] = (
@@ -26,6 +27,7 @@ MIGRATIONS: tuple[tuple[int, str], ...] = (
     (5, m0005_item_photos.SQL),
     (6, m0006_pokemon_species.SQL),
     (7, m0007_listing_condition.SQL),
+    (8, m0008_card_set_names.SQL),
 )
 
 

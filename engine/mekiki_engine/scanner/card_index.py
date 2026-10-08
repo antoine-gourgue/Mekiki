@@ -28,6 +28,8 @@ ARCHIVE_URL = "https://codeload.github.com/tcgdex/cards-database/zip/refs/heads/
 COMMIT_URL = "https://api.github.com/repos/tcgdex/cards-database/commits/master"
 MAX_AGE = timedelta(days=7)
 STATE_KEY = "card_index:pokemon"
+# Bumped when the index stores something new: an index built before is rebuilt once.
+INDEX_FORMAT = "2"
 
 # TCGdex rarity labels → the abbreviations printed on Japanese cards and used in titles.
 RARITIES = {
@@ -62,6 +64,7 @@ class IndexedCard:
     set_code: str
     number: int
     set_total: int | None
+    set_name: str | None
     rarity: str | None
     name: str | None
     # "normal", "holo", "reverse", "reverse-pokeball", "reverse-masterball"…
@@ -73,16 +76,17 @@ def refresh(session: Session, client: PoliteClient, *, force: bool = False) -> s
     """Rebuilds the index when it is older than a week; returns an error message, if any."""
     state = _load_state(session)
     fetched_at = state.get("fetched_at")
-    if not force and fetched_at and _age(fetched_at) < MAX_AGE and indexed_count(session):
+    if not force and fetched_at and _age(fetched_at) < MAX_AGE and not needs_rebuild(session):
         return None
     try:
         commit = client.request(
             "GET", COMMIT_URL, headers={"Accept": "application/vnd.github.sha"}
         ).text.strip()
-        if commit != state.get("commit") or not indexed_count(session):
+        if commit != state.get("commit") or needs_rebuild(session):
             archive = client.request("GET", ARCHIVE_URL, timeout=180).content
             replace_index(session, parse_archive(archive))
             state["commit"] = commit
+            state["format"] = INDEX_FORMAT
         state["fetched_at"] = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
         state["error"] = None
     except (SourceError, zipfile.BadZipFile) as error:
@@ -90,6 +94,11 @@ def refresh(session: Session, client: PoliteClient, *, force: bool = False) -> s
         state["error"] = f"Index des cartes Pokémon (TCGdex) : {error}"
     _save_state(session, state)
     return state["error"]
+
+
+def needs_rebuild(session: Session) -> bool:
+    """No index yet, or one built by an older version of Mekiki."""
+    return not indexed_count(session) or _load_state(session).get("format") != INDEX_FORMAT
 
 
 def load_error(session: Session) -> str | None:
@@ -116,6 +125,7 @@ def replace_index(session: Session, cards: list[IndexedCard]) -> None:
             set_code=card.set_code,
             number=card.number,
             set_total=card.set_total,
+            set_name=card.set_name,
             rarity=card.rarity,
             name=card.name,
             variant=card.variant,
@@ -133,30 +143,43 @@ def parse_archive(archive: bytes) -> list[IndexedCard]:
             for name in zipped.namelist()
             if "/data-asia/" in name and name.endswith(".ts")
         }
-        sets: dict[tuple[str, str], tuple[str, int | None]] = {}
+        sets: dict[tuple[str, str], tuple[str, int | None, str | None]] = {}
         for name, parts in files.items():
             if len(parts) == 2:
                 text = zipped.read(name).decode("utf-8")
                 set_id = _SET_ID.search(text)
                 official = _OFFICIAL.search(text)
+                set_name = _JA_NAME.search(_block(text, "name") or "")
                 if set_id:
                     sets[(parts[0], parts[1][:-3])] = (
                         set_id[1].lower(),
                         int(official[1]) if official else None,
+                        set_name[1] if set_name else None,
                     )
         cards: list[IndexedCard] = []
         for name, parts in files.items():
             if len(parts) != 3 or (parts[0], parts[1]) not in sets:
                 continue
-            set_code, total = sets[(parts[0], parts[1])]
+            set_code, total, set_name = sets[(parts[0], parts[1])]
             cards.extend(
-                parse_card(zipped.read(name).decode("utf-8"), set_code, total, parts[2][:-3])
+                parse_card(
+                    zipped.read(name).decode("utf-8"),
+                    set_code,
+                    total,
+                    parts[2][:-3],
+                    set_name=set_name,
+                )
             )
     return cards
 
 
 def parse_card(
-    text: str, set_code: str, set_total: int | None, local_id: str
+    text: str,
+    set_code: str,
+    set_total: int | None,
+    local_id: str,
+    *,
+    set_name: str | None = None,
 ) -> Iterator[IndexedCard]:
     """Cards of one TypeScript file; nothing for non-Japanese or non-numbered cards."""
     names = _block(text, "name") or ""
@@ -169,6 +192,7 @@ def parse_card(
         "set_code": set_code,
         "number": int(local_id),
         "set_total": set_total,
+        "set_name": set_name,
         "rarity": RARITIES.get(rarity[1], rarity[1]) if rarity and rarity[1] != "None" else None,
         "name": japanese_name[1],
     }

@@ -15,6 +15,7 @@ def test_archive_parsing_keeps_japanese_cards_and_their_printings() -> None:
     charizard = by_product[719654]
     assert (charizard.set_code, charizard.number, charizard.set_total) == ("sv2a", 201, 165)
     assert (charizard.rarity, charizard.name, charizard.variant) == ("SAR", "リザードンex", "holo")
+    assert charizard.set_name == "ポケモンカード151"
     assert by_product[837231].variant == "reverse-masterball"
 
 
@@ -44,3 +45,16 @@ def test_titles_resolve_to_the_right_printing(client: TestClient) -> None:
         # Only the regular printing is priced in the fake price guide; mirrors are not.
         assert product("フシギダネ 001/165 マスターボールミラー") is None
         assert product("リザードン 201/999") is None
+
+
+def test_an_index_built_by_an_older_version_is_rebuilt(client: TestClient) -> None:
+    client.post("/cardmarket/refresh", json={})
+    with client.app.state.session_factory() as session:  # type: ignore[attr-defined]
+        state = card_index._load_state(session)
+        card_index._save_state(session, {**state, "format": None})
+        assert card_index.needs_rebuild(session)
+
+        assert card_index.refresh(session, client.app.state.http) is None  # type: ignore[attr-defined]
+
+        assert not card_index.needs_rebuild(session)
+        assert card_index.indexed_count(session) == 5

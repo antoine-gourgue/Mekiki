@@ -233,6 +233,8 @@ class CardIndexEntry(Base):
     number: Mapped[int] = mapped_column(primary_key=True, autoincrement=False)
     id_product: Mapped[int] = mapped_column(primary_key=True, autoincrement=False)
     set_total: Mapped[int | None]
+    # The set's Japanese name, "ワイルドフォース" for SV5K.
+    set_name: Mapped[str | None]
     rarity: Mapped[str | None]
     name: Mapped[str | None]
     # "normal", "holo", "reverse-masterball"…: mirror versions are separate products.
