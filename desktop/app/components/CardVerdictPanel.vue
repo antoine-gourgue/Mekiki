@@ -172,6 +172,7 @@ const costLine = computed(() => {
             </p>
           </div>
           <UButton
+            v-if="result.card_number"
             icon="i-lucide-scan-search"
             :label="market.length ? 'Relire' : 'Lire les prix Vinted et eBay'"
             size="sm"
@@ -179,6 +180,10 @@ const costLine = computed(() => {
             @click="readMarket"
           />
         </div>
+        <p v-if="!result.card_number" class="text-xs text-warning">
+          Numéro de carte inconnu : impossible de trier les annonces Vinted et eBay de cette carte
+          parmi les autres. Choisissez l’impression japonaise, ou indiquez le numéro sur la carte.
+        </p>
         <div v-for="read in market" :key="read.site" class="space-y-1">
           <p class="text-sm">
             <span class="font-medium">{{ SITE_LABELS[read.site] }}</span>

@@ -21,7 +21,13 @@ watch(() => props.id, load, { immediate: true })
 
 const subtitle = computed(() =>
   product.value
-    ? [GAME_LABELS[product.value.game], product.value.expansion_name].filter(Boolean).join(' · ')
+    ? [
+        GAME_LABELS[product.value.game],
+        product.value.japanese ? 'japonaise' : null,
+        product.value.expansion_name,
+      ]
+        .filter(Boolean)
+        .join(' · ')
     : undefined,
 )
 
@@ -59,6 +65,14 @@ const trackOpen = ref(false)
       />
 
       <template v-else-if="product">
+        <UAlert
+          v-if="!product.japanese"
+          color="warning"
+          variant="subtle"
+          icon="i-lucide-triangle-alert"
+          title="Impression non japonaise"
+          description="Sa cote ne correspond pas aux cartes achetées au Japon : cherchez la version japonaise (badge « JP » dans le catalogue)."
+        />
         <div class="grid grid-cols-2 gap-2">
           <UButton icon="i-lucide-eye" label="Suivre cette carte" block @click="trackOpen = true" />
           <UButton
