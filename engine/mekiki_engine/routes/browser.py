@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Request, Response, status
+from fastapi import APIRouter, HTTPException, Request, status
 
 from mekiki_engine.browser import publish
 from mekiki_engine.browser.chrome import ChromeError
@@ -9,6 +9,7 @@ from mekiki_engine.deps import DataDirDep, SessionDep, UserDep
 from mekiki_engine.domain import Game, SalePlatform
 from mekiki_engine.schemas import (
     BrowserActivity,
+    BrowserLogLine,
     BrowserPricesOut,
     BrowserPricesRequest,
     BrowserSite,
@@ -42,18 +43,13 @@ def browser_status(request: Request, user: UserDep) -> BrowserStatus:
 
 @router.get("/activity")
 def browser_activity(request: Request, user: UserDep) -> BrowserActivity:
-    activity, running, visible = _browsers(request).activity(user.id)
-    return BrowserActivity(activity=activity, running=running, visible=visible)
-
-
-@router.get("/preview", response_model=None)
-def browser_preview(request: Request, user: UserDep) -> Response:
-    """What the window shows right now, as a JPEG, even when it works off screen."""
-    image = _browsers(request).preview(user.id)
-    if image is None:
-        return Response(status_code=status.HTTP_204_NO_CONTENT)
-    # Never cached: the app polls it while Chrome works.
-    return Response(content=image, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
+    current = _browsers(request).activity(user.id)
+    return BrowserActivity(
+        activity=current.doing,
+        running=current.running,
+        visible=current.visible,
+        log=[BrowserLogLine(at=line.at, text=line.text) for line in current.log],
+    )
 
 
 @router.post("/show")

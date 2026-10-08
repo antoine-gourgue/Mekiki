@@ -935,11 +935,18 @@ class PublishJobOut(BaseModel):
     error: str | None
 
 
+class BrowserLogLine(BaseModel):
+    at: str
+    text: str
+
+
 class BrowserActivity(BaseModel):
-    """What Mekiki's Chrome window is doing, for the live preview in the app."""
+    """What Mekiki's Chrome window is doing, for the progress log in the app."""
 
     # "Vinted : « Dracaufeu 201/165 », page 2", or None when idle.
     activity: str | None
     running: bool
     # The window is on screen (sign-in, a form to finish, a bot check to pass).
     visible: bool
+    # The latest steps and outcomes, oldest first.
+    log: list[BrowserLogLine]

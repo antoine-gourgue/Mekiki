@@ -68,7 +68,7 @@ cd desktop && npm run lint && npm run format:check && npm run typecheck && npm r
 
 - `verdict.py` juge une carte (produit, annonce japonaise, carte en stock) sur chaque
   débouché : cote Cardmarket, eBay (API Browse si clés, sinon ventes lues dans Chrome), Vinted.
-- `browser/` pilote une fenêtre Chrome hors écran (aperçu en direct dans l'app), profil propre
+- `browser/` pilote une fenêtre Chrome hors écran (journal de ses étapes dans l'app), profil propre
   à Mekiki, par le protocole DevTools ; elle ne s'affiche que pour se connecter, finir un
   formulaire ou passer une vérification anti-robot. **Exception voulue par l'utilisateur** à la règle « jamais de connexion » : il s'y
   connecte lui-même à Vinted et eBay (Mekiki ne voit jamais de mot de passe). Chaque action part

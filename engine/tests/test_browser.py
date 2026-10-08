@@ -121,9 +121,6 @@ class FakeSession:
     def set_visible(self, visible: bool) -> None:
         self.visible = visible
 
-    def screenshot(self) -> bytes | None:
-        return b"\xff\xd8\xff fake jpeg" if self.running else None
-
 
 @pytest.fixture
 def chrome(client: TestClient, tmp_path: Path) -> FakeSession:
@@ -239,11 +236,9 @@ def test_the_window_shows_to_sign_in_and_hides_once_signed_in(
 ) -> None:
     client.post("/browser/vinted/open")
     assert chrome.visible is True
-    assert client.get("/browser/activity").json() == {
-        "activity": None,
-        "running": True,
-        "visible": True,
-    }
+    activity = client.get("/browser/activity").json()
+    assert (activity["activity"], activity["running"], activity["visible"]) == (None, True, True)
+    assert activity["log"][-1]["text"] == "Vinted : page de connexion ouverte"
 
     assert client.post("/browser/vinted/check").json()["connected"] is True
     assert chrome.visible is False
@@ -251,15 +246,17 @@ def test_the_window_shows_to_sign_in_and_hides_once_signed_in(
     assert client.post("/browser/hide").json()["visible"] is False
 
 
-def test_the_preview_shows_what_chrome_shows(client: TestClient, chrome: FakeSession) -> None:
-    assert client.get("/browser/preview").status_code == 204
+def test_the_log_lists_each_step_and_its_outcome(client: TestClient, chrome: FakeSession) -> None:
+    assert client.get("/browser/activity").json()["log"] == []
 
-    client.post("/browser/vinted/check")
-    preview = client.get("/browser/preview")
+    body = {"query": "Dracaufeu ex 201/165", "card_number": "201/165"}
+    client.post("/browser/vinted/prices", json=body)
+    client.post("/browser/vinted/prices", json=body)
 
-    assert preview.status_code == 200
-    assert preview.headers["content-type"] == "image/jpeg"
-    assert preview.headers["cache-control"] == "no-store"
+    log = [line["text"] for line in client.get("/browser/activity").json()["log"]]
+    assert log[0].startswith("Vinted : « Dracaufeu ex 201/165 », page 1")
+    assert "Vinted : 4 annonces lues, 2 de cette carte" in log
+    assert log[-1] == "Vinted : prix déjà lus il y a moins d'une heure"
 
 
 def test_a_bot_check_is_left_to_the_user(client: TestClient, chrome: FakeSession) -> None:

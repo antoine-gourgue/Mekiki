@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import base64
 import itertools
 import json
 import os
@@ -31,7 +30,6 @@ ACTIVE_PORT_FILE = "DevToolsActivePort"
 # The window works off-screen; it only shows when the user has something to do in it.
 OFFSCREEN = {"left": -32000, "top": -32000, "width": 1280, "height": 900}
 ONSCREEN = {"left": 80, "top": 60, "width": 1280, "height": 900}
-PREVIEW_QUALITY = 55
 COMMAND_TIMEOUT_S = 30.0
 
 
@@ -207,7 +205,7 @@ class ChromeSession:
         self.process: subprocess.Popen[bytes] | None = None
         self.lock = threading.Lock()
         self.visible = False
-        # The tab an action is using, for the live preview in the app.
+        # The tab an action is using: its window is the one shown or hidden.
         self.current_target: str | None = None
         self._http = httpx.Client(timeout=5)
 
@@ -331,30 +329,6 @@ class ChromeSession:
             finally:
                 browser.close()
             self.visible = visible
-
-    def screenshot(self) -> bytes | None:
-        """What the tab in use shows right now, as a JPEG; None when Chrome is closed."""
-        if not self._answers():
-            return None
-        try:
-            target_id = self.current_target or self._page_target()[0]
-            targets = self._http.get(f"http://127.0.0.1:{self.port}/json/list").json()
-            target = next(t for t in targets if t.get("id") == target_id)
-            tab = Tab(str(target["webSocketDebuggerUrl"]))
-        except (ChromeError, httpx.HTTPError, StopIteration, KeyError):
-            return None
-        try:
-            data = tab.call(
-                "Page.captureScreenshot",
-                format="jpeg",
-                quality=PREVIEW_QUALITY,
-                optimizeForSpeed=True,
-            )["data"]
-            return base64.b64decode(data)
-        except ChromeError:
-            return None
-        finally:
-            tab.close()
 
     def _browser(self) -> Tab:
         version = self._http.get(f"http://127.0.0.1:{self.port}/json/version").json()

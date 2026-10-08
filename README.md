@@ -119,9 +119,9 @@ Recherche propose la même recherche sur Neokyo, qui donne accès à Yahoo.
 Ni Vinted ni eBay n'ouvrent leurs prix de vente aux logiciels, et leurs conditions
 d'utilisation interdisent les robots. À la demande de l'utilisateur, Mekiki pilote donc une
 fenêtre Chrome, avec un profil à part où il se connecte lui-même ; chaque lecture part d'un
-clic, une page à la fois. La fenêtre travaille hors de l'écran (l'app en montre un aperçu en
-direct) et n'apparaît que pour se connecter, terminer un formulaire ou passer une
-vérification anti-robot, toujours laissée à l'utilisateur. L'usage reste à ses risques
+clic, une page à la fois. La fenêtre travaille hors de l'écran (l'app affiche le journal de
+ses étapes en direct) et n'apparaît que pour se connecter, terminer un formulaire ou passer
+une vérification anti-robot, toujours laissée à l'utilisateur. L'usage reste à ses risques
 vis-à-vis de ces sites.
 
 Données utilisées : les fichiers publics de Cardmarket (catalogue et cotes), la base

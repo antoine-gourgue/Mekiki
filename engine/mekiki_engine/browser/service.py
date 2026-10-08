@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import threading
 import time
+from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -15,6 +16,8 @@ from mekiki_engine.browser.markets import MarketListing, Site
 
 # Prices read in Chrome are reused for an hour: reading them again means loading the page.
 CACHE_S = 60 * 60
+# Steps kept per account for the progress log shown in the app.
+LOG_LINES = 80
 
 
 @dataclass(frozen=True, slots=True)
@@ -29,6 +32,21 @@ class MarketPrices:
     @property
     def relevant(self) -> list[MarketListing]:
         return [listing for listing in self.listings if listing.relevant]
+
+
+@dataclass(frozen=True, slots=True)
+class LogLine:
+    at: str
+    text: str
+
+
+@dataclass(frozen=True, slots=True)
+class ChromeActivity:
+    # "Vinted : « Dracaufeu 201/165 », page 2", or None when idle.
+    doing: str | None
+    running: bool
+    visible: bool
+    log: list[LogLine]
 
 
 @dataclass(slots=True)
@@ -64,8 +82,9 @@ class Browsers:
     _sessions: dict[int, ChromeSession] = field(default_factory=dict)
     _cache: dict[tuple[int, Site, str], _Cached] = field(default_factory=dict)
     _jobs: dict[tuple[int, int, Site], PublishJob] = field(default_factory=dict)
-    # What Chrome is doing for each account, shown with the live preview.
+    # What Chrome is doing for each account, and the steps it went through.
     _activity: dict[int, str] = field(default_factory=dict)
+    _log: dict[int, deque[LogLine]] = field(default_factory=dict)
     _lock: threading.Lock = field(default_factory=threading.Lock)
 
     @staticmethod
@@ -90,29 +109,29 @@ class Browsers:
         with session.page() as tab:
             tab.navigate(markets.LOGIN_URLS[site])
         session.set_visible(True)
+        self._note(user_id, f"{markets.SITE_LABELS[site]} : page de connexion ouverte")
 
     def is_connected(self, user_id: int, site: Site) -> bool:
         session = self.session(user_id)
         with session.page() as tab:
             connected = markets.is_connected(tab, site)
+        self._note(
+            user_id,
+            f"{markets.SITE_LABELS[site]} : {'connecté' if connected else 'pas connecté'}",
+        )
         # Signed in: the window can work out of sight again.
         if connected:
             session.set_visible(False)
         return connected
 
-    def activity(self, user_id: int) -> tuple[str | None, bool, bool]:
-        """(what Chrome is doing, whether it is open, whether its window shows)."""
+    def activity(self, user_id: int) -> ChromeActivity:
         with self._lock:
             session = self._sessions.get(user_id)
             doing = self._activity.get(user_id)
+            log = list(self._log.get(user_id, ()))
         if session is None:
-            return doing, False, False
-        return doing, session.running, session.visible
-
-    def preview(self, user_id: int) -> bytes | None:
-        with self._lock:
-            session = self._sessions.get(user_id)
-        return session.screenshot() if session is not None else None
+            return ChromeActivity(doing, False, False, log)
+        return ChromeActivity(doing, session.running, session.visible, log)
 
     def set_visible(self, user_id: int, visible: bool) -> None:
         self.session(user_id).set_visible(visible)
@@ -121,8 +140,17 @@ class Browsers:
         with self._lock:
             if step is None:
                 self._activity.pop(user_id, None)
-            else:
-                self._activity[user_id] = step
+                return
+            repeated = self._activity.get(user_id) == step
+            self._activity[user_id] = step
+        if not repeated:
+            self._note(user_id, step)
+
+    def _note(self, user_id: int, text: str) -> None:
+        """Adds a line to the account's progress log."""
+        with self._lock:
+            log = self._log.setdefault(user_id, deque(maxlen=LOG_LINES))
+            log.append(LogLine(markets.utc_now(), text))
 
     def prices(
         self,
@@ -135,7 +163,9 @@ class Browsers:
         key = (user_id, site, query.strip().lower())
         with self._lock:
             cached = self._cache.get(key)
+        label = markets.SITE_LABELS[site]
         if cached and time.monotonic() - cached.at < CACHE_S:
+            self._note(user_id, f"{label} : prix déjà lus il y a moins d'une heure")
             return cached.prices
         try:
             queries = markets.search_queries(query, card_number, names)
@@ -148,12 +178,15 @@ class Browsers:
                     progress=lambda step: self._doing(user_id, step),
                 )
         except ChromeError as error:
+            self._note(user_id, f"{label} : {error}")
             if isinstance(error, markets.BotChallenge):
                 self.session(user_id).set_visible(True)
             return MarketPrices(site, query, [], None, markets.utc_now(), error=str(error))
         finally:
             self._doing(user_id, None)
         listings = markets.parse_listings(site, raw, card_number, names)
+        relevant = sum(listing.relevant for listing in listings)
+        self._note(user_id, f"{label} : {len(listings)} annonces lues, {relevant} de cette carte")
         prices = MarketPrices(
             site=site,
             query=query,
@@ -197,6 +230,8 @@ class Browsers:
             job = PublishJob(site=site, item_id=item_id, started_at=markets.utc_now())
             self._jobs[key] = job
         session = self.session(user_id)
+        label = markets.SITE_LABELS[site]
+        self._note(user_id, f"{label} : publication de « {listing.title} »")
 
         def run() -> None:
             try:
@@ -213,15 +248,18 @@ class Browsers:
                 except Exception as error:
                     job.error = f"annonce publiée, mais la carte n'a pas été mise à jour : {error}"
                 job.status = "done"
+                self._note(user_id, f"{label} : annonce publiée")
             except ChromeError as error:
                 job.error = str(error)
                 job.status = "failed"
+                self._note(user_id, f"{label} : {error}, le formulaire s'affiche pour finir")
                 # The form stays open: show it for the user to finish.
                 session.set_visible(True)
             # A job must always end, or the app would wait on it forever.
             except Exception as error:
                 job.error = f"erreur inattendue : {error}"
                 job.status = "failed"
+                self._note(user_id, f"{label} : {job.error}")
             finally:
                 self._doing(user_id, None)
 
