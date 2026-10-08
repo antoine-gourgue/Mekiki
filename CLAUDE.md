@@ -91,6 +91,10 @@ cd desktop && npm run lint && npm run format:check && npm run typecheck && npm r
   pour le plugin updater et la copie `Mekiki-Setup.exe` du lien de la page d'accueil. La
   version vaut `X.Y` de `desktop/package.json` + le numéro d'exécution du workflow ;
   `npm run version:set -- X.Y.0` (dans `desktop/`) change la base.
+- Ne jamais changer `identifier` dans `desktop/src-tauri/tauri.conf.json`
+  (`io.github.antoine-gourgue.mekiki`) : il fixe le dossier de données de l'app installée
+  (`%APPDATA%\io.github.antoine-gourgue.mekiki`, base et photos), que les mises à jour
+  conservent. Le changer ferait repartir chaque installation d'une base vide.
 - La clé privée de signature des mises à jour ne quitte pas la machine (`~/.tauri/`) et le
   secret GitHub `TAURI_SIGNING_PRIVATE_KEY` ; ne jamais la committer.
 - Les notes de version sont en français dans `desktop/release-notes.md` : la release et la
