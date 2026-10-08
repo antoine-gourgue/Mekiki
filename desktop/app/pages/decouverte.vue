@@ -212,6 +212,11 @@ const gameItems = selectItems(GAME_LABELS)
             <UFormField
               label="État minimum"
               :hint="form.min_condition === 'all' ? undefined : 'sans Rakuma'"
+              :help="
+                form.min_condition === 'new' || form.min_condition === 'like_new'
+                  ? 'Écarte environ 6 annonces Mercari sur 10 : la plupart des cartes parfaites y sont en « Bon état ».'
+                  : undefined
+              "
             >
               <USelect v-model="form.min_condition" :items="MIN_CONDITION_ITEMS" class="w-full" />
             </UFormField>
@@ -286,6 +291,13 @@ const gameItems = selectItems(GAME_LABELS)
             </template>
           </div>
           <UProgress :model-value="progress" />
+          <ActivityLog
+            :lines="run.log ?? []"
+            active
+            title="Journal de la recherche"
+            placeholder="Préparation de la recherche…"
+            height="max-h-72"
+          />
           <div class="flex justify-end">
             <UButton
               color="neutral"
@@ -342,6 +354,29 @@ const gameItems = selectItems(GAME_LABELS)
             </template>
             <template v-if="run.finished_at"> · {{ formatDateTime(run.finished_at) }}</template>
           </p>
+          <UCollapsible v-if="run.log?.length" class="mt-2">
+            <UButton
+              color="neutral"
+              variant="link"
+              size="sm"
+              icon="i-lucide-scroll-text"
+              trailing-icon="i-lucide-chevron-down"
+              :label="`Journal de la recherche (${run.log.length} étapes)`"
+              class="-ms-2.5 group"
+              :ui="{
+                trailingIcon:
+                  'transition-transform duration-200 group-data-[state=open]:rotate-180',
+              }"
+            />
+            <template #content>
+              <ActivityLog
+                :lines="run.log"
+                title="Chaque étape, de la première recherche au colis"
+                height="max-h-96"
+                class="mt-2"
+              />
+            </template>
+          </UCollapsible>
         </div>
 
         <div v-if="run.totals" class="grid gap-3.5 sm:grid-cols-2 xl:grid-cols-4">

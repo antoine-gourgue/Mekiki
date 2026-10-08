@@ -48,40 +48,20 @@ const lines = computed(() =>
   since.value ? (state.value?.log ?? []).filter((line) => line.at >= since.value!) : [],
 )
 
-const list = ref<HTMLElement | null>(null)
-watch(
-  () => lines.value.length,
-  async () => {
-    await nextTick()
-    if (list.value) list.value.scrollTop = list.value.scrollHeight
-  },
-)
-
-const clock = new Intl.DateTimeFormat('fr-FR', {
-  hour: '2-digit',
-  minute: '2-digit',
-  second: '2-digit',
-})
-
 async function toggleWindow() {
   state.value = state.value?.visible ? await engine.hideBrowser() : await engine.showBrowser()
 }
 </script>
 
 <template>
-  <div
+  <ActivityLog
     v-if="active || lines.length"
-    class="overflow-hidden rounded-lg border border-default bg-[#0b0a0d]"
+    :lines="lines"
+    :active="active"
+    :title="`Chrome · ${active ? 'en cours, hors de l’écran' : 'terminé'}`"
+    placeholder="Démarrage de Chrome…"
   >
-    <div class="flex items-center gap-2 border-b border-default px-3 py-1.5 text-xs">
-      <UIcon
-        :name="active ? 'i-lucide-loader-circle' : 'i-lucide-terminal'"
-        class="size-4 shrink-0"
-        :class="active ? 'animate-spin text-primary' : 'text-dimmed'"
-      />
-      <span class="flex-1 text-muted">
-        Chrome · {{ active ? 'en cours, hors de l’écran' : 'terminé' }}
-      </span>
+    <template #actions>
       <UButton
         size="xs"
         color="neutral"
@@ -90,19 +70,6 @@ async function toggleWindow() {
         :label="state?.visible ? 'Masquer la fenêtre' : 'Afficher la fenêtre'"
         @click="toggleWindow"
       />
-    </div>
-    <ol
-      ref="list"
-      class="max-h-56 space-y-1 overflow-y-auto px-3 py-2.5 font-mono text-xs"
-      aria-live="polite"
-    >
-      <li v-for="(line, index) in lines" :key="`${line.at}-${index}`" class="flex gap-3">
-        <span class="shrink-0 text-dimmed">{{ clock.format(new Date(line.at)) }}</span>
-        <span :class="index === lines.length - 1 && active ? 'text-highlighted' : 'text-muted'">
-          {{ line.text }}
-        </span>
-      </li>
-      <li v-if="!lines.length" class="text-dimmed">Démarrage de Chrome…</li>
-    </ol>
-  </div>
+    </template>
+  </ActivityLog>
 </template>

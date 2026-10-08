@@ -497,6 +497,8 @@ export interface DiscoveryRun {
   errors: string[]
   /** Stopped by the user: the results cover the listings browsed until then. */
   stopped: boolean
+  /** Every step, oldest first: what the page shows while the discovery runs. */
+  log: LogLine[]
 }
 
 export interface FavoriteFields {
@@ -786,12 +788,14 @@ export interface PublishJob {
   error: string | null
 }
 
-/** What Mekiki's Chrome window is doing, for the live preview. */
-export interface BrowserLogLine {
-  /** UTC timestamp, to the second: 2026-10-08T05:12:03Z. */
+/** One step of a long task (Chrome's reading, a discovery), shown in the app's logs. */
+export interface LogLine {
+  /** UTC timestamp: 2026-10-08T05:12:03Z, with microseconds for discoveries. */
   at: string
   text: string
 }
+
+/** What Mekiki's Chrome window is doing, for the live preview. */
 
 export interface BrowserActivity {
   /** "Vinted : « Dracaufeu 201/165 », page 2", or null when idle. */
@@ -800,5 +804,5 @@ export interface BrowserActivity {
   /** The window is on screen (sign-in, a form to finish, a bot check to pass). */
   visible: boolean
   /** The latest steps and outcomes, oldest first. */
-  log: BrowserLogLine[]
+  log: LogLine[]
 }
