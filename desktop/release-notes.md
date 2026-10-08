@@ -1,18 +1,14 @@
 ## Nouveautés
 
-- Mekiki reconnaît bien plus de cartes. Le nom japonais de la carte départage les extensions
-  de même taille, et les titres sans numéro (« タケルライコex SAR … ») ou de promo
-  (« 086/S-P ») sont lus. Sur 643 annonces Mercari réelles : 50 % de cartes reconnues en plus.
-- « Trouver des cartes » tient un journal de la recherche : chaque page lue, les annonces
-  écartées et pourquoi (état, lots, titre non reconnu), les cartes rentables, la vérification
-  des annonces du colis. Il reste consultable une fois la recherche finie.
+- Rakuma n'est plus écarté par l'« État minimum » : ses annonces sont gardées, et l'état de
+  celles qui entrent dans le colis est lu sur leur page. Une carte en dessous de l'état demandé
+  laisse sa place à la suivante.
+- Mekiki reconnaît encore plus de cartes : le nom de l'extension écrit dans le titre, même
+  coupé (« … ワイルドフォ… »), départage les cartes de même nom et de même rareté. Sur 643
+  annonces Mercari réelles, 184 cartes reconnues au lieu de 154.
 
-## Corrections
+## À savoir
 
-- Un colis qui manque de cartes n'est plus proposé sous le ROI demandé sans explication. Il est
-  complété par des cartes rentables qui partagent ses frais fixes, et Mekiki dit quoi changer
-  pour en trouver plus.
-- Les cartes anciennes (BW, Platine, LEGEND…) ne sont plus prises pour une carte récente qui
-  porte le même numéro.
-- Sous « État minimum », un avertissement : « Quasi neuve » écarte environ 6 annonces Mercari
-  sur 10, la plupart des cartes parfaites y étant en « Bon état ».
+- Les cartes de plusieurs extensions Épée et Bouclier (Pokémon GO, Eevee Heroes, Time Gazer…)
+  restent non reconnues : la base de cartes ouverte qu'utilise Mekiki n'a pas leur version
+  japonaise. Mekiki préfère les ignorer plutôt que de leur donner une cote peut-être fausse.

@@ -56,8 +56,14 @@ cd desktop && npm run lint && npm run format:check && npm run typecheck && npm r
 - Pokémon sans code d'extension : le nom japonais de l'index doit figurer dans le titre (il
   départage les extensions de même taille et écarte les cartes anciennes absentes de l'index).
   Sans numéro, le nom suivi de la rareté suffit, mais seulement pour les ères SV et MEGA, que
-  l'index couvre entièrement (confiance « medium »). Mesurer toute règle de reconnaissance sur
-  de vraies annonces avant de la garder.
+  l'index couvre entièrement, ou quand le titre nomme l'extension (code ou nom japonais, même
+  coupé par « … ») ; confiance « medium ». Mesurer toute règle de reconnaissance sur de vraies
+  annonces avant de la garder.
+- TCGdex n'a pas les cartes japonaises de beaucoup d'extensions Épée et Bouclier (S10b, S4,
+  S6a, S10D… : seulement l'impression chinoise, sans lien Cardmarket) ; les produits japonais
+  de Cardmarket n'ont pas de numéro. Ne pas les relier en devinant l'ordre des produits : une
+  version alternative mal rangée donne une cote fausse. `INDEX_FORMAT` (`card_index.py`) force
+  la reconstruction de l'index quand il stocke une nouvelle donnée.
 - Un colis trop court porte trop de frais fixes : `fill_parcel` le complète avec des annonces
   sous l'objectif qui relèvent son ROI ; sous l'objectif, `short_of_target` explique pourquoi.
   Chaque étape va dans `DiscoveryRun.log` (`note()`), affiché par `ActivityLog.vue`.
@@ -66,7 +72,8 @@ cd desktop && npm run lint && npm run format:check && npm run typecheck && npm r
 - Une annonce réservée (« 様専用 », « 取り置き », « 即購入不可 »…) est écartée par `matching.py` :
   l'achat par Neokyo serait annulé. L'état (`ListingCondition`, six niveaux des fripes
   japonaises) vient des résultats Mercari et Yahoo Fleamarket ; Rakuma ne le donne que sur la
-  page de l'annonce.
+  page de l'annonce : avec un état minimum, la découverte garde ses annonces et lit l'état sur
+  la page de celles qui entrent dans le colis (`CONDITION_ON_PAGE`).
 - `availability.py` demande au site si une annonce est encore en vente (Mercari, Rakuma) :
   à l'ouverture de sa fiche, et pour chaque carte du colis proposé par la découverte, une
   vendue cédant sa place à la suivante. Une requête par annonce, jamais en masse.
