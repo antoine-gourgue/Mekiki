@@ -240,7 +240,11 @@ def discover(
 
     needs_index = request.game is Game.POKEMON and card_index.needs_rebuild(session)
     if needs_index:
-        note(run, "Téléchargement de l'index des cartes Pokémon japonaises (TCGdex)…")
+        note(
+            run,
+            "Construction de l'index des cartes Pokémon japonaises (TCGdex et TCGplayer, "
+            "environ deux minutes, une fois par semaine)…",
+        )
         on_progress(run)
         if error := card_index.refresh(session, client):
             run.errors.append(error)

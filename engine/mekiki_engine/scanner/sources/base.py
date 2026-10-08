@@ -80,7 +80,8 @@ EEA_BLOCK_MESSAGE = (
 # Seconds between two requests to the same host. Mercari's API gets the most room: it is
 # undocumented and its maintainers never published a limit.
 # eBay's official API allows thousands of calls a day: no need to wait as long.
-HOST_INTERVALS_S = {"api.mercari.jp": 6.0, "api.ebay.com": 0.2}
+# TCGCSV is a static export on a CDN: the index reads a few dozen of its files once a week.
+HOST_INTERVALS_S = {"api.mercari.jp": 6.0, "api.ebay.com": 0.2, "tcgcsv.com": 1.0}
 DEFAULT_INTERVAL_S = 3.0
 
 

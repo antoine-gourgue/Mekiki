@@ -67,9 +67,10 @@ def refresh_reference_data(session: Session, client: PoliteClient) -> list[str]:
     errors: list[str] = []
     for game in Game:
         errors += cardmarket.refresh(session, client, game)
-    if error := card_index.refresh(session, client):
-        errors.append(error)
+    # Before the card index, which translates the names of the cards it links.
     if error := names.refresh(session, client):
+        errors.append(error)
+    if error := card_index.refresh(session, client):
         errors.append(error)
     return errors
 

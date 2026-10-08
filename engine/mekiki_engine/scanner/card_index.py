@@ -5,6 +5,7 @@ title such as "SV2a 201/165" cannot be matched to it directly. TCGdex's open car
 (github.com/tcgdex/cards-database, MIT licence) records the Cardmarket product of each
 Japanese card; its repository is downloaded as one zip archive, at most weekly and only
 when it changed, and its TypeScript card files are read with a few regular expressions.
+The sets it leaves incomplete are filled from TCGplayer's lists (see ``tcgplayer``).
 """
 
 from __future__ import annotations
@@ -13,6 +14,7 @@ import io
 import json
 import re
 import zipfile
+from collections import defaultdict
 from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -22,6 +24,7 @@ from sqlalchemy.orm import Session
 
 from mekiki_engine.domain import Game
 from mekiki_engine.models import CardIndexEntry, SettingRow
+from mekiki_engine.scanner import names, tcgplayer
 from mekiki_engine.scanner.sources.base import PoliteClient, SourceError
 
 ARCHIVE_URL = "https://codeload.github.com/tcgdex/cards-database/zip/refs/heads/master"
@@ -29,7 +32,7 @@ COMMIT_URL = "https://api.github.com/repos/tcgdex/cards-database/commits/master"
 MAX_AGE = timedelta(days=7)
 STATE_KEY = "card_index:pokemon"
 # Bumped when the index stores something new: an index built before is rebuilt once.
-INDEX_FORMAT = "2"
+INDEX_FORMAT = "3"
 
 # TCGdex rarity labels → the abbreviations printed on Japanese cards and used in titles.
 RARITIES = {
@@ -60,6 +63,18 @@ _CARDMARKET = re.compile(r"""cardmarket['"]?\s*:\s*(\d+)""")
 
 
 @dataclass(frozen=True, slots=True)
+class IndexedSet:
+    # As TCGdex and TCGplayer write it: "S10b".
+    tcgdex_id: str
+    code: str
+    total: int | None
+    # Japanese: "ワイルドフォース".
+    name: str | None
+    # Cardmarket's expansion holding the set's Japanese cards, when TCGdex knows it.
+    expansion: int | None
+
+
+@dataclass(frozen=True, slots=True)
 class IndexedCard:
     set_code: str
     number: int
@@ -82,13 +97,25 @@ def refresh(session: Session, client: PoliteClient, *, force: bool = False) -> s
         commit = client.request(
             "GET", COMMIT_URL, headers={"Accept": "application/vnd.github.sha"}
         ).text.strip()
+        linking_error = None
         if commit != state.get("commit") or needs_rebuild(session):
             archive = client.request("GET", ARCHIVE_URL, timeout=180).content
-            replace_index(session, parse_archive(archive))
+            cards = parse_archive(archive)
+            # Japanese names of the linked cards: the Pokémon's, translated from English.
+            names.refresh(session, client)
+            try:
+                cards += link_missing_cards(session, client, parse_sets(archive), cards)
+            # TCGplayer's lists only complete the index: without them, it still works.
+            except (SourceError, ValueError) as error:
+                linking_error = (
+                    f"Index des cartes Pokémon : extensions complétées par TCGplayer "
+                    f"indisponibles ({error})"
+                )
+            replace_index(session, cards)
             state["commit"] = commit
             state["format"] = INDEX_FORMAT
         state["fetched_at"] = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
-        state["error"] = None
+        state["error"] = linking_error
     except (SourceError, zipfile.BadZipFile) as error:
         session.rollback()
         state["error"] = f"Index des cartes Pokémon (TCGdex) : {error}"
@@ -138,39 +165,108 @@ def replace_index(session: Session, cards: list[IndexedCard]) -> None:
 
 def parse_archive(archive: bytes) -> list[IndexedCard]:
     with zipfile.ZipFile(io.BytesIO(archive)) as zipped:
-        files = {
-            name: name.split("/data-asia/", 1)[1].split("/")
-            for name in zipped.namelist()
-            if "/data-asia/" in name and name.endswith(".ts")
-        }
-        sets: dict[tuple[str, str], tuple[str, int | None, str | None]] = {}
-        for name, parts in files.items():
-            if len(parts) == 2:
-                text = zipped.read(name).decode("utf-8")
-                set_id = _SET_ID.search(text)
-                official = _OFFICIAL.search(text)
-                set_name = _JA_NAME.search(_block(text, "name") or "")
-                if set_id:
-                    sets[(parts[0], parts[1][:-3])] = (
-                        set_id[1].lower(),
-                        int(official[1]) if official else None,
-                        set_name[1] if set_name else None,
-                    )
+        files = _asian_files(zipped)
+        sets = _sets(zipped, files)
         cards: list[IndexedCard] = []
         for name, parts in files.items():
             if len(parts) != 3 or (parts[0], parts[1]) not in sets:
                 continue
-            set_code, total, set_name = sets[(parts[0], parts[1])]
+            japanese_set = sets[(parts[0], parts[1])]
             cards.extend(
                 parse_card(
                     zipped.read(name).decode("utf-8"),
-                    set_code,
-                    total,
+                    japanese_set.code,
+                    japanese_set.total,
                     parts[2][:-3],
-                    set_name=set_name,
+                    set_name=japanese_set.name,
                 )
             )
     return cards
+
+
+def parse_sets(archive: bytes) -> list[IndexedSet]:
+    with zipfile.ZipFile(io.BytesIO(archive)) as zipped:
+        return list(_sets(zipped, _asian_files(zipped)).values())
+
+
+def link_missing_cards(
+    session: Session, client: PoliteClient, sets: list[IndexedSet], cards: list[IndexedCard]
+) -> list[IndexedCard]:
+    """Cards of the sets TCGdex leaves incomplete, linked through TCGplayer's lists.
+
+    See ``tcgplayer``: only the cards whose versions line up unambiguously are linked.
+    Their Japanese name comes from the Pokémon's name (PokéAPI), when it is one.
+    """
+    known: dict[str, set[int]] = defaultdict(set)
+    for card in cards:
+        known[card.set_code].add(card.number)
+    incomplete = [s for s in sets if not s.total or len(known[s.code]) < s.total]
+    if not incomplete:
+        return []
+    groups = tcgplayer.japanese_groups(client)
+    linked: list[IndexedCard] = []
+    for japanese_set in incomplete:
+        group = groups.get(japanese_set.tcgdex_id.upper())
+        if group is None:
+            continue
+        group_id, english_name = group
+        expansion = japanese_set.expansion or tcgplayer.find_expansion(session, english_name)
+        if expansion is None or not tcgplayer.has_products(session, expansion):
+            continue
+        linked += [
+            IndexedCard(
+                set_code=japanese_set.code,
+                number=link.number,
+                set_total=japanese_set.total,
+                set_name=japanese_set.name,
+                rarity=link.rarity,
+                name=_japanese_name(session, link.name),
+                variant="normal",
+                id_product=link.id_product,
+            )
+            for link in tcgplayer.link_set(session, client, group_id, expansion)
+            if link.number not in known[japanese_set.code]
+        ]
+    return linked
+
+
+def _japanese_name(session: Session, english: str) -> str | None:
+    """ "Umbreon VMAX" → "ブラッキーVMAX"; None when part of it is no Pokémon's name."""
+    translated = names.translate(session, Game.POKEMON, english, "ja")
+    # "Radiant Charizard" comes back as "Radiant リザードン": not the printed name.
+    return translated if translated and " " not in translated else None
+
+
+def _asian_files(zipped: zipfile.ZipFile) -> dict[str, list[str]]:
+    return {
+        name: name.split("/data-asia/", 1)[1].split("/")
+        for name in zipped.namelist()
+        if "/data-asia/" in name and name.endswith(".ts")
+    }
+
+
+def _sets(
+    zipped: zipfile.ZipFile, files: dict[str, list[str]]
+) -> dict[tuple[str, str], IndexedSet]:
+    sets: dict[tuple[str, str], IndexedSet] = {}
+    for name, parts in files.items():
+        if len(parts) != 2:
+            continue
+        text = zipped.read(name).decode("utf-8")
+        set_id = _SET_ID.search(text)
+        if set_id is None:
+            continue
+        official = _OFFICIAL.search(text)
+        set_name = _JA_NAME.search(_block(text, "name") or "")
+        expansion = _CARDMARKET.search(_block(text, "thirdParty") or "")
+        sets[(parts[0], parts[1][:-3])] = IndexedSet(
+            tcgdex_id=set_id[1],
+            code=set_id[1].lower(),
+            total=int(official[1]) if official else None,
+            name=set_name[1] if set_name else None,
+            expansion=int(expansion[1]) if expansion else None,
+        )
+    return sets
 
 
 def parse_card(

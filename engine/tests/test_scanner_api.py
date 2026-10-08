@@ -43,8 +43,9 @@ def test_cardmarket_refresh_imports_singles_and_prices(client: TestClient) -> No
     statuses = client.post("/cardmarket/refresh", json={}).json()
 
     pokemon = next(s for s in statuses if s["game"] == "pokemon")
-    assert pokemon["products"] == 4
-    assert pokemon["priced_products"] == 4
+    # Four Pokémon Card 151 singles and five Eevee Heroes ones (see conftest).
+    assert pokemon["products"] == 9
+    assert pokemon["priced_products"] == 9
     assert pokemon["prices_date"] == "2026-10-07T02:49:47+0200"
     one_piece = next(s for s in statuses if s["game"] == "one_piece")
     assert one_piece["products"] == 0
