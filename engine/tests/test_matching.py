@@ -87,3 +87,19 @@ def test_graded_listings_only_match_graded_cards() -> None:
 
 def test_no_card_number_relies_on_keywords_only() -> None:
     assert match_title("なんでも SAR", rule(None, required="sar")).matched
+
+
+@pytest.mark.parametrize(
+    "title",
+    [
+        "リザードンex 205/187 ボブ様専用",
+        "リザードンex 205/187 お取り置き中",
+        "リザードンex 205/187 売約済み",
+        "リザードンex 205/187 即購入不可",
+    ],
+)
+def test_reserved_listings_are_rejected(title: str) -> None:
+    result = match_title(title, rule())
+
+    assert not result.matched
+    assert result.reason and result.reason.startswith("annonce réservée")

@@ -28,6 +28,9 @@ _CODE_NUMBER = re.compile(r"(?<![a-z0-9])([a-z]{1,4}\d{0,2})-(\d{1,3})(?!\d)")
 
 # Whole words only: "ars" (a Japanese grader) also hides inside "cards".
 _GRADED = re.compile(r"(?<![a-z])(?:psa|bgs|cgc|ars)(?![a-z])|鑑定")
+# Listings kept for one buyer ("〇〇様専用", "お取り置き", "売約済み") or whose seller refuses a
+# purchase without a message first ("即購入不可"): a proxy's order would be cancelled.
+_RESERVED = re.compile(r"専用|取り?置き?|売約|予約済|購入不可|購入禁止")
 
 
 def normalize(text: str) -> str:
@@ -98,6 +101,8 @@ def match_title(title: str, rule: MatchRule) -> MatchResult:
     text = normalize(title)
     compact = text.replace(" ", "")
 
+    if reserved := _RESERVED.search(compact):
+        return MatchResult(False, f"annonce réservée ({reserved[0]})")
     for keyword in (*rule.excluded, *rule.global_excluded):
         if keyword in text or keyword.replace(" ", "") in compact:
             return MatchResult(False, f"mot exclu : {keyword}")
