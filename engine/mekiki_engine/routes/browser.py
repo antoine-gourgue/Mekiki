@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Request, status
 
-from mekiki_engine.browser import publish
+from mekiki_engine.browser import markets, publish
 from mekiki_engine.browser.chrome import ChromeError
 from mekiki_engine.browser.service import Browsers, MarketPrices
 from mekiki_engine.deps import DataDirDep, SessionDep, UserDep
@@ -139,6 +139,7 @@ def publish_status(
 
 def prices_out(prices: MarketPrices) -> BrowserPricesOut:
     relevant = sorted(listing.price_cents for listing in prices.relevant)
+    ebay = prices.site == "ebay"
     return BrowserPricesOut(
         site=prices.site,
         query=prices.query,
@@ -147,6 +148,8 @@ def prices_out(prices: MarketPrices) -> BrowserPricesOut:
         median_cents=prices.median_cents,
         min_cents=relevant[0] if relevant else None,
         max_cents=relevant[-1] if relevant else None,
+        sales_30_days=markets.sales_within(prices.listings, 30) if ebay else None,
+        sales_90_days=markets.sales_within(prices.listings, 90) if ebay else None,
         fetched_at=prices.fetched_at,
         error=prices.error,
     )

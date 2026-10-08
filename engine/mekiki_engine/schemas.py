@@ -920,6 +920,8 @@ class MarketListingOut(BaseModel):
     image_url: str | None
     # Vinted: the condition. eBay: the sale date ("Vendu le 6 oct. 2026").
     detail: str | None
+    # eBay: the sale date read from ``detail``, "2026-10-06".
+    sold_on: str | None = None
     shipping_cents: int | None
     # eBay: a lower offer was accepted; the real price is unknown.
     best_offer: bool
@@ -935,6 +937,9 @@ class BrowserPricesOut(BaseModel):
     median_cents: int | None
     min_cents: int | None
     max_cents: int | None
+    # eBay: sales of the card over the last 30 and 90 days; None on Vinted.
+    sales_30_days: int | None = None
+    sales_90_days: int | None = None
     fetched_at: str
     error: str | None
 

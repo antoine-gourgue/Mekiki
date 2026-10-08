@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from typing import Literal
 
+from mekiki_engine.browser.markets import sales_within
 from mekiki_engine.browser.service import MarketPrices
 from mekiki_engine.costing.money import percent_to_fraction
 from mekiki_engine.costing.sale import roi
@@ -48,6 +49,10 @@ SUSPICIOUS_PRICE_SHARE = 0.2
 TREND_THRESHOLD = 0.10
 # Fewer eBay listings than this give a median too thin to trust alone.
 FEW_EBAY_LISTINGS = 5
+# eBay sales over 30 days from which a card resells quickly, and over 90 days up to which
+# it may wait for a buyer.
+FAST_SALES_30_DAYS = 10
+SLOW_SALES_90_DAYS = 2
 
 
 def card_verdict(
@@ -221,6 +226,10 @@ def _signals(
             signals.append(
                 VerdictSignal(tone="warning", text=f"Seulement {count} {label} : médiane fragile.")
             )
+    # Without a dated sale of the card, a count of zero would only mean nothing matched.
+    sold = market.get("ebay")
+    if sold is not None and any(listing.sold_on for listing in sold.relevant):
+        signals.append(_sales_signal(sold))
     if product is not None and product.avg7_cents and product.avg30_cents:
         change = product.avg7_cents / product.avg30_cents - 1
         if change >= TREND_THRESHOLD:
@@ -259,6 +268,26 @@ def _signals(
         )
         signals.append(VerdictSignal(tone="neutral", text=text))
     return signals
+
+
+def _sales_signal(sold: MarketPrices) -> VerdictSignal:
+    """How often the card sells on eBay, from the dates of its sold listings."""
+    month, quarter = sales_within(sold.listings, 30), sales_within(sold.listings, 90)
+    if month >= FAST_SALES_30_DAYS:
+        return VerdictSignal(
+            tone="positive",
+            text=f"Se revend vite : {month} ventes eBay sur 30 jours, {quarter} sur 90 jours.",
+        )
+    if quarter <= SLOW_SALES_90_DAYS:
+        sales = "aucune vente" if not quarter else f"{quarter} vente{'s' if quarter > 1 else ''}"
+        return VerdictSignal(
+            tone="warning",
+            text=f"Se vend peu : {sales} eBay sur 90 jours, la revente peut prendre du temps.",
+        )
+    return VerdictSignal(
+        tone="neutral",
+        text=f"{month} vente{'s' if month > 1 else ''} eBay sur 30 jours, {quarter} sur 90 jours.",
+    )
 
 
 def _euros(cents: int) -> str:

@@ -11,7 +11,7 @@ import statistics
 import unicodedata
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta
 from typing import Any, Literal
 from urllib.parse import urlencode
 
@@ -106,6 +106,15 @@ _OTHER_LANGUAGE = re.compile(
     re.IGNORECASE,
 )
 _SEVERAL = re.compile(r"\b(lot|lots|x\s?[2-9]|[2-9]\s?x|bundle)\b", re.IGNORECASE)
+# eBay.fr dates its sold listings "Vendu le 6 oct. 2026".
+_SOLD_ON = re.compile(r"(\d{1,2})\s+([a-zéû]+)\.?\s+(\d{4})", re.IGNORECASE)
+FRENCH_MONTHS = {
+    month: number
+    for number, month in enumerate(
+        ("janv", "févr", "mars", "avr", "mai", "juin", "juil", "août", "sept", "oct", "nov", "déc"),
+        start=1,
+    )
+}
 
 
 # Latin letters, accented ones included, end before this code point.
@@ -128,6 +137,8 @@ class MarketListing:
     # Vinted: the item's condition. eBay: "Vendu le 6 oct. 2026".
     detail: str | None
     shipping_cents: int | None = None
+    # eBay: the sale date, "2026-10-06".
+    sold_on: str | None = None
     best_offer: bool = False
     # Names the card's number, ungraded and alone: counts towards the median.
     relevant: bool = True
@@ -148,6 +159,8 @@ def search_url(site: Site, query: str, page: int = 1) -> str:
         "LH_Sold": 1,
         "LH_Complete": 1,
         "_ipg": 120,
+        # Latest sales first: the pages read then cover the last weeks, for the sale count.
+        "_sop": 13,
     }
     if page > 1:
         params["_pgn"] = page
@@ -245,6 +258,7 @@ def parse_listings(
                 image_url=item.get("image"),
                 detail=item.get("condition") if site == "vinted" else item.get("sold"),
                 shipping_cents=euro_cents(str(item.get("shipping") or "")),
+                sold_on=sold_date(str(item.get("sold") or "")) if site == "ebay" else None,
                 best_offer=bool(item.get("best_offer")),
                 relevant=is_relevant(title, card_number, names),
             )
@@ -287,6 +301,28 @@ def median_cents(listings: list[MarketListing]) -> int | None:
         kept = [p for p in prices if first / OUTLIER_RATIO <= p <= first * OUTLIER_RATIO]
         prices = kept or prices
     return round(statistics.median(prices))
+
+
+def sold_date(text: str) -> str | None:
+    """ "Vendu le 6 oct. 2026" → "2026-10-06"."""
+    match = _SOLD_ON.search(unicodedata.normalize("NFC", text))
+    month = FRENCH_MONTHS.get(match[2].lower()) if match else None
+    if match is None or month is None:
+        return None
+    try:
+        return date(int(match[3]), month, int(match[1])).isoformat()
+    except ValueError:
+        return None
+
+
+def sales_within(listings: list[MarketListing], days: int, today: date | None = None) -> int:
+    """Relevant sales dated within the last ``days`` days."""
+    since = ((today or datetime.now(UTC).date()) - timedelta(days=days)).isoformat()
+    return sum(
+        1
+        for listing in listings
+        if listing.relevant and listing.sold_on is not None and listing.sold_on > since
+    )
 
 
 def euro_cents(text: str) -> int | None:

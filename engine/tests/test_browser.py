@@ -1,5 +1,6 @@
 from collections.abc import Iterator
 from contextlib import contextmanager
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -8,7 +9,13 @@ from fastapi.testclient import TestClient
 
 from mekiki_engine.browser import markets
 from mekiki_engine.browser.chrome import ChromeError
-from mekiki_engine.browser.markets import is_relevant, median_cents, parse_listings
+from mekiki_engine.browser.markets import (
+    is_relevant,
+    median_cents,
+    parse_listings,
+    sales_within,
+    sold_date,
+)
 from mekiki_engine.browser.service import Browsers
 
 # What the page scripts return, shaped like the real Vinted and eBay pages.
@@ -269,3 +276,56 @@ def test_a_bot_check_is_left_to_the_user(client: TestClient, chrome: FakeSession
     assert "vérification anti-robot" in read["error"]
     assert chrome.visible is True
     assert client.get("/browser/activity").json()["activity"] is None
+
+
+@pytest.mark.parametrize(
+    ("caption", "expected"),
+    [
+        ("Vendu le 6 oct. 2026", "2026-10-06"),
+        ("Vendu le 28 sept. 2026", "2026-09-28"),
+        ("Vendu le 1 août 2026", "2026-08-01"),
+        ("Vendu le 3 mai 2026", "2026-05-03"),
+        ("Vendu le 12 déc. 2025", "2025-12-12"),
+        ("Vendu le 31 févr. 2026", None),
+        ("Vendu", None),
+    ],
+)
+def test_ebay_sale_dates_are_read(caption: str, expected: str | None) -> None:
+    assert sold_date(caption) == expected
+
+
+def test_ebay_sales_are_counted_over_30_and_90_days() -> None:
+    raw = [
+        {**EBAY_RAW[0], "id": "1", "sold": "Vendu le 6 oct. 2026"},
+        {**EBAY_RAW[0], "id": "2", "sold": "Vendu le 20 sept. 2026"},
+        {**EBAY_RAW[0], "id": "3", "sold": "Vendu le 2 août 2026"},
+        {**EBAY_RAW[0], "id": "4", "sold": "Vendu le 2 juin 2026"},
+        # Another card sold the same day does not count.
+        {**EBAY_RAW[0], "id": "5", "title": "Charizard ex 006/165", "sold": "Vendu le 6 oct. 2026"},
+    ]
+    sold = parse_listings("ebay", raw, "201/165")
+    today = date(2026, 10, 8)
+
+    assert sold[0].sold_on == "2026-10-06"
+    assert sales_within(sold, 30, today) == 2
+    assert sales_within(sold, 90, today) == 3
+
+
+def test_ebay_sold_searches_read_the_latest_sales_first() -> None:
+    assert "_sop=13" in markets.search_url("ebay", "Charizard 201/165")
+
+
+def test_ebay_sales_frequency_joins_the_verdict(client: TestClient, chrome: FakeSession) -> None:
+    client.post("/cardmarket/refresh", json={})
+    params = {"product_id": 719654, "label": "SV2a 201/165 · SAR"}
+    before = client.get("/resale/verdict", params=params).json()
+
+    prices = client.post(
+        "/browser/ebay/prices",
+        json={"query": before["market_queries"]["ebay"], "card_number": "201/165"},
+    ).json()
+    after = client.get("/resale/verdict", params=params).json()
+
+    assert prices["sales_90_days"] is not None
+    assert prices["listings"][0]["sold_on"] == "2026-10-06"
+    assert any("sur 90 jours" in signal["text"] for signal in after["signals"])
