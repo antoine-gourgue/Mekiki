@@ -3,6 +3,8 @@ definePageMeta({ layout: 'public' })
 
 // Inside the desktop app, offering to download it makes no sense.
 const inDesktopApp = import.meta.client && '__TAURI_INTERNALS__' in window
+// On the public website, accounts only exist inside the app.
+const showcase = useRuntimeConfig().public.showcase
 
 const steps = [
   {
@@ -80,6 +82,7 @@ const publishSteps = [
             label="Télécharger pour Windows"
           />
           <UButton
+            v-if="!showcase"
             to="/inscription"
             size="xl"
             :color="inDesktopApp ? 'primary' : 'neutral'"
@@ -242,6 +245,7 @@ const publishSteps = [
             label="Télécharger pour Windows"
           />
           <UButton
+            v-if="!showcase"
             to="/inscription"
             size="xl"
             :color="inDesktopApp ? 'primary' : 'neutral'"

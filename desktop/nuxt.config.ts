@@ -31,6 +31,9 @@ export default defineNuxtConfig({
     public: {
       // Overridden with NUXT_PUBLIC_ENGINE_URL; must match the port the engine listens on.
       engineUrl: 'http://127.0.0.1:18421',
+      // The public website (NUXT_PUBLIC_SHOWCASE=true on Vercel) has no engine to talk to:
+      // it presents the app and offers the installer instead of the sign-in forms.
+      showcase: false,
     },
   },
 

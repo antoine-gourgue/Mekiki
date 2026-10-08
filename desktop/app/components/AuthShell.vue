@@ -1,5 +1,8 @@
 <script setup lang="ts">
 /** Sign-in and sign-up pages: the brand on one side, the form on the other. */
+// The public website has no engine: accounts live in the desktop app.
+const showcase = useRuntimeConfig().public.showcase
+
 const tabs = [
   { to: '/connexion', label: 'Se connecter' },
   { to: '/inscription', label: 'Créer un compte' },
@@ -50,7 +53,28 @@ const tabs = [
     </section>
 
     <div class="flex items-center justify-center py-6">
-      <div class="w-full max-w-sm space-y-6">
+      <div v-if="showcase" class="w-full max-w-sm space-y-6">
+        <div class="space-y-3">
+          <h2 class="text-2xl font-semibold tracking-tight text-highlighted">
+            Mekiki s’utilise dans l’application Windows
+          </h2>
+          <p class="text-muted">
+            Votre compte, votre stock et vos recherches vivent dans l’application installée sur
+            votre PC : c’est elle qui lit les annonces au Japon et chiffre chaque carte.
+            Téléchargez-la, puis connectez-vous ou créez votre compte depuis l’application.
+          </p>
+        </div>
+        <UButton
+          :to="INSTALLER_URL"
+          external
+          block
+          size="xl"
+          icon="i-lucide-download"
+          label="Télécharger pour Windows"
+        />
+        <p class="text-center text-sm text-dimmed">Windows 10 et 11 · mises à jour automatiques</p>
+      </div>
+      <div v-else class="w-full max-w-sm space-y-6">
         <nav
           aria-label="Connexion ou inscription"
           class="grid grid-cols-2 gap-1 rounded-lg border border-default bg-muted p-1"

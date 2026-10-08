@@ -1,5 +1,7 @@
 <script setup lang="ts">
 const route = useRoute()
+// The public website has no engine: it offers the installer instead of the forms.
+const showcase = useRuntimeConfig().public.showcase
 
 // The section links only make sense on the landing page.
 const sections = [
@@ -27,13 +29,26 @@ const sections = [
             />
           </template>
           <UButton
-            v-if="route.path !== '/connexion'"
-            label="Se connecter"
-            color="neutral"
-            variant="ghost"
-            to="/connexion"
+            v-if="showcase"
+            :to="INSTALLER_URL"
+            external
+            icon="i-lucide-download"
+            label="Télécharger"
           />
-          <UButton v-if="route.path !== '/inscription'" label="Créer un compte" to="/inscription" />
+          <template v-else>
+            <UButton
+              v-if="route.path !== '/connexion'"
+              label="Se connecter"
+              color="neutral"
+              variant="ghost"
+              to="/connexion"
+            />
+            <UButton
+              v-if="route.path !== '/inscription'"
+              label="Créer un compte"
+              to="/inscription"
+            />
+          </template>
         </nav>
       </div>
     </header>
