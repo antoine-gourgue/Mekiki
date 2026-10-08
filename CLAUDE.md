@@ -82,7 +82,12 @@ cd desktop && npm run lint && npm run format:check && npm run typecheck && npm r
   formulaire ou passer une vérification anti-robot. **Exception voulue par l'utilisateur** à la règle « jamais de connexion » : il s'y
   connecte lui-même à Vinted et eBay (Mekiki ne voit jamais de mot de passe). Chaque action part
   d'un clic dans l'app, une page à la fois ; ne jamais contourner une vérification anti-robot.
-- Les secrets (clés eBay…) sont dans `engine/.env`, jamais dans le dépôt.
+- Chaque compte saisit ses clés eBay (jeu Production) dans Paramètres : vérifiées auprès
+  d'eBay avant d'être gardées (réglage `ebay:{user_id}`), le Cert ID n'est jamais renvoyé.
+  Les clés de `engine/.env` servent aux comptes sans clés. Aucun secret dans le dépôt.
+- Vinted bloque une adresse qui charge trop de recherches : une page par recherche, deux
+  recherches par carte au plus, 4 à 9 s entre deux pages, prix gardés 6 h, et 6 h sans
+  Vinted dès qu'il affiche son blocage (`SiteBlocked`). Ne jamais chercher à le contourner.
 
 ## Releases
 

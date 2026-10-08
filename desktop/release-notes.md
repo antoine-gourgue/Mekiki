@@ -1,12 +1,13 @@
 ## Nouveautés
 
-- Chaque mise à jour s’annonce désormais dans une grande fenêtre, avec ses nouveautés en français.
-- L’état des annonces japonaises (neuf, très bon état…) s’affiche sur chaque carte, et « Trouver des cartes » peut exiger un état minimum.
-- Le panneau d’une annonce vérifie qu’elle est toujours en vente, avec son prix actuel : vendue, retirée ou disponible.
-- « Trouver des cartes » remplace les cartes déjà vendues du colis proposé.
-- Les ventes eBay sur 30 et 90 jours s’affichent à côté du prix médian : vous voyez si une carte se revend vite.
+- Clés eBay dans Paramètres : chaque compte saisit les siennes, et les fiches des cartes
+  montrent alors les annonces eBay en direct, sans passer par Chrome.
+- Les annonces eBay comptées dans le prix médian sont triées comme celles lues dans Chrome :
+  seulement la carte elle-même, sans lots ni cartes gradées.
 
 ## Corrections
 
-- Les annonces réservées à un acheteur (« 専用 », « お取り置き »…) ne sont plus proposées : leur commande via Neokyo serait annulée.
-- Les mises à jour automatiques fonctionnent de nouveau.
+- Mekiki lit Vinted beaucoup plus doucement (une page par recherche, des pauses entre les
+  pages, des prix gardés six heures) pour ne plus se faire bloquer.
+- Si Vinted bloque malgré tout l'accès, Mekiki n'y retourne plus pendant six heures et le dit,
+  au lieu d'aggraver le blocage.

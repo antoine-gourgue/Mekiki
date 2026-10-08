@@ -39,8 +39,9 @@ SQLite est stockée dans le dossier de données de l'app. En développement, on 
 
 Le moteur peut aussi tourner sur un serveur pour plusieurs revendeurs : `MEKIKI_HOST=0.0.0.0`,
 `MEKIKI_ALLOWED_HOSTS` (noms de domaine acceptés) et `MEKIKI_ALLOWED_ORIGINS` (origines de
-l'interface). Les secrets se mettent dans `engine/.env` (ignoré par git, voir `.env.example`),
-par exemple les clés d'une application eBay pour les annonces eBay en direct.
+l'interface). Les secrets se mettent dans `engine/.env` (ignoré par git, voir `.env.example`).
+Les clés d'une application eBay, pour les annonces eBay en direct, se saisissent par compte
+dans Paramètres ; celles de `.env` servent aux comptes qui n'ont pas mis les leurs.
 
 ## Développement
 
