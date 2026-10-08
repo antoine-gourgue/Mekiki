@@ -35,6 +35,10 @@ def main(argv: list[str] | None = None) -> None:
     # Secrets such as the eBay keys live in a .env file next to the engine, never in git.
     load_env_file(Path(".env"))
     config = load_config(data_dir=args.data_dir, port=args.port, host=args.host)
+    # The installed app starts the engine from no particular folder: its .env sits next to
+    # the database instead. The first file read wins.
+    load_env_file(config.data_dir / ".env")
+    config = load_config(data_dir=args.data_dir, port=args.port, host=args.host)
     # Loopback unless deployed as a server (see config.DEFAULT_HOST).
     server = uvicorn.Server(uvicorn.Config(create_app(config), host=config.host, port=config.port))
     if args.exit_with_parent and sys.stdin is not None:
