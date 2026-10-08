@@ -258,17 +258,9 @@ const platformItems = selectItems(PLATFORM_LABELS)
             <p v-if="!photos.length" class="text-xs text-warning">
               Ajoutez au moins une photo : {{ SITES[site] }} n’accepte pas d’annonce sans photo.
             </p>
+            <BrowserPreview :active="job?.status === 'running'" />
             <UAlert
-              v-if="job?.status === 'running'"
-              color="info"
-              variant="subtle"
-              icon="i-lucide-loader-circle"
-              title="Publication en cours dans Chrome…"
-              description="Laissez la fenêtre Chrome de Mekiki ouverte jusqu’à la fin."
-              :ui="{ icon: 'animate-spin' }"
-            />
-            <UAlert
-              v-else-if="job?.status === 'done'"
+              v-if="job?.status === 'done'"
               color="success"
               variant="subtle"
               icon="i-lucide-badge-check"
@@ -286,7 +278,7 @@ const platformItems = selectItems(PLATFORM_LABELS)
               variant="subtle"
               icon="i-lucide-circle-alert"
               title="La publication n’est pas allée au bout"
-              :description="`${job.error}. Le formulaire est resté ouvert dans Chrome : vérifiez-le et terminez la publication à la main.`"
+              :description="`${job.error}. La fenêtre Chrome s’est affichée avec le formulaire : vérifiez-le et terminez la publication à la main.`"
             />
           </div>
           <ResalePanel v-if="showPrices" :query="{ q: draft.query }" />

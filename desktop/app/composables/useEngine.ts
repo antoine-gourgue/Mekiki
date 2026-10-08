@@ -2,6 +2,7 @@ import type {
   AccountUpdate,
   AppSettings,
   AuthResponse,
+  BrowserActivity,
   BrowserPrices,
   BrowserPricesRequest,
   BrowserSite,
@@ -179,6 +180,10 @@ export function useEngine() {
     listingDraft: (itemId: number, platform: ListingSite) =>
       request<ListingDraft>(`/items/${itemId}/listing-draft`, { query: { platform } }),
     browserStatus: () => request<BrowserStatus>('/browser/status'),
+    browserActivity: () => request<BrowserActivity>('/browser/activity'),
+    browserPreview: () => request<Blob>('/browser/preview', { responseType: 'blob' }),
+    showBrowser: () => request<BrowserActivity>('/browser/show', { method: 'POST' }),
+    hideBrowser: () => request<BrowserActivity>('/browser/hide', { method: 'POST' }),
     openSite: (site: BrowserSite) =>
       request<BrowserStatus>(`/browser/${site}/open`, { method: 'POST', timeout: 60_000 }),
     checkSite: (site: BrowserSite) =>

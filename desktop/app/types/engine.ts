@@ -741,3 +741,12 @@ export interface PublishJob {
   url: string | null
   error: string | null
 }
+
+/** What Mekiki's Chrome window is doing, for the live preview. */
+export interface BrowserActivity {
+  /** "Vinted : « Dracaufeu 201/165 », page 2", or null when idle. */
+  activity: string | null
+  running: boolean
+  /** The window is on screen (sign-in, a form to finish, a bot check to pass). */
+  visible: boolean
+}

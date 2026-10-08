@@ -189,6 +189,7 @@ const costLine = computed(() => {
             @click="readMarket"
           />
         </div>
+        <BrowserPreview :active="reading" />
         <p v-if="!result.card_number" class="text-xs text-warning">
           Numéro de carte inconnu : impossible de trier les annonces Vinted et eBay de cette carte
           parmi les autres. Choisissez l’impression japonaise, ou indiquez le numéro sur la carte.

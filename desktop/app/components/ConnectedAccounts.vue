@@ -16,6 +16,8 @@ const SITES: { site: BrowserSite; label: string; icon: string }[] = [
 const status = ref<BrowserStatus | null>(null)
 const connected = reactive<Partial<Record<BrowserSite, boolean>>>({})
 const busy = ref<BrowserSite | null>(null)
+// Chrome works out of sight, except while the user signs in.
+const windowShown = ref(false)
 
 onMounted(async () => {
   try {
@@ -29,6 +31,7 @@ async function open(site: BrowserSite) {
   busy.value = site
   try {
     status.value = await engine.openSite(site)
+    windowShown.value = true
   } catch (error) {
     showError(error, 'Chrome n’a pas pu s’ouvrir')
   } finally {
@@ -40,6 +43,7 @@ async function check(site: BrowserSite) {
   busy.value = site
   try {
     connected[site] = (await engine.checkSite(site)).connected
+    if (connected[site]) windowShown.value = false
   } catch (error) {
     showError(error, 'Vérification impossible')
   } finally {
@@ -67,7 +71,16 @@ async function check(site: BrowserSite) {
       description="Installez Chrome pour lire les prix et publier sur Vinted et eBay depuis Mekiki."
     />
 
-    <ul v-else class="divide-y divide-default">
+    <UAlert
+      v-if="status?.running && windowShown"
+      color="info"
+      variant="subtle"
+      icon="i-lucide-app-window"
+      title="La fenêtre Chrome de Mekiki est ouverte"
+      description="Connectez-vous au site dans cette fenêtre, puis cliquez sur « Vérifier » : elle repassera en arrière-plan."
+      class="mb-3"
+    />
+    <ul v-if="!status || status.chrome_installed" class="divide-y divide-default">
       <li v-for="entry in SITES" :key="entry.site" class="flex items-center gap-3 py-3">
         <UIcon :name="entry.icon" class="size-5 shrink-0 text-muted" />
         <div class="min-w-0 flex-1">
