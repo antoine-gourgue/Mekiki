@@ -64,7 +64,10 @@ const groups = computed<CommandPaletteGroup<CommandPaletteItem>[]>(() => [
   {
     id: 'pages',
     label: 'Pages',
-    items: props.links.flat().map((link) => ({ label: link.label, icon: link.icon, to: link.to })),
+    items: props.links
+      .flat()
+      .filter((link) => link.to)
+      .map((link) => ({ label: link.label, icon: link.icon, to: link.to })),
   },
   {
     id: 'stock',

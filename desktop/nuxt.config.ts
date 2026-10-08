@@ -19,6 +19,14 @@ export default defineNuxtConfig({
 
   css: ['~/assets/css/main.css'],
 
+  // The interface is designed dark only. A key of its own ignores the "system" choice
+  // stored by earlier versions.
+  colorMode: {
+    preference: 'dark',
+    fallback: 'dark',
+    storageKey: 'mekiki-color-mode',
+  },
+
   runtimeConfig: {
     public: {
       // Overridden with NUXT_PUBLIC_ENGINE_URL; must match the port the engine listens on.

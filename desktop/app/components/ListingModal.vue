@@ -145,144 +145,166 @@ const platformItems = selectItems(PLATFORM_LABELS)
 <template>
   <UModal
     v-model:open="open"
-    title="Mettre en vente"
-    :description="item?.name"
-    :ui="{ content: site ? 'sm:max-w-2xl' : undefined, footer: 'justify-between' }"
+    :title="`Mettre en vente · ${item?.name ?? ''}`"
+    :description="item ? `Coût de revient ${formatCents(item.landed_cost.total_cents)}` : undefined"
+    :ui="{
+      content: site ? 'sm:max-w-5xl' : 'sm:max-w-xl',
+      body: 'p-0 sm:p-0',
+      footer: 'justify-between',
+    }"
   >
     <template #body>
-      <div v-if="item" class="mb-6 space-y-2">
-        <h3 class="font-medium text-highlighted">Photos</h3>
-        <ItemPhotos v-model="photos" :item-id="item.id" @changed="emit('photosChanged')" />
-      </div>
+      <div class="flex flex-wrap">
+        <div class="min-w-0 flex-[1_1_440px] space-y-5 p-5 sm:p-6">
+          <SegmentedControl
+            v-model="state.platform"
+            :items="platformItems"
+            label="Plateforme"
+            class="flex w-full *:flex-1"
+          />
 
-      <UForm
-        id="listing-form"
-        :state="state"
-        :validate="validate"
-        class="grid gap-4 sm:grid-cols-2"
-        @submit="save(state)"
-      >
-        <UFormField label="Plateforme" name="platform">
-          <USelect v-model="state.platform" :items="platformItems" class="w-full" />
-        </UFormField>
-        <UFormField
-          label="Prix affiché"
-          name="price_cents"
-          required
-          :help="
-            draft?.price_source && draft.price_cents === state.price_cents
-              ? `Suggéré : ${PRICE_SOURCE_LABELS[draft.price_source] ?? draft.price_source}.`
-              : undefined
-          "
-        >
-          <MoneyInput v-model="state.price_cents" currency="EUR" autofocus />
-        </UFormField>
-        <p v-if="item" class="text-sm text-muted sm:col-span-2">
-          Coût de revient : {{ formatCents(item.landed_cost.total_cents) }}. Le net et la marge
-          prévus apparaissent dans le stock une fois l’annonce enregistrée.
-        </p>
-      </UForm>
+          <div v-if="item" class="space-y-2">
+            <h3 class="text-sm font-medium text-muted">Photos</h3>
+            <ItemPhotos v-model="photos" :item-id="item.id" @changed="emit('photosChanged')" />
+          </div>
 
-      <div v-if="site" class="mt-6 space-y-4 border-t border-default pt-4">
-        <div>
-          <h3 class="font-medium text-highlighted">Annonce prête pour {{ SITES[site] }}</h3>
-          <p class="text-sm text-muted">
-            Copiez le texte, ouvrez {{ SITES[site] }}, ajoutez vos photos et publiez. Enregistrez
-            ensuite l’annonce ici pour suivre la marge prévue.
-          </p>
-        </div>
+          <UForm id="listing-form" :state="state" :validate="validate" @submit="save(state)">
+            <UFormField
+              label="Prix affiché"
+              name="price_cents"
+              required
+              :help="
+                draft?.price_source && draft.price_cents === state.price_cents
+                  ? `Suggéré : ${PRICE_SOURCE_LABELS[draft.price_source] ?? draft.price_source}.`
+                  : 'Le net et la marge prévus apparaissent dans le stock une fois l’annonce enregistrée.'
+              "
+            >
+              <MoneyInput v-model="state.price_cents" currency="EUR" autofocus />
+            </UFormField>
+          </UForm>
 
-        <div v-if="loadingDraft" class="flex justify-center py-4">
-          <UIcon name="i-lucide-loader-circle" class="size-6 animate-spin text-muted" />
-        </div>
-        <template v-else-if="draft">
-          <UFormField label="Titre" :hint="`${draft.title.length}/80`">
-            <UInput v-model="draft.title" :maxlength="80" class="w-full" :ui="{ trailing: 'pe-1' }">
-              <template #trailing>
+          <template v-if="site">
+            <div v-if="loadingDraft" class="flex justify-center py-4">
+              <UIcon name="i-lucide-loader-circle" class="size-6 animate-spin text-muted" />
+            </div>
+            <template v-else-if="draft">
+              <UFormField label="Titre" :hint="`${draft.title.length}/80`">
+                <UInput
+                  v-model="draft.title"
+                  :maxlength="80"
+                  class="w-full"
+                  :ui="{ trailing: 'pe-1' }"
+                >
+                  <template #trailing>
+                    <UButton
+                      icon="i-lucide-copy"
+                      color="neutral"
+                      variant="link"
+                      size="sm"
+                      aria-label="Copier le titre"
+                      @click="copy(draft.title, 'Titre')"
+                    />
+                  </template>
+                </UInput>
+              </UFormField>
+              <UFormField label="Description">
+                <UTextarea v-model="draft.description" autoresize :rows="5" class="w-full" />
+              </UFormField>
+              <div class="flex flex-wrap gap-2">
                 <UButton
                   icon="i-lucide-copy"
                   color="neutral"
-                  variant="link"
-                  size="sm"
-                  aria-label="Copier le titre"
-                  @click="copy(draft.title, 'Titre')"
+                  variant="outline"
+                  size="md"
+                  label="Copier la description"
+                  @click="copy(draft.description, 'Description')"
                 />
-              </template>
-            </UInput>
-          </UFormField>
-          <UFormField label="Description">
-            <UTextarea v-model="draft.description" autoresize :rows="6" class="w-full" />
-          </UFormField>
-          <div class="flex flex-wrap gap-2">
-            <UButton
-              icon="i-lucide-copy"
-              color="neutral"
-              variant="subtle"
-              label="Copier la description"
-              @click="copy(draft.description, 'Description')"
-            />
-            <UButton
-              icon="i-lucide-euro"
-              color="neutral"
-              variant="subtle"
-              :label="showPrices ? 'Masquer les prix' : 'Voir les prix du marché'"
-              @click="showPrices = !showPrices"
-            />
-            <span class="flex-1" />
-            <UButton
-              icon="i-lucide-external-link"
-              color="neutral"
-              variant="subtle"
-              :label="`Ouvrir ${SITES[site]}`"
-              @click="openExternal(draft.new_listing_url)"
-            />
+                <UButton
+                  icon="i-lucide-euro"
+                  color="neutral"
+                  variant="outline"
+                  size="md"
+                  :label="showPrices ? 'Masquer les prix' : 'Prix du marché'"
+                  @click="showPrices = !showPrices"
+                />
+                <span class="flex-1" />
+                <UButton
+                  trailing-icon="i-lucide-arrow-up-right"
+                  color="neutral"
+                  variant="ghost"
+                  size="md"
+                  :label="`Ouvrir ${SITES[site]}`"
+                  @click="openExternal(draft.new_listing_url)"
+                />
+              </div>
+              <ResalePanel v-if="showPrices" :query="{ q: draft.query }" />
+            </template>
+          </template>
+        </div>
+
+        <div
+          v-if="site"
+          class="min-w-0 flex-[1_1_360px] space-y-4 border-t border-default bg-[#121116] p-5 sm:p-6 lg:border-t-0 lg:border-l"
+        >
+          <div>
+            <h3 class="font-semibold text-highlighted">Publier automatiquement</h3>
+            <p class="mt-1 text-sm text-muted">
+              Mekiki remplit le formulaire {{ SITES[site] }} dans sa fenêtre Chrome, hors de
+              l’écran, avec {{ photos.length }} photo{{ photos.length > 1 ? 's' : '' }}, puis
+              publie. Vous suivez chaque étape ici.
+            </p>
           </div>
 
-          <div class="space-y-2 rounded-md border border-default p-3">
-            <div class="flex flex-wrap items-center justify-between gap-2">
-              <div class="min-w-0">
-                <p class="text-sm font-medium">Publier automatiquement</p>
-                <p class="text-xs text-muted">
-                  Mekiki remplit le formulaire {{ SITES[site] }} dans sa fenêtre Chrome, avec
-                  {{ photos.length }} photo{{ photos.length > 1 ? 's' : '' }}, et publie.
-                </p>
-              </div>
-              <UButton
-                icon="i-lucide-send"
-                :label="`Publier sur ${SITES[site]}`"
-                :loading="job?.status === 'running'"
-                :disabled="!photos.length || state.price_cents == null || job?.status === 'done'"
-                @click="publishNow"
-              />
-            </div>
-            <p v-if="!photos.length" class="text-xs text-warning">
-              Ajoutez au moins une photo : {{ SITES[site] }} n’accepte pas d’annonce sans photo.
-            </p>
-            <BrowserPreview :active="job?.status === 'running'" />
-            <UAlert
-              v-if="job?.status === 'done'"
-              color="success"
-              variant="subtle"
-              icon="i-lucide-badge-check"
-              title="Annonce publiée"
-              :description="
-                job.error ?? 'La carte apparaît désormais comme en vente dans le stock.'
-              "
-              :actions="
-                job.url ? [{ label: 'Voir l’annonce', onClick: () => openExternal(job!.url!) }] : []
-              "
-            />
-            <UAlert
-              v-else-if="job?.status === 'failed'"
-              color="error"
-              variant="subtle"
-              icon="i-lucide-circle-alert"
-              title="La publication n’est pas allée au bout"
-              :description="`${job.error}. La fenêtre Chrome s’est affichée avec le formulaire : vérifiez-le et terminez la publication à la main.`"
-            />
-          </div>
-          <ResalePanel v-if="showPrices" :query="{ q: draft.query }" />
-        </template>
+          <BrowserLog v-if="job" :active="job.status === 'running'" />
+          <p
+            v-else
+            class="rounded-lg border border-dashed border-accented px-4 py-6 text-center text-sm text-dimmed"
+          >
+            Le journal de la fenêtre Chrome s’affiche ici pendant la publication.
+          </p>
+
+          <p v-if="!photos.length" class="text-sm text-error">
+            Ajoutez au moins une photo : {{ SITES[site] }} n’accepte pas d’annonce sans photo.
+          </p>
+          <UAlert
+            v-if="job?.status === 'done'"
+            color="success"
+            variant="subtle"
+            icon="i-lucide-badge-check"
+            title="Annonce publiée"
+            :description="job.error ?? 'La carte apparaît désormais comme en vente dans le stock.'"
+            :actions="
+              job.url ? [{ label: 'Voir l’annonce', onClick: () => openExternal(job!.url!) }] : []
+            "
+          />
+          <UAlert
+            v-else-if="job?.status === 'failed'"
+            color="error"
+            variant="subtle"
+            icon="i-lucide-circle-alert"
+            title="La publication n’est pas allée au bout"
+            :description="`${job.error}. La fenêtre Chrome s’est affichée avec le formulaire : vérifiez-le et terminez la publication à la main.`"
+          />
+
+          <UButton
+            block
+            size="xl"
+            icon="i-lucide-send"
+            :label="
+              job?.status === 'running'
+                ? `Publication sur ${SITES[site]}…`
+                : `Publier sur ${SITES[site]}`
+            "
+            :loading="job?.status === 'running'"
+            :disabled="
+              !draft || !photos.length || state.price_cents == null || job?.status === 'done'
+            "
+            @click="publishNow"
+          />
+          <p class="text-xs text-dimmed">
+            Une vérification anti-robot ? La fenêtre s’affiche pour que vous la passiez vous-même.
+          </p>
+        </div>
       </div>
     </template>
 
@@ -296,7 +318,7 @@ const platformItems = selectItems(PLATFORM_LABELS)
         @click="save({ platform: null, price_cents: null })"
       />
       <span v-else />
-      <UButton type="submit" form="listing-form" :loading="saving" label="Enregistrer" />
+      <UButton type="submit" form="listing-form" :loading="saving" label="Enregistrer l’annonce" />
     </template>
   </UModal>
 </template>

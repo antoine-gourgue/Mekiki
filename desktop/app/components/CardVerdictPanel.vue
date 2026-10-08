@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import type { AlertProps } from '@nuxt/ui'
 import type {
   BrowserPrices,
   BrowserSite,
@@ -34,13 +33,33 @@ async function load() {
 }
 watch(() => JSON.stringify(props.query), load, { immediate: true })
 
-const LOOKS: Record<Verdict, { color: AlertProps['color']; icon: string }> = {
-  good: { color: 'success', icon: 'i-lucide-thumbs-up' },
-  fair: { color: 'warning', icon: 'i-lucide-scale' },
-  bad: { color: 'error', icon: 'i-lucide-thumbs-down' },
-  suspicious: { color: 'error', icon: 'i-lucide-shield-alert' },
-  unknown: { color: 'neutral', icon: 'i-lucide-circle-help' },
-  limit: { color: 'primary', icon: 'i-lucide-target' },
+const LOOKS: Record<Verdict, { box: string; icon: string; iconClass: string }> = {
+  good: {
+    box: 'border-success/40 bg-success/10',
+    icon: 'i-lucide-thumbs-up',
+    iconClass: 'text-success',
+  },
+  fair: { box: 'border-default bg-elevated', icon: 'i-lucide-scale', iconClass: 'text-warning' },
+  bad: {
+    box: 'border-error/40 bg-error/10',
+    icon: 'i-lucide-thumbs-down',
+    iconClass: 'text-error',
+  },
+  suspicious: {
+    box: 'border-error/40 bg-error/10',
+    icon: 'i-lucide-shield-alert',
+    iconClass: 'text-error',
+  },
+  unknown: {
+    box: 'border-default bg-elevated',
+    icon: 'i-lucide-circle-help',
+    iconClass: 'text-muted',
+  },
+  limit: {
+    box: 'border-default bg-elevated',
+    icon: 'i-lucide-target',
+    iconClass: 'text-primary',
+  },
 }
 
 const SIGNAL_LOOKS: Record<VerdictSignal['tone'], { icon: string; class: string }> = {
@@ -93,6 +112,16 @@ async function readMarket() {
   }
 }
 
+/** The highest price worth paying in Japan, on the outlet that allows the most. */
+const bestMaxBuy = computed(() => {
+  // The "limit" headline already gives this price.
+  if (props.query.item_id != null || result.value?.verdict === 'limit') return null
+  const best = (result.value?.outlets ?? [])
+    .filter((outlet) => outlet.max_buy_jpy && outlet.max_buy_jpy > 0)
+    .sort((a, b) => b.max_buy_jpy! - a.max_buy_jpy!)[0]
+  return best ? { jpy: best.max_buy_jpy!, platform: best.platform } : null
+})
+
 const costLine = computed(() => {
   const r = result.value
   if (!r || r.landed_cents == null) return undefined
@@ -112,109 +141,146 @@ const costLine = computed(() => {
     />
 
     <template v-else-if="result">
-      <UAlert
-        :color="LOOKS[result.verdict].color"
-        :icon="LOOKS[result.verdict].icon"
-        variant="subtle"
-        :title="result.headline"
-        :description="costLine"
-        :ui="{ title: 'text-base' }"
-      />
-
-      <div v-if="result.outlets.length" class="overflow-hidden rounded-md border border-default">
-        <div
-          v-for="outlet in result.outlets"
-          :key="outlet.platform"
-          class="grid grid-cols-2 gap-x-4 gap-y-1 border-b border-default p-3 last:border-b-0"
-        >
-          <div class="col-span-2 flex items-baseline justify-between gap-2">
-            <p class="font-medium text-highlighted">{{ PLATFORM_LABELS[outlet.platform] }}</p>
-            <p class="truncate text-xs text-muted" :title="outlet.basis">{{ outlet.basis }}</p>
-          </div>
-          <p class="text-sm text-muted">
-            Revente
-            <span class="font-medium text-default tabular-nums">
-              {{ formatCents(outlet.sale_cents) }}
-            </span>
-          </p>
-          <p class="text-sm text-muted">
-            Net après frais
-            <span class="font-medium text-default tabular-nums">
-              {{ formatCents(outlet.net_cents) }}
-            </span>
-          </p>
-          <p v-if="outlet.margin_cents != null" class="text-sm text-muted">
-            Marge
-            <span class="font-medium tabular-nums" :class="signClass(outlet.margin_cents)">
-              {{ formatCents(outlet.margin_cents) }}
-            </span>
-            <template v-if="outlet.roi != null"> · ROI {{ formatRatio(outlet.roi) }}</template>
-          </p>
-          <p v-if="query.item_id == null" class="text-sm text-muted">
-            Prix max au Japon
-            <span class="font-medium text-default tabular-nums">
-              {{
-                outlet.max_buy_jpy && outlet.max_buy_jpy > 0 ? formatYen(outlet.max_buy_jpy) : '—'
-              }}
-            </span>
-          </p>
+      <div class="flex gap-3 rounded-xl border p-4" :class="LOOKS[result.verdict].box">
+        <UIcon
+          :name="LOOKS[result.verdict].icon"
+          class="mt-0.5 size-5 shrink-0"
+          :class="LOOKS[result.verdict].iconClass"
+        />
+        <div class="min-w-0">
+          <p class="font-semibold text-highlighted">{{ result.headline }}</p>
+          <p v-if="costLine" class="mt-1 text-sm text-muted">{{ costLine }}</p>
         </div>
       </div>
 
-      <ul v-if="result.signals.length" class="space-y-1.5">
-        <li v-for="signal in result.signals" :key="signal.text" class="flex gap-2 text-sm">
+      <div
+        v-if="bestMaxBuy"
+        class="flex items-center justify-between gap-3 rounded-xl bg-elevated px-4 py-3.5"
+      >
+        <div>
+          <p class="text-sm text-muted">
+            Payer au plus · {{ formatRatio(result.target_roi) }} de ROI
+          </p>
+          <p class="text-xs text-dimmed">
+            port au Japon compris, revente sur {{ PLATFORM_LABELS[bestMaxBuy.platform] }}
+          </p>
+        </div>
+        <p class="text-2xl font-semibold text-highlighted tabular-nums">
+          {{ formatYen(bestMaxBuy.jpy) }}
+        </p>
+      </div>
+
+      <div v-if="result.outlets.length" class="overflow-x-auto rounded-xl bg-elevated">
+        <table class="w-full min-w-[420px] text-sm">
+          <thead>
+            <tr class="text-left text-xs text-dimmed">
+              <th class="px-4 pt-3 pb-2 font-medium">Revente</th>
+              <th class="px-2 pt-3 pb-2 text-right font-medium">Prix</th>
+              <th class="px-2 pt-3 pb-2 text-right font-medium">Net</th>
+              <th class="px-4 pt-3 pb-2 text-right font-medium">Marge</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr
+              v-for="outlet in result.outlets"
+              :key="outlet.platform"
+              class="border-t border-muted"
+            >
+              <td class="px-4 py-2.5">
+                <p class="font-medium text-highlighted">{{ PLATFORM_LABELS[outlet.platform] }}</p>
+                <p class="max-w-52 truncate text-xs text-dimmed" :title="outlet.basis">
+                  {{ outlet.basis }}
+                </p>
+              </td>
+              <td class="px-2 py-2.5 text-right tabular-nums">
+                {{ formatCents(outlet.sale_cents) }}
+              </td>
+              <td class="px-2 py-2.5 text-right tabular-nums">
+                {{ formatCents(outlet.net_cents) }}
+              </td>
+              <td class="px-4 py-2.5 text-right">
+                <p class="font-medium tabular-nums" :class="signClass(outlet.margin_cents)">
+                  {{ formatSignedCents(outlet.margin_cents) }}
+                </p>
+                <p v-if="outlet.roi != null" class="text-xs text-dimmed">
+                  ROI {{ formatRatio(outlet.roi) }}
+                </p>
+                <p
+                  v-else-if="query.item_id == null && outlet.max_buy_jpy && outlet.max_buy_jpy > 0"
+                  class="text-xs text-dimmed"
+                >
+                  max {{ formatYen(outlet.max_buy_jpy) }}
+                </p>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <ul v-if="result.signals.length" class="space-y-2">
+        <li v-for="signal in result.signals" :key="signal.text" class="flex gap-2.5 text-sm">
           <UIcon
             :name="SIGNAL_LOOKS[signal.tone].icon"
             class="mt-0.5 size-4 shrink-0"
             :class="SIGNAL_LOOKS[signal.tone].class"
           />
-          <span>{{ signal.text }}</span>
+          <span class="text-toned">{{ signal.text }}</span>
         </li>
       </ul>
 
-      <div class="space-y-3 rounded-md border border-default p-3">
+      <section class="space-y-3 rounded-xl border border-default p-4">
         <div class="flex flex-wrap items-center justify-between gap-2">
           <div>
-            <p class="text-sm font-medium">Ce qui se vend vraiment</p>
-            <p class="text-xs text-muted">
+            <p class="font-semibold text-highlighted">Ce qui se vend vraiment</p>
+            <p class="text-xs text-dimmed">
               Lu dans la fenêtre Chrome de Mekiki, connectée à vos comptes.
             </p>
           </div>
           <UButton
             v-if="result.card_number"
             icon="i-lucide-scan-search"
-            :label="market.length ? 'Relire' : 'Lire les prix Vinted et eBay'"
+            :label="market.length ? 'Relire' : 'Lire Vinted et eBay'"
             size="sm"
+            variant="soft"
             :loading="reading"
             @click="readMarket"
           />
         </div>
-        <BrowserPreview :active="reading" />
-        <p v-if="!result.card_number" class="text-xs text-warning">
+        <BrowserLog :active="reading" />
+        <p v-if="!result.card_number" class="text-xs text-error">
           Numéro de carte inconnu : impossible de trier les annonces Vinted et eBay de cette carte
           parmi les autres. Choisissez l’impression japonaise, ou indiquez le numéro sur la carte.
         </p>
-        <div v-for="read in market" :key="read.site" class="space-y-1">
-          <p class="text-sm">
-            <span class="font-medium">{{ SITE_LABELS[read.site] }}</span>
-            <template v-if="read.error"> : {{ read.error }}</template>
-            <template v-else-if="read.relevant_count">
-              : médiane {{ formatCents(read.median_cents) }} sur {{ read.relevant_count }} ({{
-                formatCents(read.min_cents)
-              }}
-              à {{ formatCents(read.max_cents) }})
-            </template>
-            <template v-else> : aucune annonce de cette carte</template>
-          </p>
-          <ul class="divide-y divide-default text-sm">
+
+        <div v-for="read in market" :key="read.site" class="space-y-2">
+          <div class="flex flex-wrap items-baseline justify-between gap-2">
+            <p class="text-xs font-semibold tracking-[0.12em] text-dimmed uppercase">
+              {{ SITE_LABELS[read.site] }}
+            </p>
+            <p v-if="read.error" class="text-xs text-error">{{ read.error }}</p>
+            <p v-else-if="read.relevant_count" class="text-xs text-muted">
+              médiane
+              <span class="font-semibold text-highlighted tabular-nums">
+                {{ formatCents(read.median_cents) }}
+              </span>
+              · {{ read.relevant_count }} annonce{{ read.relevant_count > 1 ? 's' : '' }} ·
+              <span class="tabular-nums">
+                {{ formatCents(read.min_cents) }} à {{ formatCents(read.max_cents) }}
+              </span>
+            </p>
+            <p v-else class="text-xs text-muted">aucune annonce de cette carte</p>
+          </div>
+          <ul class="space-y-1.5">
             <li v-for="listing in shownListings(read)" :key="listing.external_id">
               <button
                 type="button"
-                class="group flex w-full items-center gap-3 py-2 text-left hover:bg-elevated/50"
+                class="group flex w-full items-center gap-3 rounded-lg bg-elevated p-2 text-left text-sm transition-colors hover:bg-accented"
                 :title="`Ouvrir l’annonce sur ${SITE_NAMES[read.site]}`"
                 @click="openExternal(listing.url)"
               >
-                <span class="size-12 shrink-0 overflow-hidden rounded-md bg-elevated">
+                <span
+                  class="flex h-13 w-10 shrink-0 items-center justify-center overflow-hidden rounded-md bg-accented"
+                >
                   <img
                     v-if="listing.image_url"
                     :src="listing.image_url"
@@ -223,30 +289,32 @@ const costLine = computed(() => {
                     referrerpolicy="no-referrer"
                     class="size-full object-cover"
                   />
-                  <UIcon v-else name="i-lucide-image-off" class="m-auto mt-3.5 size-5 text-muted" />
+                  <UIcon v-else name="i-lucide-image-off" class="size-4 text-dimmed" />
                 </span>
                 <span class="min-w-0 flex-1">
-                  <span class="line-clamp-2" :title="listing.title">{{ listing.title }}</span>
-                  <span class="block text-xs text-muted">{{ listing.detail }}</span>
+                  <span class="line-clamp-1 text-highlighted" :title="listing.title">
+                    {{ listing.title }}
+                  </span>
+                  <span class="block text-xs text-dimmed">
+                    {{ listing.detail }}
+                    <template v-if="listing.shipping_cents">
+                      · + {{ formatCents(listing.shipping_cents) }} de port
+                    </template>
+                  </span>
                 </span>
-                <span class="shrink-0 text-right">
-                  <span class="block font-medium tabular-nums">
-                    {{ formatCents(listing.price_cents) }}{{ listing.best_offer ? '*' : '' }}
-                  </span>
-                  <span v-if="listing.shipping_cents" class="block text-xs text-muted tabular-nums">
-                    + {{ formatCents(listing.shipping_cents) }}
-                  </span>
+                <span class="shrink-0 font-semibold tabular-nums">
+                  {{ formatCents(listing.price_cents) }}{{ listing.best_offer ? '*' : '' }}
                 </span>
                 <UIcon
-                  name="i-lucide-external-link"
-                  class="size-4 shrink-0 text-muted group-hover:text-highlighted"
+                  name="i-lucide-arrow-up-right"
+                  class="size-4 shrink-0 text-dimmed group-hover:text-highlighted"
                 />
               </button>
             </li>
           </ul>
           <UButton
             v-if="read.relevant_count > SHOWN_LISTINGS"
-            size="xs"
+            size="sm"
             color="neutral"
             variant="ghost"
             :label="expanded[read.site] ? 'Voir moins' : `Voir les ${read.relevant_count} annonces`"
@@ -255,11 +323,11 @@ const costLine = computed(() => {
         </div>
         <p
           v-if="market.some((r) => r.listings.some((l) => l.best_offer))"
-          class="text-xs text-muted"
+          class="text-xs text-dimmed"
         >
           * Offre acceptée : le prix réel était plus bas.
         </p>
-      </div>
+      </section>
 
       <ResalePanel :query="{ q: result.prices.query }" :initial="result.prices" />
     </template>

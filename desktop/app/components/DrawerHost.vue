@@ -16,7 +16,7 @@ watch(
     side="right"
     title="Détail"
     description="Fiche ouverte depuis la recherche ou une liste"
-    :ui="{ content: 'w-full max-w-xl' }"
+    :ui="{ content: 'w-full max-w-xl bg-[#141318]' }"
     @update:open="(open) => !open && drawer.close()"
   >
     <template #content>

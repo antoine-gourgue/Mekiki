@@ -53,7 +53,11 @@ const trackOpen = ref(false)
       :title="product?.name ?? 'Carte Cardmarket'"
       :subtitle="subtitle"
       icon="i-lucide-chart-line"
-    />
+    >
+      <template v-if="product?.japanese" #actions>
+        <UBadge color="neutral" variant="soft" label="JP" />
+      </template>
+    </DrawerHeader>
 
     <div class="flex-1 space-y-6 overflow-y-auto p-4 sm:p-6">
       <UAlert
@@ -67,46 +71,45 @@ const trackOpen = ref(false)
       <template v-else-if="product">
         <UAlert
           v-if="!product.japanese"
-          color="warning"
+          color="error"
           variant="subtle"
           icon="i-lucide-triangle-alert"
           title="Impression non japonaise"
           description="Sa cote ne correspond pas aux cartes achetées au Japon : cherchez la version japonaise (badge « JP » dans le catalogue)."
         />
-        <div class="grid grid-cols-2 gap-2">
-          <UButton icon="i-lucide-eye" label="Suivre cette carte" block @click="trackOpen = true" />
-          <UButton
-            icon="i-lucide-external-link"
-            label="Voir sur Cardmarket"
-            color="neutral"
-            variant="subtle"
-            block
-            @click="openExternal(product.url)"
-          />
-        </div>
 
-        <section class="space-y-2">
-          <h3 class="text-xs font-semibold tracking-wider text-muted uppercase">
+        <section class="space-y-2.5">
+          <h3 class="text-xs font-semibold tracking-[0.12em] text-dimmed uppercase">
             Faut-il l’acheter ?
           </h3>
           <CardVerdictPanel :query="{ product_id: product.id_product }" />
         </section>
 
-        <section class="space-y-2">
-          <h3 class="text-xs font-semibold tracking-wider text-muted uppercase">Cote Cardmarket</h3>
-          <div class="grid grid-cols-2 gap-2">
-            <InfoTile
+        <section class="space-y-2.5">
+          <h3 class="text-xs font-semibold tracking-[0.12em] text-dimmed uppercase">
+            Cote Cardmarket
+          </h3>
+          <div class="grid grid-cols-2 gap-2 sm:grid-cols-3">
+            <div
               v-for="price in prices"
               :key="price.field"
-              :label="price.label"
-              :value="formatCents(price.cents)"
-              :hint="
-                price.field === product.reference_field ? 'Cote de revente utilisée' : undefined
+              class="rounded-lg px-3 py-2.5"
+              :class="
+                price.field === product.reference_field
+                  ? 'bg-primary/10 ring-1 ring-primary/40'
+                  : 'bg-elevated'
               "
-              :value-class="price.field === product.reference_field ? 'text-primary' : undefined"
-            />
+            >
+              <p class="text-xs text-muted">{{ price.label }}</p>
+              <p class="mt-0.5 font-semibold text-highlighted tabular-nums">
+                {{ formatCents(price.cents) }}
+              </p>
+              <p v-if="price.field === product.reference_field" class="text-[11px] text-primary">
+                cote de revente
+              </p>
+            </div>
           </div>
-          <p v-if="product.prices_date" class="text-xs text-muted">
+          <p v-if="product.prices_date" class="text-xs text-dimmed">
             Cotes du {{ formatDate(product.prices_date) }}, toutes langues et tous états confondus.
           </p>
         </section>
@@ -115,6 +118,25 @@ const trackOpen = ref(false)
       <div v-else class="flex justify-center py-12">
         <UIcon name="i-lucide-loader-circle" class="size-6 animate-spin text-muted" />
       </div>
+    </div>
+
+    <div v-if="product" class="flex gap-2.5 border-t border-default px-4 py-4 sm:px-6">
+      <UButton
+        icon="i-lucide-external-link"
+        label="Voir sur Cardmarket"
+        color="neutral"
+        variant="outline"
+        size="xl"
+        class="flex-1 justify-center"
+        @click="openExternal(product.url)"
+      />
+      <UButton
+        icon="i-lucide-eye"
+        label="Suivre cette carte"
+        size="xl"
+        class="flex-1 justify-center"
+        @click="trackOpen = true"
+      />
     </div>
 
     <TrackedCardModal

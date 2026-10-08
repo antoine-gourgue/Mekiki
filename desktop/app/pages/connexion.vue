@@ -43,39 +43,36 @@ async function submit(event: FormSubmitEvent<LoginRequest>) {
 </script>
 
 <template>
-  <UContainer class="flex justify-center py-16">
-    <UPageCard class="w-full max-w-md">
-      <UAuthForm
-        icon="i-lucide-log-in"
-        title="Connexion"
-        description="Retrouvez vos lots, votre stock et vos recherches."
-        :fields="fields"
-        :submit="{ label: 'Se connecter', block: true }"
-        :loading="loading"
-        @submit="submit"
-      >
-        <template #validation>
-          <UAlert
-            v-if="route.query.session === 'expiree' && !failure"
-            color="warning"
-            variant="subtle"
-            icon="i-lucide-clock"
-            title="Votre session a expiré"
-            description="Reconnectez-vous pour continuer."
-          />
-          <UAlert
-            v-if="failure"
-            color="error"
-            variant="subtle"
-            icon="i-lucide-circle-alert"
-            :title="failure"
-          />
-        </template>
-        <template #footer>
-          Pas encore de compte ?
-          <ULink to="/inscription" class="font-medium text-primary">Créer un compte</ULink>
-        </template>
-      </UAuthForm>
-    </UPageCard>
-  </UContainer>
+  <AuthShell>
+    <UAuthForm
+      title="Connexion"
+      description="Retrouvez vos lots, votre stock et vos recherches."
+      :fields="fields"
+      :submit="{ label: 'Se connecter', block: true, size: 'xl' }"
+      :loading="loading"
+      @submit="submit"
+    >
+      <template #validation>
+        <UAlert
+          v-if="route.query.session === 'expiree' && !failure"
+          color="warning"
+          variant="subtle"
+          icon="i-lucide-clock"
+          title="Votre session a expiré"
+          description="Reconnectez-vous pour continuer."
+        />
+        <UAlert
+          v-if="failure"
+          color="error"
+          variant="subtle"
+          icon="i-lucide-circle-alert"
+          :title="failure"
+        />
+      </template>
+      <template #footer>
+        Pas encore de compte ?
+        <ULink to="/inscription" class="font-medium text-primary">Créer un compte</ULink>
+      </template>
+    </UAuthForm>
+  </AuthShell>
 </template>

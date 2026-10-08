@@ -743,10 +743,18 @@ export interface PublishJob {
 }
 
 /** What Mekiki's Chrome window is doing, for the live preview. */
+export interface BrowserLogLine {
+  /** UTC timestamp, to the second: 2026-10-08T05:12:03Z. */
+  at: string
+  text: string
+}
+
 export interface BrowserActivity {
   /** "Vinted : « Dracaufeu 201/165 », page 2", or null when idle. */
   activity: string | null
   running: boolean
   /** The window is on screen (sign-in, a form to finish, a bot check to pass). */
   visible: boolean
+  /** The latest steps and outcomes, oldest first. */
+  log: BrowserLogLine[]
 }

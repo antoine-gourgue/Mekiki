@@ -1,54 +1,59 @@
 <script setup lang="ts">
-import type { DropdownMenuItem, NavigationMenuItem } from '@nuxt/ui'
+import type { NavigationMenuItem } from '@nuxt/ui'
+import type { BrowserActivity } from '~/types/engine'
 
 const engine = useEngine()
 const favorites = useFavorites()
 const auth = useAuth()
 
-// Good deals not looked at yet, shown as a badge; refreshed every 30 seconds.
+// Good deals not looked at yet and what Chrome is doing, refreshed every 30 seconds.
 const unseenDeals = ref(0)
-let dealsTimer: ReturnType<typeof setInterval> | undefined
-async function refreshUnseenDeals() {
-  try {
-    unseenDeals.value = (await engine.scanStatus()).unseen_deals
-  } catch {
-    // The engine status dot already says when the engine is unreachable.
-  }
+const chrome = ref<BrowserActivity | null>(null)
+let statusTimer: ReturnType<typeof setInterval> | undefined
+async function refreshSidebar() {
+  const [scan, activity] = await Promise.allSettled([engine.scanStatus(), engine.browserActivity()])
+  // A failure keeps the last value: the engine status dot already says when it is down.
+  if (scan.status === 'fulfilled') unseenDeals.value = scan.value.unseen_deals
+  if (activity.status === 'fulfilled') chrome.value = activity.value
 }
 
 const links = computed<NavigationMenuItem[][]>(() => [
   [
     { label: 'Tableau de bord', icon: 'i-lucide-layout-dashboard', to: '/' },
+    { label: 'Acheter au Japon', type: 'label' },
     { label: 'Trouver des cartes', icon: 'i-lucide-wand-sparkles', to: '/decouverte' },
     {
       label: 'Bonnes affaires',
-      icon: 'i-lucide-sparkles',
+      icon: 'i-lucide-tag',
       to: '/affaires',
-      badge: unseenDeals.value ? String(unseenDeals.value) : undefined,
-    },
-    {
-      label: 'Panier',
-      icon: 'i-lucide-shopping-basket',
-      to: '/panier',
-      badge: favorites.cartCount.value ? String(favorites.cartCount.value) : undefined,
+      badge: unseenDeals.value
+        ? { label: String(unseenDeals.value), color: 'primary', variant: 'soft' }
+        : undefined,
     },
     { label: 'Recherche', icon: 'i-lucide-search', to: '/recherche' },
     { label: 'Cartes suivies', icon: 'i-lucide-eye', to: '/suivi' },
-    { label: 'Simulateur', icon: 'i-lucide-calculator', to: '/simulateur' },
-  ],
-  [
+    {
+      label: 'Panier',
+      icon: 'i-lucide-shopping-cart',
+      to: '/panier',
+      badge: favorites.cartCount.value
+        ? { label: String(favorites.cartCount.value), color: 'neutral', variant: 'soft' }
+        : undefined,
+    },
+    { label: 'Stock et ventes', type: 'label' },
     { label: 'Lots', icon: 'i-lucide-package', to: '/lots' },
     { label: 'Stock', icon: 'i-lucide-layers', to: '/stock' },
     { label: 'Ventes', icon: 'i-lucide-receipt-euro', to: '/ventes' },
-    { label: 'Paramètres', icon: 'i-lucide-settings', to: '/parametres' },
+    { label: 'Outils', type: 'label' },
+    { label: 'Simulateur', icon: 'i-lucide-calculator', to: '/simulateur' },
+    { label: 'Paramètres', icon: 'i-lucide-sliders-horizontal', to: '/parametres' },
   ],
 ])
 
-const accountMenu = computed<DropdownMenuItem[][]>(() => [
-  [{ type: 'label', label: auth.user.value?.email ?? '' }],
-  [{ label: 'Mon compte', icon: 'i-lucide-user-round', to: '/compte' }],
-  [{ label: 'Se déconnecter', icon: 'i-lucide-log-out', onSelect: () => void auth.logout() }],
-])
+const chromeState = computed(() => {
+  if (!chrome.value?.running) return 'fermé'
+  return chrome.value.visible ? 'à l’écran' : 'hors écran'
+})
 
 const { status, startPolling } = useEngineStatus()
 let stopPolling: (() => void) | undefined
@@ -62,77 +67,98 @@ watch(
   (value) => {
     if (value !== 'online' || ready.value) return
     ready.value = true
-    void refreshUnseenDeals()
+    void refreshSidebar()
     void favorites.refresh()
     auth.loadUser().catch(() => {
       // A refused session already sends the user back to the sign-in page.
     })
-    dealsTimer = setInterval(refreshUnseenDeals, 30_000)
+    statusTimer = setInterval(refreshSidebar, 30_000)
   },
   { immediate: true },
 )
-onBeforeUnmount(() => clearInterval(dealsTimer))
+onBeforeUnmount(() => clearInterval(statusTimer))
+
+const initial = computed(() => (auth.user.value?.display_name ?? '?').slice(0, 1).toUpperCase())
 </script>
 
 <template>
   <UDashboardGroup unit="rem">
-    <UDashboardSidebar
-      collapsible
-      resizable
-      :default-size="15"
-      :ui="{ footer: 'border-t border-default' }"
-    >
+    <UDashboardSidebar collapsible resizable :default-size="16">
       <template #header="{ collapsed }">
-        <AppLogo :collapsed="collapsed" :class="collapsed ? 'mx-auto' : 'px-1'" />
+        <AppLogo :collapsed="collapsed" :class="collapsed ? 'mx-auto' : ''" />
       </template>
 
       <template #default="{ collapsed }">
         <UDashboardSearchButton
           :collapsed="collapsed"
           label="Rechercher…"
-          class="bg-transparent ring-default"
+          class="bg-muted ring-default"
         />
-        <UNavigationMenu :collapsed="collapsed" :items="links" orientation="vertical" tooltip />
+        <UNavigationMenu
+          :collapsed="collapsed"
+          :items="links"
+          orientation="vertical"
+          color="neutral"
+          tooltip
+          :ui="{
+            label:
+              'mt-4 px-3 pb-1 text-[11px] font-semibold tracking-[0.14em] uppercase text-dimmed',
+            link: 'h-10 gap-3 px-3 text-muted before:rounded-md aria-[current=page]:text-highlighted aria-[current=page]:before:bg-elevated',
+            linkLeadingIcon: 'size-[18px] group-aria-[current=page]:text-primary',
+          }"
+        />
       </template>
 
       <template #footer="{ collapsed }">
         <div class="flex w-full flex-col gap-2">
-          <UDropdownMenu
-            :items="accountMenu"
-            :content="{ align: 'center', collisionPadding: 12 }"
-            :ui="{ content: collapsed ? 'w-48' : 'w-(--reka-dropdown-menu-trigger-width)' }"
+          <NuxtLink
+            v-if="!collapsed"
+            to="/compte"
+            class="rounded-lg border border-default px-3 py-2.5 text-xs transition-colors hover:bg-elevated/50"
           >
-            <UButton
-              :avatar="{ alt: auth.user.value?.display_name ?? '?' }"
-              :label="collapsed ? undefined : (auth.user.value?.display_name ?? 'Mon compte')"
-              :trailing-icon="collapsed ? undefined : 'i-lucide-chevrons-up-down'"
-              color="neutral"
-              variant="ghost"
-              block
-              :square="collapsed"
-              class="data-[state=open]:bg-elevated"
-              :ui="{ trailingIcon: 'text-dimmed' }"
-            />
-          </UDropdownMenu>
-          <div class="flex items-center gap-2 px-1 text-xs text-muted">
-            <span
-              class="size-2 shrink-0 rounded-full"
-              :class="{
-                'bg-success': status === 'online',
-                'bg-warning animate-pulse': status === 'connecting',
-                'bg-error': status === 'offline',
-              }"
-            />
-            <span v-if="!collapsed">
-              {{
-                status === 'online'
-                  ? 'Moteur connecté'
-                  : status === 'connecting'
-                    ? 'Connexion au moteur…'
-                    : 'Moteur injoignable'
-              }}
+            <span class="flex items-center justify-between gap-2">
+              <span class="text-muted">Chrome</span>
+              <span class="font-mono text-dimmed">{{ chromeState }}</span>
             </span>
-          </div>
+            <span class="mt-1 block truncate text-toned">
+              {{ chrome?.activity ?? 'Vinted et eBay' }}
+            </span>
+          </NuxtLink>
+
+          <NuxtLink
+            to="/compte"
+            class="flex items-center gap-2.5 rounded-md p-2 transition-colors hover:bg-elevated/50"
+            active-class="bg-elevated"
+            :aria-label="collapsed ? 'Mon compte' : undefined"
+          >
+            <span
+              class="flex size-8 shrink-0 items-center justify-center rounded-full bg-accented text-sm font-semibold text-highlighted"
+            >
+              {{ initial }}
+            </span>
+            <span v-if="!collapsed" class="min-w-0 flex-1">
+              <span class="block truncate text-sm font-medium text-highlighted">
+                {{ auth.user.value?.display_name ?? 'Mon compte' }}
+              </span>
+              <span class="flex items-center gap-1.5 text-xs text-dimmed">
+                <span
+                  class="size-1.5 shrink-0 rounded-full"
+                  :class="{
+                    'bg-success': status === 'online',
+                    'animate-pulse bg-warning': status === 'connecting',
+                    'bg-error': status === 'offline',
+                  }"
+                />
+                {{
+                  status === 'online'
+                    ? 'Moteur connecté'
+                    : status === 'connecting'
+                      ? 'Connexion au moteur…'
+                      : 'Moteur injoignable'
+                }}
+              </span>
+            </span>
+          </NuxtLink>
         </div>
       </template>
     </UDashboardSidebar>

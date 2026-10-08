@@ -1,24 +1,81 @@
 @import 'tailwindcss';
 @import '@nuxt/ui';
 
+/*
+ * Japanese titles fall back to the system's Japanese fonts: a web font covering kanji
+ * would weigh several megabytes in an app that must work offline.
+ */
 @theme {
-  --font-sans: 'Public Sans', system-ui, sans-serif;
+  --font-sans: 'Geist', system-ui, 'Yu Gothic UI', 'Meiryo', sans-serif;
+  --font-mono: 'Geist Mono', ui-monospace, 'Cascadia Mono', 'Yu Gothic UI', monospace;
 }
 
 /*
- * Vermilion, the red of the Mekiki seal: 500 is the logo's #C8372D. "static" keeps every
- * shade in the CSS: Nuxt UI uses them through variables Tailwind cannot see.
+ * Vermilion, the red of the Mekiki seal: 500 is the logo's #C8372D, 400 the lighter red
+ * that stays readable as text on the dark background. Ink is the warm dark grey of the
+ * interface. "static" keeps every shade in the CSS: Nuxt UI uses them through variables
+ * Tailwind cannot see.
  */
 @theme static {
   --color-vermilion-50: #fdf2f1;
   --color-vermilion-100: #fbe2df;
   --color-vermilion-200: #f6c3be;
-  --color-vermilion-300: #ee988f;
-  --color-vermilion-400: #e0645a;
+  --color-vermilion-300: #f59a8e;
+  --color-vermilion-400: #f0705f;
   --color-vermilion-500: #c8372d;
   --color-vermilion-600: #ab2c23;
   --color-vermilion-700: #8e251e;
   --color-vermilion-800: #75221c;
   --color-vermilion-900: #61211c;
   --color-vermilion-950: #350d0a;
+
+  --color-ink-50: #f7f5f1;
+  --color-ink-100: #f2efe8;
+  --color-ink-200: #e4e0d8;
+  --color-ink-300: #c9c4bb;
+  --color-ink-400: #a39e95;
+  --color-ink-500: #8a857d;
+  --color-ink-600: #5c5862;
+  --color-ink-700: #3a3842;
+  --color-ink-800: #26242c;
+  --color-ink-900: #17161c;
+  --color-ink-950: #0e0d11;
+}
+
+:root {
+  --ui-radius: 0.4375rem;
+}
+
+/* The app is dark only ("ink and seal"): every surface steps up from the page's near-black. */
+.dark {
+  --ui-bg: var(--color-ink-950);
+  --ui-bg-muted: var(--color-ink-900);
+  --ui-bg-elevated: #1d1c23;
+  --ui-bg-accented: var(--color-ink-800);
+  --ui-bg-inverted: var(--color-ink-100);
+  --ui-border: #2a2830;
+  --ui-border-muted: #222128;
+  --ui-border-accented: var(--color-ink-700);
+  --ui-border-inverted: var(--color-ink-100);
+  --ui-text-dimmed: var(--color-ink-500);
+  --ui-text-muted: var(--color-ink-400);
+  --ui-text-toned: var(--color-ink-300);
+  --ui-text: var(--color-ink-200);
+  --ui-text-highlighted: var(--color-ink-100);
+  --ui-text-inverted: var(--color-ink-950);
+
+  /* Gains in mint, losses and errors in orange: red already means "Mekiki" here. */
+  --ui-success: #4fd1a1;
+  --ui-error: #f59e66;
+  --ui-warning: #f2c14e;
+  --ui-info: #8aa4c8;
+}
+
+body {
+  background: var(--ui-bg);
+}
+
+/* Prices and quantities line up in columns. */
+.tabular-nums {
+  font-family: var(--font-mono);
 }

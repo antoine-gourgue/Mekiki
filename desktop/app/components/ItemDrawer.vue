@@ -53,11 +53,19 @@ const editOpen = ref(false)
 
 <template>
   <div class="flex h-full flex-col">
-    <DrawerHeader :title="item?.name ?? 'Carte'" :subtitle="subtitle" icon="i-lucide-layers" />
+    <DrawerHeader :title="item?.name ?? 'Carte'" :subtitle="subtitle" icon="i-lucide-layers">
+      <template v-if="item" #actions>
+        <UBadge
+          :color="ITEM_STATUS_COLORS[item.status]"
+          variant="soft"
+          :label="ITEM_STATUS_LABELS[item.status]"
+        />
+      </template>
+    </DrawerHeader>
 
     <div
       v-if="siblings && siblings.length > 1"
-      class="flex items-center justify-between border-b border-default px-4 py-2 sm:px-6"
+      class="flex items-center justify-between border-b border-default px-4 py-1.5 sm:px-6"
     >
       <UButton
         icon="i-lucide-chevron-left"
@@ -68,7 +76,7 @@ const editOpen = ref(false)
         :disabled="position <= 0"
         @click="go(-1)"
       />
-      <span class="text-sm text-muted tabular-nums">
+      <span class="text-xs text-dimmed tabular-nums">
         {{ position + 1 }} / {{ siblings.length }}
       </span>
       <UButton
@@ -92,54 +100,55 @@ const editOpen = ref(false)
       />
 
       <template v-else-if="item">
-        <div class="grid grid-cols-2 gap-2">
-          <template v-if="item.sale">
-            <UButton
-              icon="i-lucide-receipt"
-              label="Modifier la vente"
-              color="neutral"
-              variant="subtle"
-              block
-              class="col-span-2"
-              @click="saleOpen = true"
-            />
-          </template>
-          <template v-else>
-            <UButton
-              icon="i-lucide-tag"
-              :label="item.listing_platform ? 'Modifier l’annonce' : 'Mettre en vente'"
-              block
-              @click="listingOpen = true"
-            />
-            <UButton
-              icon="i-lucide-badge-euro"
-              label="Vendue"
-              color="neutral"
-              variant="subtle"
-              block
-              @click="saleOpen = true"
-            />
-          </template>
-        </div>
+        <section>
+          <ItemPhotos v-model="photos" :item-id="item.id" @changed="changed" />
+        </section>
 
-        <section class="space-y-2">
-          <div class="flex items-center justify-between">
-            <h3 class="text-xs font-semibold tracking-wider text-muted uppercase">
-              Vente et fiche
-            </h3>
-            <UBadge
-              :color="ITEM_STATUS_COLORS[item.status]"
-              variant="subtle"
-              :label="ITEM_STATUS_LABELS[item.status]"
-            />
-          </div>
+        <section class="space-y-2.5">
+          <h3 class="text-xs font-semibold tracking-[0.12em] text-dimmed uppercase">
+            Où la vendre ?
+          </h3>
+          <CardVerdictPanel :query="{ item_id: item.id }" />
+          <button
+            v-if="product"
+            type="button"
+            class="flex w-full items-center gap-3 rounded-lg bg-elevated px-3 py-2.5 text-left transition-colors hover:bg-accented"
+            @click="drawer.push({ kind: 'product', id: product.id_product })"
+          >
+            <UIcon name="i-lucide-chart-line" class="size-5 shrink-0 text-muted" />
+            <span class="min-w-0 flex-1">
+              <span class="block truncate text-sm font-medium text-highlighted">
+                {{ product.name }}
+              </span>
+              <span class="block truncate text-xs text-dimmed">{{ product.expansion_name }}</span>
+            </span>
+            <span class="text-right">
+              <span class="block font-semibold tabular-nums">
+                {{ formatCents(product.reference_cents) }}
+              </span>
+              <span class="block text-xs text-dimmed">Cardmarket</span>
+            </span>
+          </button>
+          <p v-else class="text-sm text-muted">
+            Aucun produit Cardmarket lié : modifiez la carte pour en choisir un.
+          </p>
+        </section>
+
+        <section class="space-y-2.5">
+          <h3 class="text-xs font-semibold tracking-[0.12em] text-dimmed uppercase">
+            Coût de revient
+          </h3>
+          <LandedCostBreakdown :cost="item.landed_cost" />
+        </section>
+
+        <section class="space-y-2.5">
+          <h3 class="text-xs font-semibold tracking-[0.12em] text-dimmed uppercase">Fiche</h3>
           <div class="grid grid-cols-2 gap-2">
             <InfoTile
               label="Prix d’achat"
               :value="formatYen(item.price_jpy)"
               :hint="SOURCE_LABELS[item.source_platform]"
             />
-            <InfoTile label="Coût de revient" :value="formatCents(item.landed_cost.total_cents)" />
             <InfoTile
               v-if="item.sale"
               label="Vendue"
@@ -156,7 +165,7 @@ const editOpen = ref(false)
             />
             <InfoTile
               :label="item.sale ? 'Marge' : 'Marge prévue'"
-              :value="formatCents(outcome?.margin_cents)"
+              :value="formatSignedCents(outcome?.margin_cents)"
               :value-class="outcome ? signClass(outcome.margin_cents) : undefined"
               :hint="outcome?.roi != null ? `ROI ${formatRatio(outcome.roi)}` : undefined"
             />
@@ -167,17 +176,17 @@ const editOpen = ref(false)
             />
             <button
               type="button"
-              class="text-left"
+              class="col-span-2 text-left"
               @click="(drawer.close(), navigateTo(`/lots/${item.lot_id}`))"
             >
               <InfoTile
-                label="Colis"
+                label="Lot"
                 :value="item.lot_label"
                 :hint="LOT_STATUS_LABELS[item.lot_status]"
               />
             </button>
           </div>
-          <div class="flex gap-2">
+          <div class="flex flex-wrap gap-1">
             <UButton
               icon="i-lucide-pencil"
               label="Modifier la carte"
@@ -198,39 +207,8 @@ const editOpen = ref(false)
           </div>
         </section>
 
-        <section class="space-y-2">
-          <h3 class="text-xs font-semibold tracking-wider text-muted uppercase">Où la vendre ?</h3>
-          <CardVerdictPanel :query="{ item_id: item.id }" />
-          <button
-            v-if="product"
-            type="button"
-            class="flex w-full items-center gap-3 rounded-md border border-default px-3 py-2 text-left hover:bg-elevated/50"
-            @click="drawer.push({ kind: 'product', id: product.id_product })"
-          >
-            <UIcon name="i-lucide-chart-line" class="size-5 shrink-0 text-muted" />
-            <span class="min-w-0 flex-1">
-              <span class="block truncate text-sm font-medium">{{ product.name }}</span>
-              <span class="block truncate text-xs text-muted">{{ product.expansion_name }}</span>
-            </span>
-            <span class="text-right">
-              <span class="block font-semibold tabular-nums">
-                {{ formatCents(product.reference_cents) }}
-              </span>
-              <span class="block text-xs text-muted">Cardmarket</span>
-            </span>
-          </button>
-          <p v-else class="text-sm text-muted">
-            Aucun produit Cardmarket lié : modifiez la carte pour en choisir un.
-          </p>
-        </section>
-
-        <section class="space-y-2">
-          <h3 class="text-xs font-semibold tracking-wider text-muted uppercase">Photos</h3>
-          <ItemPhotos v-model="photos" :item-id="item.id" @changed="changed" />
-        </section>
-
         <section v-if="item.notes" class="space-y-2">
-          <h3 class="text-xs font-semibold tracking-wider text-muted uppercase">Notes</h3>
+          <h3 class="text-xs font-semibold tracking-[0.12em] text-dimmed uppercase">Notes</h3>
           <p class="text-sm whitespace-pre-line">{{ item.notes }}</p>
         </section>
       </template>
@@ -238,6 +216,35 @@ const editOpen = ref(false)
       <div v-else class="flex justify-center py-12">
         <UIcon name="i-lucide-loader-circle" class="size-6 animate-spin text-muted" />
       </div>
+    </div>
+
+    <div v-if="item" class="flex gap-2.5 border-t border-default px-4 py-4 sm:px-6">
+      <UButton
+        v-if="item.sale"
+        icon="i-lucide-receipt"
+        label="Modifier la vente"
+        color="neutral"
+        variant="outline"
+        size="xl"
+        block
+        @click="saleOpen = true"
+      />
+      <template v-else>
+        <UButton
+          label="Vendue"
+          color="neutral"
+          variant="outline"
+          size="xl"
+          class="flex-1 justify-center"
+          @click="saleOpen = true"
+        />
+        <UButton
+          :label="item.listing_platform ? 'Modifier l’annonce' : 'Mettre en vente'"
+          size="xl"
+          class="flex-[2] justify-center"
+          @click="listingOpen = true"
+        />
+      </template>
     </div>
 
     <ListingModal

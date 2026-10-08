@@ -18,6 +18,17 @@ export function formatCents(cents: number | null | undefined): string {
   return cents == null ? EMPTY : eur.format(cents / 100)
 }
 
+const signedEur = new Intl.NumberFormat('fr-FR', {
+  style: 'currency',
+  currency: 'EUR',
+  signDisplay: 'exceptZero',
+})
+
+/** A margin with its sign (+81,20 €, −24,30 €): gains and losses read apart without color. */
+export function formatSignedCents(cents: number | null | undefined): string {
+  return cents == null ? EMPTY : signedEur.format(cents / 100)
+}
+
 export function formatYen(yen: number | null | undefined): string {
   return yen == null ? EMPTY : jpy.format(yen)
 }
@@ -61,7 +72,7 @@ export function todayIso(): string {
   return toIsoDate(new Date())
 }
 
-/** Text color for a signed amount: margins and ROI read red below zero. */
+/** Text color for a signed amount: gains in the success color, losses in the error color. */
 export function signClass(value: number | null | undefined): string {
   if (value == null || value === 0) return ''
   return value > 0 ? 'text-success' : 'text-error'

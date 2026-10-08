@@ -6,7 +6,7 @@ const drawer = useDrawer()
 </script>
 
 <template>
-  <div class="flex items-center gap-3 border-b border-default px-4 py-3 sm:px-6">
+  <div class="flex items-start gap-3 border-b border-default px-4 py-4 sm:px-6">
     <UButton
       v-if="drawer.stack.value.length > 1"
       icon="i-lucide-arrow-left"
@@ -15,14 +15,16 @@ const drawer = useDrawer()
       aria-label="Retour"
       @click="drawer.back()"
     />
-    <div class="flex size-9 shrink-0 items-center justify-center rounded-md bg-elevated">
-      <UIcon :name="icon" class="size-5 text-muted" />
-    </div>
     <div class="min-w-0 flex-1">
-      <p v-if="subtitle" class="truncate text-xs text-muted" :title="subtitle">{{ subtitle }}</p>
-      <h2 class="truncate font-semibold text-highlighted" :title="title">{{ title }}</h2>
+      <div class="flex min-w-0 items-center gap-2.5">
+        <UIcon :name="icon" class="size-4 shrink-0 text-dimmed" />
+        <h2 class="truncate text-lg font-semibold text-highlighted" :title="title">{{ title }}</h2>
+        <slot name="actions" />
+      </div>
+      <p v-if="subtitle" class="mt-0.5 truncate text-sm text-dimmed" :title="subtitle">
+        {{ subtitle }}
+      </p>
     </div>
-    <slot name="actions" />
     <UButton
       icon="i-lucide-x"
       color="neutral"

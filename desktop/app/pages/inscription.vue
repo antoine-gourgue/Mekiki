@@ -65,32 +65,29 @@ async function submit(event: FormSubmitEvent<RegisterRequest>) {
 </script>
 
 <template>
-  <UContainer class="flex justify-center py-16">
-    <UPageCard class="w-full max-w-md">
-      <UAuthForm
-        icon="i-lucide-user-plus"
-        title="Créer un compte"
-        description="Chaque revendeur a ses propres lots, favoris et paramètres."
-        :fields="fields"
-        :validate="validate"
-        :submit="{ label: 'Créer mon compte', block: true }"
-        :loading="loading"
-        @submit="submit"
-      >
-        <template #validation>
-          <UAlert
-            v-if="failure"
-            color="error"
-            variant="subtle"
-            icon="i-lucide-circle-alert"
-            :title="failure"
-          />
-        </template>
-        <template #footer>
-          Déjà un compte ?
-          <ULink to="/connexion" class="font-medium text-primary">Se connecter</ULink>
-        </template>
-      </UAuthForm>
-    </UPageCard>
-  </UContainer>
+  <AuthShell>
+    <UAuthForm
+      title="Créer un compte"
+      description="Chaque revendeur a ses propres lots, favoris et paramètres."
+      :fields="fields"
+      :validate="validate"
+      :submit="{ label: 'Créer mon compte', block: true, size: 'xl' }"
+      :loading="loading"
+      @submit="submit"
+    >
+      <template #validation>
+        <UAlert
+          v-if="failure"
+          color="error"
+          variant="subtle"
+          icon="i-lucide-circle-alert"
+          :title="failure"
+        />
+      </template>
+      <template #footer>
+        Déjà un compte ?
+        <ULink to="/connexion" class="font-medium text-primary">Se connecter</ULink>
+      </template>
+    </UAuthForm>
+  </AuthShell>
 </template>

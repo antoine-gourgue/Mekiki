@@ -79,7 +79,8 @@ const SHOWN_LISTINGS = 8
       <div class="grid gap-2 sm:grid-cols-2">
         <UButton
           color="neutral"
-          variant="subtle"
+          variant="outline"
+          size="md"
           icon="i-lucide-badge-euro"
           label="Ventes réussies sur eBay"
           trailing-icon="i-lucide-external-link"
@@ -88,7 +89,8 @@ const SHOWN_LISTINGS = 8
         />
         <UButton
           color="neutral"
-          variant="subtle"
+          variant="outline"
+          size="md"
           icon="i-lucide-chart-column"
           label="Historique Terapeak (90 jours)"
           trailing-icon="i-lucide-external-link"
@@ -97,7 +99,8 @@ const SHOWN_LISTINGS = 8
         />
         <UButton
           color="neutral"
-          variant="subtle"
+          variant="outline"
+          size="md"
           icon="i-lucide-tag"
           label="En vente sur eBay"
           trailing-icon="i-lucide-external-link"
@@ -106,7 +109,8 @@ const SHOWN_LISTINGS = 8
         />
         <UButton
           color="neutral"
-          variant="subtle"
+          variant="outline"
+          size="md"
           icon="i-lucide-shirt"
           label="En vente sur Vinted"
           trailing-icon="i-lucide-external-link"
@@ -114,28 +118,20 @@ const SHOWN_LISTINGS = 8
           @click="openExternal(prices.links.vinted)"
         />
       </div>
-      <p class="text-xs text-muted">
+      <p class="text-xs text-dimmed">
         eBay et Vinted n’ouvrent pas leurs ventes passées aux logiciels : ces pages s’ouvrent dans
         votre navigateur (les ventes réussies eBay demandent d’être connecté).
       </p>
 
       <UAlert
-        v-if="ebay && !ebay.configured"
-        color="neutral"
-        variant="subtle"
-        icon="i-lucide-key-round"
-        title="Annonces eBay en direct non activées"
-        description="Elles demandent les clés d’une application eBay développeur, à renseigner sur le moteur (MEKIKI_EBAY_CLIENT_ID et MEKIKI_EBAY_CLIENT_SECRET)."
-      />
-      <UAlert
-        v-else-if="ebay?.error"
+        v-if="ebay?.configured && ebay.error"
         color="warning"
         variant="subtle"
         icon="i-lucide-triangle-alert"
         title="eBay n’a pas répondu"
         :description="ebay.error"
       />
-      <template v-else-if="ebay">
+      <template v-else-if="ebay?.configured">
         <div class="grid grid-cols-3 gap-2">
           <StatTile label="Prix médian" :value="formatCents(ebay.median_cents)" />
           <StatTile label="Moins cher" :value="formatCents(ebay.min_cents)" />

@@ -166,56 +166,95 @@ function menu(deal: Deal): DropdownMenuItem[] {
 }
 
 const newCount = computed(() => (deals.value ?? []).filter((d) => d.triage === 'new').length)
+
+type View = 'good' | 'all' | 'dismissed'
+const view = computed<View>({
+  get: () => (showDismissed.value ? 'dismissed' : goodOnly.value ? 'good' : 'all'),
+  set: (value) => {
+    showDismissed.value = value === 'dismissed'
+    goodOnly.value = value === 'good'
+  },
+})
+const viewItems = computed(() => [
+  { value: 'good' as View, label: `ROI ≥ ${Math.round(targetRoi.value * 100)} %` },
+  { value: 'all' as View, label: 'Toutes' },
+  { value: 'dismissed' as View, label: 'Ignorées' },
+])
 </script>
 
 <template>
   <UDashboardPanel id="deals">
     <template #header>
-      <UDashboardNavbar title="Bonnes affaires">
-        <template #leading><UDashboardSidebarCollapse /></template>
+      <PageNavbar
+        title="Bonnes affaires"
+        description="Les annonces des cartes que vous suivez, chiffrées une par une."
+      >
         <template #right>
-          <span v-if="scan" class="hidden text-xs text-muted md:inline">
-            <template v-if="scan.running">Scan en cours…</template>
-            <template v-else-if="scan.last_finished_at">
-              Dernier scan {{ formatDateTime(scan.last_finished_at) }}
-            </template>
-            <template v-if="scan.enabled && scan.next_run_at && !scan.running">
-              · prochain {{ formatDateTime(scan.next_run_at) }}
-            </template>
-          </span>
           <UButton
-            icon="i-lucide-radar"
+            v-if="newCount"
+            color="neutral"
+            variant="outline"
+            :label="`Tout marquer comme vu (${newCount})`"
+            @click="markAllSeen"
+          />
+          <UButton
+            icon="i-lucide-refresh-cw"
             label="Scanner maintenant"
             :loading="scan?.running"
             :disabled="!cards?.length"
             @click="runScan"
           />
         </template>
-      </UDashboardNavbar>
-      <UDashboardToolbar>
-        <template #left>
-          <USelect v-model="cardFilter" :items="cardItems" class="w-56" />
-          <USwitch
-            v-model="goodOnly"
-            :disabled="showDismissed"
-            :label="`ROI ≥ ${Math.round(targetRoi * 100)} %`"
-          />
-          <USwitch v-model="showDismissed" label="Ignorées" />
-        </template>
-        <template #right>
-          <UButton
-            v-if="newCount"
-            color="neutral"
-            variant="ghost"
-            size="sm"
-            :label="`Tout marquer comme vu (${newCount})`"
-            @click="markAllSeen"
-          />
-        </template>
-      </UDashboardToolbar>
+      </PageNavbar>
     </template>
 
     <template #body>
+      <div
+        v-if="scan"
+        class="flex flex-wrap items-center gap-x-5 gap-y-1 rounded-lg border border-default bg-[#121116] px-4 py-3 text-sm text-muted"
+      >
+        <span class="flex items-center gap-2 text-highlighted">
+          <span
+            class="size-2 rounded-full"
+            :class="
+              scan.running ? 'animate-pulse bg-primary' : scan.enabled ? 'bg-success' : 'bg-ink-500'
+            "
+          />
+          {{
+            scan.running
+              ? 'Scan en cours…'
+              : scan.enabled
+                ? 'Scanner automatique'
+                : 'Scanner manuel'
+          }}
+        </span>
+        <span v-if="scan.last_finished_at && !scan.running">
+          dernier passage {{ formatDateTime(scan.last_finished_at) }}
+        </span>
+        <span
+          v-if="scan.enabled && scan.next_run_at && !scan.running"
+          class="ms-auto font-mono text-xs text-dimmed"
+        >
+          prochain {{ formatDateTime(scan.next_run_at) }}
+        </span>
+      </div>
+
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <SegmentedControl v-model="view" :items="viewItems" label="Annonces affichées" />
+        <div v-if="(cards?.length ?? 0) > 1" class="flex flex-wrap gap-2">
+          <UButton
+            v-for="item in cardItems"
+            :key="item.value"
+            :label="item.label"
+            size="sm"
+            color="neutral"
+            :variant="cardFilter === item.value ? 'solid' : 'outline'"
+            class="rounded-full"
+            @click="cardFilter = item.value"
+          />
+        </div>
+      </div>
+
       <UAlert
         v-if="scan?.last_error"
         color="warning"
@@ -237,7 +276,7 @@ const newCount = computed(() => (deals.value ?? []).filter((d) => d.triage === '
         v-else-if="cards && !cards.length"
         icon="i-lucide-eye"
         title="Aucune carte suivie"
-        description="Choisissez les cartes à surveiller : le scanner les cherche sur Mercari et Yahoo et calcule la marge de chaque annonce."
+        description="Choisissez les cartes à surveiller : le scanner les cherche sur Mercari et Rakuma et calcule la marge de chaque annonce."
         :actions="[{ label: 'Suivre des cartes', to: '/suivi' }]"
       />
 
@@ -247,21 +286,17 @@ const newCount = computed(() => (deals.value ?? []).filter((d) => d.triage === '
         :title="goodOnly ? 'Aucune bonne affaire pour l’instant' : 'Aucune annonce'"
         :description="
           goodOnly
-            ? 'Aucune annonce n’atteint le ROI visé. Désactivez le filtre pour voir toutes les annonces trouvées.'
+            ? 'Aucune annonce n’atteint le ROI visé. Choisissez « Toutes » pour voir toutes les annonces trouvées.'
             : 'Lancez un scan pour chercher les cartes suivies.'
         "
       />
 
-      <div
-        v-else
-        class="grid gap-3 lg:grid-cols-2 2xl:grid-cols-3"
-        :class="{ 'opacity-60': status === 'pending' }"
-      >
+      <div v-else class="space-y-2.5" :class="{ 'opacity-60': status === 'pending' }">
         <DealCard
           v-for="deal in deals ?? []"
           :key="deal.id"
           :title="deal.title"
-          :subtitle="deal.card_name"
+          :heading="deal.card_name"
           :source="deal.source"
           :price-jpy="deal.price_jpy"
           :shipping-included="deal.shipping_included"

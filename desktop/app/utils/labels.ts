@@ -37,7 +37,7 @@ export const LOT_STATUS_LABELS: Record<LotStatus, string> = {
 
 export const LOT_STATUS_COLORS: Record<LotStatus, BadgeProps['color']> = {
   purchasing: 'neutral',
-  shipped: 'info',
+  shipped: 'primary',
   received: 'success',
 }
 
@@ -51,7 +51,7 @@ export const ITEM_STATUS_LABELS: Record<ItemStatus, string> = {
 export const ITEM_STATUS_COLORS: Record<ItemStatus, BadgeProps['color']> = {
   incoming: 'info',
   in_stock: 'neutral',
-  listed: 'warning',
+  listed: 'primary',
   sold: 'success',
 }
 

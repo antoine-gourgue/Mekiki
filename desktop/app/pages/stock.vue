@@ -9,24 +9,44 @@ const confirm = useConfirm()
 const statusFilter = ref<ItemStatus | 'all'>('all')
 const gameFilter = ref<Game | 'all'>('all')
 
-const statusTabs = [
-  { value: 'all', label: 'Tout' },
-  ...selectItems(ITEM_STATUS_LABELS).filter((item) => item.value !== 'sold'),
-  { value: 'sold', label: 'Vendues' },
-]
+const term = ref('')
 const gameItems = [{ value: 'all', label: 'Tous les jeux' }, ...selectItems(GAME_LABELS)]
 
 const query = computed(() => ({
-  status: statusFilter.value === 'all' ? undefined : statusFilter.value,
   game: gameFilter.value === 'all' ? undefined : gameFilter.value,
 }))
 
+// The whole stock is loaded once: filtering it here gives the count of every status.
 const {
-  data: items,
+  data: all,
   status,
   error,
   refresh,
 } = useAsyncData('inventory', () => engine.inventory(query.value), { watch: [query] })
+
+const statusTabs = computed(() => {
+  const rows = all.value ?? []
+  const count = (value: ItemStatus) => rows.filter((item) => item.status === value).length
+  return [
+    { value: 'all' as const, label: 'Toutes', count: rows.length },
+    ...selectItems(ITEM_STATUS_LABELS)
+      .filter((item) => item.value !== 'sold')
+      .map((item) => ({ ...item, count: count(item.value) })),
+    { value: 'sold' as const, label: 'Vendues', count: count('sold') },
+  ]
+})
+
+const items = computed(() => {
+  const needle = term.value.trim().toLowerCase()
+  return (all.value ?? []).filter(
+    (item) =>
+      (statusFilter.value === 'all' || item.status === statusFilter.value) &&
+      (!needle ||
+        [item.name, item.card_number, item.set_code, item.lot_label]
+          .filter(Boolean)
+          .some((text) => text!.toLowerCase().includes(needle))),
+  )
+})
 const { data: lots } = useAsyncData('lots', () => engine.listLots())
 
 const selected = ref<Item | null>(null)
@@ -41,10 +61,10 @@ function open(item: Item, modal: 'listing' | 'sale' | 'edit') {
   editOpen.value = modal === 'edit'
 }
 
-/** "Pokémon · SV2A 201/165 · Colis de mai" */
+/** "SV2A 201/165 · SAR" */
 function cardLine(item: Item) {
   const number = [item.set_code?.toUpperCase(), item.card_number].filter(Boolean).join(' ')
-  return [GAME_LABELS[item.game], number, item.lot_label].filter(Boolean).join(' · ')
+  return [number, item.rarity].filter(Boolean).join(' · ') || GAME_LABELS[item.game]
 }
 
 // The side panel walks through the cards in the order shown.
@@ -98,17 +118,19 @@ function outlook(item: Item) {
   return item.sale?.breakdown ?? item.listing_projection
 }
 
+const RIGHT = { class: { th: 'text-right', td: 'text-right' } }
 const columns: TableColumn<Item>[] = [
   { accessorKey: 'name', header: 'Carte' },
+  { accessorKey: 'lot_label', header: 'Lot' },
+  { id: 'landed', header: 'Coût de revient', meta: RIGHT },
+  { id: 'price', header: 'Prix', meta: RIGHT },
+  { id: 'margin', header: 'Marge', meta: RIGHT },
   { accessorKey: 'status', header: 'Statut' },
-  { id: 'landed', header: 'Coût de revient' },
-  { id: 'price', header: 'Prix' },
-  { id: 'margin', header: 'Marge' },
   { id: 'actions', header: '' },
 ]
 
 const totals = computed(() => {
-  const rows = items.value ?? []
+  const rows = (all.value ?? []).filter((item) => item.status !== 'sold')
   return {
     count: rows.length,
     cost: rows.reduce((sum, item) => sum + item.landed_cost.total_cents, 0),
@@ -119,17 +141,21 @@ const totals = computed(() => {
 <template>
   <UDashboardPanel id="stock">
     <template #header>
-      <UDashboardNavbar title="Stock">
-        <template #leading><UDashboardSidebarCollapse /></template>
-      </UDashboardNavbar>
-      <UDashboardToolbar>
-        <template #left>
-          <UTabs v-model="statusFilter" :items="statusTabs" :content="false" size="sm" />
-        </template>
+      <PageNavbar
+        title="Stock"
+        :description="`${totals.count} carte${totals.count > 1 ? 's' : ''} non vendue${totals.count > 1 ? 's' : ''} · ${formatCents(totals.cost)} au coût de revient`"
+      >
         <template #right>
-          <USelect v-model="gameFilter" :items="gameItems" class="w-40" />
+          <UInput
+            v-model="term"
+            icon="i-lucide-search"
+            placeholder="Filtrer par nom ou numéro"
+            aria-label="Filtrer le stock"
+            class="w-64"
+          />
+          <USelect v-model="gameFilter" :items="gameItems" aria-label="Jeu" class="w-40" />
         </template>
-      </UDashboardToolbar>
+      </PageNavbar>
     </template>
 
     <template #body>
@@ -143,111 +169,124 @@ const totals = computed(() => {
       />
 
       <template v-else>
-        <p class="text-sm text-muted">
-          {{ totals.count }} carte{{ totals.count > 1 ? 's' : '' }} · coût de revient
-          {{ formatCents(totals.cost) }}
-        </p>
+        <SegmentedControl
+          v-model="statusFilter"
+          :items="statusTabs"
+          label="Statut des cartes"
+          class="self-start"
+        />
 
-        <UTable
-          :data="items ?? []"
-          :columns="columns"
-          :loading="status === 'pending'"
-          empty="Aucune carte ne correspond à ces filtres."
-        >
-          <template #name-cell="{ row }">
-            <button type="button" class="text-left" @click="showItem(row.original)">
-              <p class="font-medium text-highlighted hover:underline">{{ row.original.name }}</p>
-              <p class="text-xs text-muted">{{ cardLine(row.original) }}</p>
-            </button>
-          </template>
-          <template #status-cell="{ row }">
-            <UBadge
-              :color="ITEM_STATUS_COLORS[row.original.status]"
-              variant="subtle"
-              :label="ITEM_STATUS_LABELS[row.original.status]"
-            />
-          </template>
-          <template #landed-cell="{ row }">
-            <UPopover mode="hover" :content="{ side: 'left' }">
-              <span class="cursor-help tabular-nums underline decoration-dotted">
-                {{ formatCents(row.original.landed_cost.total_cents) }}
-              </span>
-              <template #content>
-                <div class="w-72 p-3">
-                  <LandedCostBreakdown :cost="row.original.landed_cost" />
-                </div>
-              </template>
-            </UPopover>
-          </template>
-          <template #price-cell="{ row }">
-            <template v-if="row.original.sale">
-              <span class="tabular-nums">{{
-                formatCents(row.original.sale.sale_price_cents)
-              }}</span>
-              <span class="block text-xs text-muted">
-                {{ PLATFORM_LABELS[row.original.sale.platform] }} ·
-                {{ formatDate(row.original.sale.sold_on) }}
-              </span>
+        <UCard :ui="{ body: 'p-0 sm:p-0' }">
+          <UTable
+            :data="items"
+            :columns="columns"
+            :loading="status === 'pending'"
+            empty="Aucune carte ne correspond à ces filtres."
+            :ui="{ tr: 'cursor-pointer' }"
+            @select="(_event, row) => showItem(row.original)"
+          >
+            <template #name-cell="{ row }">
+              <p class="font-medium text-highlighted">{{ row.original.name }}</p>
+              <p class="text-xs text-dimmed">{{ cardLine(row.original) }}</p>
             </template>
-            <template v-else-if="row.original.listing_platform">
-              <span class="tabular-nums">
-                {{ formatCents(row.original.listing_price_cents) }}
-              </span>
-              <span class="block text-xs text-muted">
-                {{ PLATFORM_LABELS[row.original.listing_platform] }}
-              </span>
+            <template #lot_label-cell="{ row }">
+              <span class="text-muted">{{ row.original.lot_label }}</span>
             </template>
-            <span v-else class="text-muted">—</span>
-          </template>
-          <template #margin-cell="{ row }">
-            <UPopover v-if="outlook(row.original)" mode="hover" :content="{ side: 'left' }">
-              <span
-                class="cursor-help font-medium tabular-nums underline decoration-dotted"
-                :class="signClass(outlook(row.original)!.margin_cents)"
-              >
-                {{ formatCents(outlook(row.original)!.margin_cents) }}
-              </span>
-              <span class="block text-xs text-muted">
-                {{ row.original.sale ? 'réelle' : 'prévue' }} · ROI
-                {{ formatRatio(outlook(row.original)!.roi) }}
-              </span>
-              <template #content>
-                <div class="w-72 p-3">
-                  <SaleBreakdownList :sale="outlook(row.original)!" />
-                </div>
+            <template #status-cell="{ row }">
+              <UBadge
+                :color="ITEM_STATUS_COLORS[row.original.status]"
+                variant="soft"
+                :label="
+                  row.original.status === 'listed' && row.original.listing_platform
+                    ? `En vente · ${PLATFORM_LABELS[row.original.listing_platform]}`
+                    : ITEM_STATUS_LABELS[row.original.status]
+                "
+              />
+            </template>
+            <template #landed-cell="{ row }">
+              <UPopover mode="hover" :content="{ side: 'left' }">
+                <span
+                  class="cursor-help tabular-nums underline decoration-dotted underline-offset-2"
+                >
+                  {{ formatCents(row.original.landed_cost.total_cents) }}
+                </span>
+                <template #content>
+                  <div class="w-72 p-3">
+                    <LandedCostBreakdown :cost="row.original.landed_cost" />
+                  </div>
+                </template>
+              </UPopover>
+            </template>
+            <template #price-cell="{ row }">
+              <template v-if="row.original.sale">
+                <span class="tabular-nums">{{
+                  formatCents(row.original.sale.sale_price_cents)
+                }}</span>
+                <span class="block text-xs text-dimmed">
+                  {{ PLATFORM_LABELS[row.original.sale.platform] }} ·
+                  {{ formatDate(row.original.sale.sold_on) }}
+                </span>
               </template>
-            </UPopover>
-            <span v-else class="text-muted">—</span>
-          </template>
-          <template #actions-cell="{ row }">
-            <div class="flex justify-end gap-1">
-              <UButton
-                v-if="row.original.status === 'in_stock'"
-                size="sm"
-                color="neutral"
-                variant="outline"
-                label="Mettre en vente"
-                @click="open(row.original, 'listing')"
-              />
-              <UButton
-                v-else-if="row.original.status === 'listed'"
-                size="sm"
-                color="neutral"
-                variant="outline"
-                label="Vendue"
-                @click="open(row.original, 'sale')"
-              />
-              <UDropdownMenu :items="actions(row.original)" :content="{ align: 'end' }">
+              <template v-else-if="row.original.listing_platform">
+                <span class="tabular-nums">{{
+                  formatCents(row.original.listing_price_cents)
+                }}</span>
+                <span class="block text-xs text-dimmed">
+                  {{ PLATFORM_LABELS[row.original.listing_platform] }}
+                </span>
+              </template>
+              <span v-else class="text-dimmed">—</span>
+            </template>
+            <template #margin-cell="{ row }">
+              <UPopover v-if="outlook(row.original)" mode="hover" :content="{ side: 'left' }">
+                <span
+                  class="cursor-help font-medium tabular-nums underline decoration-dotted underline-offset-2"
+                  :class="signClass(outlook(row.original)!.margin_cents)"
+                >
+                  {{ formatSignedCents(outlook(row.original)!.margin_cents) }}
+                </span>
+                <span class="block text-xs text-dimmed">
+                  {{ row.original.sale ? 'réelle' : 'prévue' }} · ROI
+                  {{ formatRatio(outlook(row.original)!.roi) }}
+                </span>
+                <template #content>
+                  <div class="w-72 p-3">
+                    <SaleBreakdownList :sale="outlook(row.original)!" />
+                  </div>
+                </template>
+              </UPopover>
+              <span v-else class="text-dimmed">—</span>
+            </template>
+            <template #actions-cell="{ row }">
+              <div class="flex justify-end gap-1" @click.stop>
                 <UButton
-                  icon="i-lucide-ellipsis-vertical"
-                  color="neutral"
-                  variant="ghost"
-                  aria-label="Actions"
+                  v-if="row.original.status === 'in_stock'"
+                  size="sm"
+                  variant="soft"
+                  label="Mettre en vente"
+                  @click="open(row.original, 'listing')"
                 />
-              </UDropdownMenu>
-            </div>
-          </template>
-        </UTable>
+                <UButton
+                  v-else-if="row.original.status === 'listed'"
+                  size="sm"
+                  color="neutral"
+                  variant="outline"
+                  label="Vendue"
+                  @click="open(row.original, 'sale')"
+                />
+                <UDropdownMenu :items="actions(row.original)" :content="{ align: 'end' }">
+                  <UButton
+                    icon="i-lucide-ellipsis"
+                    size="sm"
+                    color="neutral"
+                    variant="ghost"
+                    aria-label="Actions"
+                  />
+                </UDropdownMenu>
+              </div>
+            </template>
+          </UTable>
+        </UCard>
       </template>
 
       <ListingModal

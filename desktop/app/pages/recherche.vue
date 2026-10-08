@@ -115,13 +115,17 @@ const trackInitial = computed<Partial<TrackedCardCreate>>(() => ({
 }))
 
 const gameItems = selectItems(GAME_LABELS)
+// Labels only: the Yahoo descriptions would crowd a single line of checkboxes.
+const sourceItems = SCANNABLE_SOURCE_ITEMS.map(({ value, label }) => ({ value, label }))
 </script>
 
 <template>
   <UDashboardPanel id="search">
     <template #header>
-      <UDashboardNavbar title="Recherche">
-        <template #leading><UDashboardSidebarCollapse /></template>
+      <PageNavbar
+        title="Recherche"
+        description="Chaque annonce est chiffrée comme une carte d’un colis type : coût de revient, revente, marge et ROI."
+      >
         <template #right>
           <UButton
             v-if="response"
@@ -132,162 +136,168 @@ const gameItems = selectItems(GAME_LABELS)
             @click="tracking = true"
           />
         </template>
-      </UDashboardNavbar>
+      </PageNavbar>
     </template>
 
     <template #body>
-      <div class="grid gap-6 xl:grid-cols-[24rem_minmax(0,1fr)]">
-        <UCard>
-          <form class="space-y-4" @submit.prevent="search">
-            <UFormField
-              label="Mots-clés"
-              required
-              help="En japonais ou un numéro : リザードン SAR, 201/165, OP05-119…"
-            >
-              <UInput
-                v-model="form.query"
-                autofocus
-                placeholder="リザードン 201/165"
-                class="w-full"
-              />
-            </UFormField>
-            <div class="grid grid-cols-2 gap-4">
-              <UFormField label="Jeu">
-                <USelect v-model="form.game" :items="gameItems" class="w-full" />
-              </UFormField>
-              <UFormField label="Numéro exigé">
-                <UInput v-model="form.card_number" placeholder="201/165" class="w-full" />
-              </UFormField>
-              <UFormField label="Mots obligatoires">
-                <UInput v-model="form.required_keywords" placeholder="SAR" class="w-full" />
-              </UFormField>
-              <UFormField label="Mots exclus">
-                <UInput v-model="form.excluded_keywords" placeholder="傷" class="w-full" />
-              </UFormField>
-            </div>
-            <UFormField label="Sites">
-              <UCheckboxGroup
-                v-model="form.sources"
-                :items="SCANNABLE_SOURCE_ITEMS"
-                orientation="horizontal"
-              />
-            </UFormField>
-
-            <USeparator label="Prix de revente" />
-            <ProductPicker v-model="product" :game="form.game" />
-            <UFormField v-if="!product" label="Ou un prix visé">
-              <MoneyInput v-model="form.expected_sale_cents" currency="EUR" />
-            </UFormField>
-
+      <UCard :ui="{ body: 'sm:p-5' }">
+        <form class="space-y-4" @submit.prevent="search">
+          <div class="flex flex-wrap gap-2.5">
+            <UInput
+              v-model="form.query"
+              autofocus
+              size="xl"
+              icon="i-lucide-search"
+              placeholder="Dracaufeu ex 201/165, リザードン SAR, OP05-119…"
+              aria-label="Mots-clés"
+              class="min-w-0 flex-[1_1_420px]"
+            />
+            <USelect
+              v-model="form.game"
+              :items="gameItems"
+              size="xl"
+              class="w-40"
+              aria-label="Jeu"
+            />
             <UButton
               type="submit"
-              block
-              icon="i-lucide-search"
+              size="xl"
               label="Chercher"
               :loading="searching"
               :disabled="!form.query.trim() || !form.sources.length"
             />
-            <p class="text-xs text-muted">
-              Une recherche interroge chaque site l’un après l’autre, en laissant quelques secondes
-              entre deux requêtes.
+          </div>
+          <p class="text-xs text-dimmed">
+            Un nom en français ou en anglais est cherché en japonais. Chaque site est interrogé l’un
+            après l’autre, quelques secondes entre deux requêtes.
+          </p>
+
+          <div class="grid gap-4 border-t border-default pt-4 sm:grid-cols-3">
+            <UFormField label="Numéro exigé">
+              <UInput v-model="form.card_number" placeholder="201/165" class="w-full" />
+            </UFormField>
+            <UFormField label="Mots obligatoires">
+              <UInput v-model="form.required_keywords" placeholder="SAR" class="w-full" />
+            </UFormField>
+            <UFormField label="Mots exclus">
+              <UInput v-model="form.excluded_keywords" placeholder="傷" class="w-full" />
+            </UFormField>
+          </div>
+
+          <div class="grid gap-4 sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+            <ProductPicker v-model="product" :game="form.game" />
+            <UFormField v-if="!product" label="Ou un prix de revente visé">
+              <MoneyInput v-model="form.expected_sale_cents" currency="EUR" />
+            </UFormField>
+          </div>
+
+          <UFormField label="Sites">
+            <UCheckboxGroup
+              v-model="form.sources"
+              :items="sourceItems"
+              orientation="horizontal"
+              :ui="{ fieldset: 'flex-wrap gap-x-5 gap-y-2' }"
+            />
+          </UFormField>
+        </form>
+      </UCard>
+
+      <UAlert
+        v-for="(message, source) in response?.errors ?? {}"
+        :key="source"
+        color="warning"
+        variant="subtle"
+        icon="i-lucide-triangle-alert"
+        :title="`${SOURCE_LABELS[source as ScannableSource] ?? source} indisponible`"
+        :description="message"
+      />
+
+      <UEmpty
+        v-if="!response"
+        icon="i-lucide-search"
+        title="Cherchez une carte sur Mercari et Rakuma"
+        description="Tapez un nom en français, en anglais ou en japonais, avec son numéro si vous le connaissez."
+      />
+
+      <template v-else>
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div class="min-w-0">
+            <p class="font-semibold text-highlighted">
+              {{ visible.length }} annonce{{ visible.length > 1 ? 's' : '' }}
+              <span v-if="response.expected_sale_cents != null" class="font-normal text-muted">
+                · revente estimée {{ formatCents(response.expected_sale_cents) }}
+              </span>
             </p>
-          </form>
-        </UCard>
-
-        <div class="space-y-3">
-          <UAlert
-            v-for="(message, source) in response?.errors ?? {}"
-            :key="source"
-            color="warning"
-            variant="subtle"
-            icon="i-lucide-triangle-alert"
-            :title="`${SOURCE_LABELS[source as ScannableSource] ?? source} indisponible`"
-            :description="message"
-          />
-
-          <div
-            v-if="response && Object.keys(response.neokyo_search_urls).length"
-            class="flex flex-wrap items-center gap-2 text-sm"
-          >
-            <span class="text-muted">Même recherche sur Neokyo :</span>
+            <p
+              v-if="response.searched_query && response.searched_query !== form.query.trim()"
+              class="mt-1 flex items-center gap-2 text-sm text-muted"
+            >
+              Cherché en japonais
+              <span class="rounded-md bg-accented px-2 py-0.5 text-highlighted">
+                {{ response.searched_query }}
+              </span>
+            </p>
+            <p v-else-if="response.expected_sale_cents == null" class="mt-1 text-sm text-muted">
+              Indiquez un prix de revente pour voir les marges.
+            </p>
+          </div>
+          <div class="flex flex-wrap items-center gap-2">
             <UButton
               v-for="(url, source) in response.neokyo_search_urls"
               :key="source"
-              size="xs"
               color="neutral"
-              variant="outline"
-              icon="i-lucide-external-link"
-              :label="SOURCE_LABELS[source as ScannableSource] ?? source"
+              variant="ghost"
+              trailing-icon="i-lucide-arrow-up-right"
+              :label="`${SOURCE_LABELS[source as ScannableSource] ?? source} sur Neokyo`"
               @click="openExternal(url)"
             />
+            <UButton
+              v-if="rejectedCount"
+              color="neutral"
+              :variant="showRejected ? 'soft' : 'outline'"
+              :label="
+                showRejected
+                  ? `Masquer les ${rejectedCount} écartées`
+                  : `Afficher les ${rejectedCount} écartées`
+              "
+              @click="showRejected = !showRejected"
+            />
+            <UButton
+              color="neutral"
+              variant="outline"
+              icon="i-lucide-euro"
+              label="Prix en Europe"
+              @click="resaleOfSearch"
+            />
           </div>
-
-          <UEmpty
-            v-if="!response"
-            icon="i-lucide-search"
-            title="Cherchez une carte sur Mercari et Yahoo"
-            description="Chaque annonce est chiffrée comme une carte d’un colis type : coût de revient, revente, marge et ROI."
-          />
-
-          <template v-else>
-            <div class="flex items-center justify-between gap-4">
-              <p class="text-sm text-muted">
-                {{ visible.length }} annonce{{ visible.length > 1 ? 's' : '' }}
-                <template v-if="response.expected_sale_cents != null">
-                  · revente estimée {{ formatCents(response.expected_sale_cents) }}
-                </template>
-                <template v-else> · indiquez un prix de revente pour voir les marges</template>
-                <template
-                  v-if="response.searched_query && response.searched_query !== form.query.trim()"
-                >
-                  · recherché en japonais : « {{ response.searched_query }} »
-                </template>
-              </p>
-              <div class="flex items-center gap-4">
-                <USwitch
-                  v-if="rejectedCount"
-                  v-model="showRejected"
-                  :label="`Afficher les ${rejectedCount} écartées`"
-                />
-                <UButton
-                  size="sm"
-                  color="neutral"
-                  variant="outline"
-                  icon="i-lucide-euro"
-                  label="Prix en Europe"
-                  @click="resaleOfSearch"
-                />
-              </div>
-            </div>
-
-            <div class="grid gap-3 2xl:grid-cols-2">
-              <DealCard
-                v-for="result in visible"
-                :key="`${result.source}-${result.external_id}`"
-                :title="result.title"
-                :source="result.source"
-                :price-jpy="result.price_jpy"
-                :shipping-included="result.shipping_included"
-                :url="result.url"
-                :neokyo-url="result.neokyo_url"
-                :thumbnail-url="result.thumbnail_url"
-                :listed-at="result.listed_at"
-                :ends-at="result.ends_at"
-                :bids="result.bids"
-                :landed-cost="result.landed_cost"
-                :sale="result.sale"
-                :target-roi="targetRoi"
-                :muted="!result.matched"
-                :note="result.matched ? null : `Écartée : ${result.reject_reason}`"
-                favoritable
-                :favorite="!!favorites.find(result.source, result.external_id)"
-                @toggle-favorite="favorites.toggle(toFavorite(result))"
-                @open="openResult(result)"
-              />
-            </div>
-          </template>
         </div>
-      </div>
+
+        <div class="space-y-2.5">
+          <DealCard
+            v-for="result in visible"
+            :key="`${result.source}-${result.external_id}`"
+            :title="result.title"
+            :source="result.source"
+            :price-jpy="result.price_jpy"
+            :shipping-included="result.shipping_included"
+            :url="result.url"
+            :neokyo-url="result.neokyo_url"
+            :thumbnail-url="result.thumbnail_url"
+            :listed-at="result.listed_at"
+            :ends-at="result.ends_at"
+            :bids="result.bids"
+            :landed-cost="result.landed_cost"
+            :sale="result.sale"
+            :target-roi="targetRoi"
+            :muted="!result.matched"
+            :note="result.matched ? null : `Écartée : ${result.reject_reason}`"
+            favoritable
+            :favorite="!!favorites.find(result.source, result.external_id)"
+            @toggle-favorite="favorites.toggle(toFavorite(result))"
+            @open="openResult(result)"
+          />
+        </div>
+      </template>
 
       <TrackedCardModal
         v-model:open="tracking"

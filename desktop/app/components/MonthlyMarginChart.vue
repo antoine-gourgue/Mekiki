@@ -1,7 +1,10 @@
 <script setup lang="ts">
 import type { MonthlySales } from '~/types/engine'
 
-/** Column chart of the margin per month, with a per-column tooltip. Single series: no legend. */
+/**
+ * Column chart of the margin per month, with a per-column tooltip. Single series: no legend;
+ * a losing month is drawn in the loss color.
+ */
 const props = defineProps<{ months: MonthlySales[] }>()
 
 const HEIGHT = 240
@@ -154,7 +157,7 @@ const tooltip = computed(() => {
         />
         <path
           :d="bar.path"
-          fill="var(--color-indigo-500)"
+          :fill="bar.month.margin_cents < 0 ? 'var(--ui-error)' : 'var(--color-vermilion-500)'"
           :opacity="active === null || active === index ? 1 : 0.55"
         />
         <text
@@ -172,7 +175,7 @@ const tooltip = computed(() => {
 
     <div
       v-if="tooltip"
-      class="pointer-events-none absolute top-0 z-10 rounded-md border border-default bg-default p-2 text-xs shadow-lg"
+      class="pointer-events-none absolute top-0 z-10 rounded-md border border-default bg-elevated p-2.5 text-xs shadow-lg"
       :style="{ left: `${tooltip.left}px`, width: `${TOOLTIP_WIDTH}px` }"
     >
       <p

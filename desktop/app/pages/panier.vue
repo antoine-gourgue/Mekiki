@@ -13,6 +13,12 @@ onMounted(() => favorites.refresh())
 const items = computed(() => favorites.state.value?.items ?? [])
 const inCart = computed(() => items.value.filter((item) => item.in_cart))
 const others = computed(() => items.value.filter((item) => !item.in_cart))
+const groups = computed(() =>
+  [
+    { title: 'Dans le colis', list: inCart.value },
+    { title: 'Autres favoris', list: others.value },
+  ].filter((group) => group.list.length),
+)
 const cart = computed(() => favorites.state.value?.cart ?? null)
 const targetRoi = computed(() => (settings.value?.scanner.min_roi_percent ?? 30) / 100)
 
@@ -112,29 +118,36 @@ async function emptyCart() {
 }
 
 function subtitle(item: Favorite) {
-  const product = item.product
-    ? `${item.product.name}${item.product.expansion_name ? ` (${item.product.expansion_name})` : ''}`
-    : null
-  return [item.card_label, product].filter(Boolean).join(' · ') || undefined
+  return [item.card_label, item.product?.expansion_name].filter(Boolean).join(' · ') || undefined
+}
+
+// Buying stays manual: this only opens each listing of the parcel on Neokyo.
+const neokyoLinks = computed(() =>
+  inCart.value.map((item) => item.neokyo_url).filter((url): url is string => !!url),
+)
+function openAllOnNeokyo() {
+  for (const url of neokyoLinks.value) openExternal(url)
 }
 </script>
 
 <template>
   <UDashboardPanel id="cart">
     <template #header>
-      <UDashboardNavbar title="Panier">
-        <template #leading><UDashboardSidebarCollapse /></template>
+      <PageNavbar
+        title="Panier"
+        description="Vos favoris. Cochez ceux qui partent dans le colis pour voir ce qu’il coûte et rapporte."
+      >
         <template #right>
           <UButton
             v-if="inCart.length"
             color="neutral"
             variant="outline"
-            icon="i-lucide-x"
+            icon="i-lucide-trash-2"
             label="Vider le panier"
             @click="emptyCart"
           />
         </template>
-      </UDashboardNavbar>
+      </PageNavbar>
     </template>
 
     <template #body>
@@ -146,62 +159,18 @@ function subtitle(item: Favorite) {
         :actions="[{ label: 'Trouver des cartes', to: '/decouverte' }]"
       />
 
-      <template v-else>
-        <section class="space-y-3">
-          <div v-if="cart" class="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-            <StatTile
-              icon="i-lucide-layers"
-              label="Cartes dans le colis"
-              :value="String(cart.card_count)"
-              :hint="`${formatYen(cart.purchase_jpy)} d’achats`"
-            />
-            <StatTile
-              icon="i-lucide-wallet"
-              label="Coût du colis"
-              :value="formatCents(cart.landed_cents)"
-              hint="Tout compris : frais, envoi, taxes"
-            />
-            <StatTile
-              icon="i-lucide-euro"
-              label="Revente attendue"
-              :value="formatCents(cart.revenue_cents)"
-              :hint="`Net ${formatCents(cart.net_cents)} après frais et cotisations`"
-            />
-            <StatTile
-              icon="i-lucide-piggy-bank"
-              label="Marge attendue"
-              :value="formatCents(cart.margin_cents)"
-              :value-class="signClass(cart.margin_cents)"
-            />
-            <StatTile
-              icon="i-lucide-percent"
-              label="ROI du colis"
-              :value="formatRatio(cart.roi)"
-              :value-class="signClass(cart.roi)"
-            />
-          </div>
-          <UAlert
-            v-if="cart?.unpriced_count"
-            color="warning"
-            variant="subtle"
-            icon="i-lucide-triangle-alert"
-            :description="`${cart.unpriced_count} carte(s) sans prix de revente : leur coût compte, pas leur revente. Indiquez un prix avec « Prix de revente… ».`"
-          />
-          <UEmpty
-            v-if="!cart"
-            icon="i-lucide-shopping-basket"
-            title="Le panier est vide"
-            description="Cochez « Dans le colis » sur vos favoris pour voir ce que coûterait le colis et ce qu’il rapporterait."
-          />
-        </section>
-
-        <section v-if="inCart.length" class="space-y-3">
-          <h2 class="font-medium text-highlighted">Dans le colis</h2>
-          <div class="grid gap-3 lg:grid-cols-2 2xl:grid-cols-3">
+      <div v-else class="flex flex-wrap items-start gap-5">
+        <div class="min-w-0 flex-[2_1_560px] space-y-6">
+          <section v-for="group in groups" :key="group.title" class="space-y-2.5">
+            <h2 class="text-sm font-medium text-muted">
+              {{ group.title }}
+              <span class="font-mono text-dimmed">{{ group.list.length }}</span>
+            </h2>
             <DealCard
-              v-for="item in inCart"
+              v-for="item in group.list"
               :key="item.id"
               :title="item.title"
+              :heading="item.product?.name ?? item.card_label"
               :subtitle="subtitle(item)"
               :source="item.source"
               :price-jpy="item.price_jpy"
@@ -216,54 +185,89 @@ function subtitle(item: Favorite) {
               :sale="item.sale"
               :target-roi="targetRoi"
               :menu="menu(item)"
+              :class="{ 'bg-transparent': !item.in_cart }"
               @open="openFavorite(item)"
             >
-              <USwitch
-                class="mt-3"
-                :model-value="item.in_cart"
-                label="Dans le colis"
-                @update:model-value="(value) => favorites.update(item.id, { in_cart: value })"
-              />
+              <template #leading>
+                <UCheckbox
+                  :model-value="item.in_cart"
+                  label="Dans le colis"
+                  :ui="{ label: 'text-sm' }"
+                  @update:model-value="(value) => favorites.update(item.id, { in_cart: !!value })"
+                />
+              </template>
             </DealCard>
-          </div>
-        </section>
-
-        <section v-if="others.length" class="space-y-3">
-          <h2 class="font-medium text-highlighted">Autres favoris</h2>
-          <p class="text-sm text-muted">
-            Chiffrés comme une carte d’un colis de {{ settings?.scanner.cards_per_lot ?? 10 }}.
+          </section>
+          <p v-if="others.length" class="text-xs text-dimmed">
+            Les favoris hors du colis sont chiffrés comme une carte d’un colis de
+            {{ settings?.scanner.cards_per_lot ?? 10 }}.
           </p>
-          <div class="grid gap-3 lg:grid-cols-2 2xl:grid-cols-3">
-            <DealCard
-              v-for="item in others"
-              :key="item.id"
-              :title="item.title"
-              :subtitle="subtitle(item)"
-              :source="item.source"
-              :price-jpy="item.price_jpy"
-              :shipping-included="item.shipping_included"
-              :url="item.url"
-              :neokyo-url="item.neokyo_url"
-              :thumbnail-url="item.thumbnail_url"
-              :listed-at="item.listed_at"
-              :ends-at="item.ends_at"
-              :bids="item.bids"
-              :landed-cost="item.landed_cost"
-              :sale="item.sale"
-              :target-roi="targetRoi"
-              :menu="menu(item)"
-              @open="openFavorite(item)"
-            >
-              <USwitch
-                class="mt-3"
-                :model-value="item.in_cart"
-                label="Dans le colis"
-                @update:model-value="(value) => favorites.update(item.id, { in_cart: value })"
+        </div>
+
+        <aside class="min-w-0 flex-[1_1_320px] lg:sticky lg:top-0">
+          <UCard :ui="{ body: 'space-y-4 sm:p-5' }">
+            <div class="flex items-baseline justify-between">
+              <h2 class="font-semibold text-highlighted">Le colis</h2>
+              <span class="text-sm text-muted">
+                {{ cart?.card_count ?? 0 }} carte{{ (cart?.card_count ?? 0) > 1 ? 's' : '' }}
+              </span>
+            </div>
+
+            <template v-if="cart">
+              <div class="grid grid-cols-2 gap-2.5">
+                <InfoTile
+                  label="Coût du colis"
+                  :value="formatCents(cart.landed_cents)"
+                  :hint="`${formatYen(cart.purchase_jpy)} d’achats`"
+                />
+                <InfoTile
+                  label="Revente attendue"
+                  :value="formatCents(cart.revenue_cents)"
+                  :hint="`net ${formatCents(cart.net_cents)}`"
+                />
+                <InfoTile
+                  label="Marge attendue"
+                  :value="formatSignedCents(cart.margin_cents)"
+                  :value-class="signClass(cart.margin_cents)"
+                />
+                <InfoTile
+                  label="ROI du colis"
+                  :value="formatRatio(cart.roi)"
+                  :value-class="signClass(cart.roi)"
+                />
+              </div>
+              <p class="text-xs text-dimmed">
+                Tout compris : frais Neokyo, envoi et taxes à l’import.
+              </p>
+
+              <UAlert
+                v-if="cart.unpriced_count"
+                color="error"
+                variant="subtle"
+                icon="i-lucide-circle-alert"
+                :description="`${cart.unpriced_count} carte(s) sans prix de revente : leur coût compte, pas leur revente. Indiquez un prix avec « Prix de revente… ».`"
               />
-            </DealCard>
-          </div>
-        </section>
-      </template>
+
+              <UButton
+                v-if="neokyoLinks.length"
+                block
+                size="xl"
+                trailing-icon="i-lucide-arrow-up-right"
+                :label="`Ouvrir ${neokyoLinks.length > 1 ? `les ${neokyoLinks.length} annonces` : 'l’annonce'} sur Neokyo`"
+                @click="openAllOnNeokyo"
+              />
+              <p class="-mt-2 text-center text-xs text-dimmed">
+                L’achat se fait sur Neokyo, annonce par annonce.
+              </p>
+            </template>
+
+            <p v-else class="text-sm text-muted">
+              Cochez « Dans le colis » sur vos favoris pour voir ce que coûterait le colis et ce
+              qu’il rapporterait.
+            </p>
+          </UCard>
+        </aside>
+      </div>
 
       <UModal
         v-model:open="editingOpen"

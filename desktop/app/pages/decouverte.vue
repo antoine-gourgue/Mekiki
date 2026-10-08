@@ -176,10 +176,7 @@ function toFavorite(pick: DiscoveryPick) {
 }
 
 function subtitle(pick: DiscoveryPick) {
-  const product = pick.product.expansion_name
-    ? `${pick.product.name} (${pick.product.expansion_name})`
-    : pick.product.name
-  return `${pick.card_label} · ${product}`
+  return [pick.card_label, pick.product.expansion_name].filter(Boolean).join(' · ')
 }
 
 const gameItems = selectItems(GAME_LABELS)
@@ -188,70 +185,94 @@ const gameItems = selectItems(GAME_LABELS)
 <template>
   <UDashboardPanel id="discovery">
     <template #header>
-      <UDashboardNavbar title="Trouver des cartes">
-        <template #leading><UDashboardSidebarCollapse /></template>
-      </UDashboardNavbar>
+      <PageNavbar
+        title="Trouver des cartes"
+        description="Mekiki parcourt Mercari et Rakuma, reconnaît chaque carte, la compare à sa cote et compose le colis le plus rentable qui tient dans le budget."
+      />
     </template>
 
     <template #body>
-      <UCard>
-        <form class="grid items-end gap-4 sm:grid-cols-2 xl:grid-cols-6" @submit.prevent="start">
-          <UFormField label="Jeu">
-            <USelect v-model="form.game" :items="gameItems" class="w-full" />
-          </UFormField>
-          <UFormField label="Budget du colis" hint="tout compris">
-            <MoneyInput v-model="form.budget_cents" currency="EUR" />
-          </UFormField>
-          <UFormField label="Nombre de cartes">
-            <UInputNumber v-model="form.card_count" :min="1" :max="50" class="w-full" />
-          </UFormField>
-          <UFormField label="ROI minimum">
-            <PercentInput v-model="form.min_roi_percent" :max="1000" />
-          </UFormField>
-          <UFormField label="Profondeur" class="xl:col-span-2">
-            <USelect
-              v-model="form.depth"
-              :items="depthItems"
-              class="w-full"
-              :ui="{ itemDescription: 'text-xs' }"
-            />
-          </UFormField>
-          <UFormField label="Sites" class="xl:col-span-2">
-            <UCheckboxGroup
-              v-model="form.sources"
-              :items="SCANNABLE_SOURCE_ITEMS"
-              orientation="horizontal"
-            />
-          </UFormField>
-          <div class="flex flex-wrap items-center gap-4 sm:col-span-2 xl:col-span-6">
+      <UCard :ui="{ body: 'sm:p-5' }">
+        <form class="space-y-5" @submit.prevent="start">
+          <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <UFormField label="Jeu">
+              <SegmentedControl
+                v-model="form.game"
+                :items="gameItems"
+                label="Jeu"
+                class="flex w-full *:flex-1"
+              />
+            </UFormField>
+            <UFormField label="Budget du colis" hint="tout compris">
+              <MoneyInput v-model="form.budget_cents" currency="EUR" />
+            </UFormField>
+            <UFormField label="Nombre de cartes">
+              <UInputNumber v-model="form.card_count" :min="1" :max="50" class="w-full" />
+            </UFormField>
+            <UFormField label="ROI minimum">
+              <PercentInput v-model="form.min_roi_percent" :max="1000" />
+            </UFormField>
+          </div>
+
+          <div class="flex flex-wrap gap-4">
+            <UFormField label="Profondeur" class="min-w-0 flex-[3_1_520px]">
+              <URadioGroup
+                v-model="form.depth"
+                :items="depthItems"
+                variant="card"
+                orientation="horizontal"
+                :ui="{
+                  fieldset: 'grid gap-2.5 sm:grid-cols-3',
+                  item: 'bg-default',
+                  description: 'text-xs',
+                }"
+              />
+            </UFormField>
+            <UFormField label="Sites" class="min-w-0 flex-[1_1_240px]">
+              <UCheckboxGroup
+                v-model="form.sources"
+                :items="SCANNABLE_SOURCE_ITEMS"
+                variant="card"
+                orientation="horizontal"
+                :ui="{
+                  fieldset: 'flex flex-wrap gap-2',
+                  item: 'bg-default py-2.5',
+                  description: 'text-xs',
+                }"
+              />
+            </UFormField>
+          </div>
+
+          <div
+            class="flex flex-wrap items-center justify-between gap-3 border-t border-default pt-4"
+          >
+            <p class="text-sm text-dimmed">
+              Les annonces changent vite : relancer dans quelques heures donne d’autres cartes.
+            </p>
             <UButton
               type="submit"
               icon="i-lucide-wand-sparkles"
               label="Trouver des cartes"
+              size="xl"
               :loading="running"
               :disabled="!form.budget_cents || !form.card_count || !form.sources.length"
             />
-            <p class="text-xs text-muted">
-              Parcourt les annonces récentes, reconnaît les cartes et compose le colis le plus
-              rentable. Compter une à deux minutes : les sites sont interrogés sans les brusquer.
-            </p>
           </div>
         </form>
       </UCard>
 
-      <UCard v-if="running && run">
-        <div class="space-y-2">
-          <div class="flex justify-between text-sm">
-            <span>Recherche en cours…</span>
+      <UCard v-if="running && run" :ui="{ body: 'sm:p-5' }">
+        <div class="space-y-3">
+          <div class="flex flex-wrap items-center justify-between gap-3 text-sm">
+            <span class="font-medium text-highlighted">Recherche en cours…</span>
             <span class="text-muted tabular-nums">
               {{ run.searches_done }} / {{ run.searches_total }} recherches ·
-              {{ run.listings_seen.toLocaleString('fr-FR') }} annonces parcourues
+              {{ run.listings_seen.toLocaleString('fr-FR') }} annonces
             </span>
           </div>
           <UProgress :model-value="progress" />
           <div class="flex justify-end">
             <UButton
-              size="xs"
               color="neutral"
               variant="outline"
               icon="i-lucide-square"
@@ -275,53 +296,52 @@ const gameItems = selectItems(GAME_LABELS)
         v-if="!run || run.status === 'idle'"
         icon="i-lucide-wand-sparkles"
         title="Indiquez un budget et un nombre de cartes"
-        description="L’app cherche sur Mercari et Yahoo, reconnaît chaque carte, la compare à sa cote Cardmarket et compose le colis le plus rentable qui tient dans le budget."
+        description="L’app cherche sur Mercari et Rakuma, reconnaît chaque carte, la compare à sa cote Cardmarket et compose le colis le plus rentable qui tient dans le budget."
       />
 
       <template v-else-if="run.status === 'done' || run.status === 'failed'">
-        <p class="text-sm text-muted">
-          <UBadge
-            v-if="run.stopped"
-            color="neutral"
-            variant="outline"
-            label="Recherche arrêtée"
-            class="mr-1"
-          />
-          {{ run.listings_seen.toLocaleString('fr-FR') }} annonces parcourues ·
-          {{ run.listings_identified }} cartes reconnues · {{ run.listings_priced }} avec une cote
-          <template v-if="run.finished_at"> · {{ formatDateTime(run.finished_at) }}</template>
-        </p>
+        <div>
+          <h2 class="text-lg font-semibold text-highlighted">
+            Colis proposé
+            <template v-if="run.totals">
+              · {{ run.totals.card_count }} carte{{ run.totals.card_count > 1 ? 's' : '' }}
+            </template>
+          </h2>
+          <p class="mt-1 text-sm text-dimmed">
+            <UBadge
+              v-if="run.stopped"
+              color="neutral"
+              variant="outline"
+              label="Recherche arrêtée"
+              class="me-1"
+            />
+            {{ run.listings_seen.toLocaleString('fr-FR') }} annonces lues ·
+            {{ run.listings_identified }} cartes reconnues · {{ run.listings_priced }} avec une cote
+            <template v-if="run.finished_at"> · {{ formatDateTime(run.finished_at) }}</template>
+          </p>
+        </div>
 
-        <div v-if="run.totals" class="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+        <div v-if="run.totals" class="grid gap-3.5 sm:grid-cols-2 xl:grid-cols-4">
           <StatTile
-            icon="i-lucide-layers"
-            label="Cartes"
-            :value="`${run.totals.card_count} / ${run.request?.card_count ?? run.totals.card_count}`"
-            :hint="`${formatYen(run.totals.purchase_jpy)} d’achats`"
-          />
-          <StatTile
-            icon="i-lucide-wallet"
             label="Coût du colis"
             :value="formatCents(run.totals.landed_cents)"
-            :hint="`Budget ${formatCents(budget)}, tout compris`"
+            :hint="`budget ${formatCents(budget)} · ${formatYen(run.totals.purchase_jpy)} d’achats`"
           />
           <StatTile
-            icon="i-lucide-euro"
             label="Revente attendue"
             :value="formatCents(run.totals.revenue_cents)"
-            :hint="`Net ${formatCents(run.totals.net_cents)} après frais et cotisations`"
+            :hint="`net ${formatCents(run.totals.net_cents)} après frais et cotisations`"
           />
           <StatTile
-            icon="i-lucide-piggy-bank"
             label="Marge attendue"
-            :value="formatCents(run.totals.margin_cents)"
+            :value="formatSignedCents(run.totals.margin_cents)"
             :value-class="signClass(run.totals.margin_cents)"
           />
           <StatTile
-            icon="i-lucide-percent"
             label="ROI du colis"
             :value="formatRatio(run.totals.roi)"
             :value-class="signClass(run.totals.roi)"
+            :hint="`minimum demandé ${formatRatio(targetRoi)}`"
           />
         </div>
 
@@ -332,47 +352,49 @@ const gameItems = selectItems(GAME_LABELS)
           description="Essayez un ROI minimum plus bas, un budget plus large ou moins de cartes. Les annonces changent vite : relancer dans quelques heures donne aussi d’autres résultats."
         />
 
-        <section v-else class="space-y-3">
-          <h2 class="font-medium text-highlighted">Le colis proposé</h2>
-          <div class="grid gap-3 lg:grid-cols-2 2xl:grid-cols-3">
-            <DealCard
-              v-for="pick in run.picks"
-              :key="`${pick.source}-${pick.external_id}`"
-              :title="pick.title"
-              :subtitle="subtitle(pick)"
-              :source="pick.source"
-              :price-jpy="pick.price_jpy"
-              :shipping-included="pick.shipping_included"
-              :url="pick.url"
-              :neokyo-url="pick.neokyo_url"
-              :thumbnail-url="pick.thumbnail_url"
-              :listed-at="pick.listed_at"
-              :ends-at="pick.ends_at"
-              :bids="pick.bids"
-              :landed-cost="pick.landed_cost"
-              :sale="pick.sale"
-              :target-roi="targetRoi"
-              :note="pick.warning ?? (pick.confidence === 'medium' ? pick.confidence_note : null)"
-              :menu="menu(pick)"
-              favoritable
-              :favorite="!!favorites.find(pick.source, pick.external_id)"
-              @toggle-favorite="favorites.toggle(toFavorite(pick))"
-              @open="openPick(pick)"
-            />
-          </div>
-        </section>
+        <div v-else class="grid gap-3.5 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+          <DealCard
+            v-for="pick in run.picks"
+            :key="`${pick.source}-${pick.external_id}`"
+            layout="tile"
+            :title="pick.title"
+            :heading="pick.product.name"
+            :subtitle="subtitle(pick)"
+            :source="pick.source"
+            :price-jpy="pick.price_jpy"
+            :shipping-included="pick.shipping_included"
+            :url="pick.url"
+            :neokyo-url="pick.neokyo_url"
+            :thumbnail-url="pick.thumbnail_url"
+            :listed-at="pick.listed_at"
+            :ends-at="pick.ends_at"
+            :bids="pick.bids"
+            :landed-cost="pick.landed_cost"
+            :sale="pick.sale"
+            :target-roi="targetRoi"
+            :note="pick.warning ?? (pick.confidence === 'medium' ? pick.confidence_note : null)"
+            :menu="menu(pick)"
+            favoritable
+            :favorite="!!favorites.find(pick.source, pick.external_id)"
+            @toggle-favorite="favorites.toggle(toFavorite(pick))"
+            @open="openPick(pick)"
+          />
+        </div>
 
         <section v-if="run.alternatives.length" class="space-y-3">
-          <h2 class="font-medium text-highlighted">Autres annonces rentables</h2>
-          <p class="text-sm text-muted">
-            Chiffrées comme une carte d’un colis de {{ run.request?.card_count }} : à prendre en
-            plus ou à la place d’une carte du colis.
-          </p>
-          <div class="grid gap-3 lg:grid-cols-2 2xl:grid-cols-3">
+          <div>
+            <h2 class="text-lg font-semibold text-highlighted">Autres annonces rentables</h2>
+            <p class="mt-1 text-sm text-dimmed">
+              Chiffrées comme une carte d’un colis de {{ run.request?.card_count }} : à prendre en
+              plus ou à la place d’une carte du colis.
+            </p>
+          </div>
+          <div class="space-y-2.5">
             <DealCard
               v-for="pick in run.alternatives"
               :key="`${pick.source}-${pick.external_id}`"
               :title="pick.title"
+              :heading="pick.product.name"
               :subtitle="subtitle(pick)"
               :source="pick.source"
               :price-jpy="pick.price_jpy"
