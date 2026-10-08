@@ -8,6 +8,8 @@ on:
     branches: [main]
     paths-ignore:
       - "**.md"
+  # Publishes again by hand, e.g. after the signing key secret changed.
+  workflow_dispatch:
 
 permissions:
   contents: write
