@@ -729,6 +729,8 @@ export interface MarketListing {
   image_url: string | null
   /** Vinted: the condition. eBay: the sale date. */
   detail: string | null
+  /** eBay: the sale date read from `detail`, "2026-10-06". */
+  sold_on: string | null
   shipping_cents: number | null
   /** eBay: a lower offer was accepted, the real price is unknown. */
   best_offer: boolean
@@ -744,6 +746,9 @@ export interface BrowserPrices {
   median_cents: number | null
   min_cents: number | null
   max_cents: number | null
+  /** eBay: sales of the card over the last 30 and 90 days; `null` on Vinted. */
+  sales_30_days: number | null
+  sales_90_days: number | null
   fetched_at: string
   error: string | null
 }

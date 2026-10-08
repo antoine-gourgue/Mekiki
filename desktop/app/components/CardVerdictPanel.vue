@@ -270,6 +270,21 @@ const costLine = computed(() => {
             </p>
             <p v-else class="text-xs text-muted">aucune annonce de cette carte</p>
           </div>
+          <p
+            v-if="read.sales_30_days != null && read.relevant_count"
+            class="flex items-center gap-1.5 text-xs text-muted"
+          >
+            <UIcon name="i-lucide-activity" class="size-3.5" />
+            Fréquence de vente :
+            <span class="font-semibold text-highlighted tabular-nums">
+              {{ read.sales_30_days }}
+            </span>
+            sur 30 jours ·
+            <span class="font-semibold text-highlighted tabular-nums">
+              {{ read.sales_90_days }}
+            </span>
+            sur 90 jours
+          </p>
           <ul class="space-y-1.5">
             <li v-for="listing in shownListings(read)" :key="listing.external_id">
               <button
