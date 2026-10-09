@@ -10,6 +10,7 @@ from mekiki_engine.models import User
 from mekiki_engine.schemas import (
     AccountUpdate,
     AuthResponse,
+    AuthStatus,
     LoginRequest,
     RegisterRequest,
     UserOut,
@@ -22,6 +23,11 @@ INVALID_CREDENTIALS = "adresse e-mail ou mot de passe incorrect"
 
 def _throttle(request: Request) -> auth.SignInThrottle:
     return request.app.state.sign_in_throttle
+
+
+@router.get("/status")
+def auth_status(session: SessionDep) -> AuthStatus:
+    return AuthStatus(accounts_exist=not auth.no_account_yet(session))
 
 
 @router.post("/register", status_code=status.HTTP_201_CREATED)

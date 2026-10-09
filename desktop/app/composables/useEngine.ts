@@ -2,6 +2,9 @@ import type {
   AccountUpdate,
   AppSettings,
   AuthResponse,
+  AuthStatus,
+  Backup,
+  Backups,
   BrowserActivity,
   BrowserPrices,
   BrowserPricesRequest,
@@ -183,6 +186,16 @@ export function useEngine() {
       request<CardVerdict>('/resale/verdict', { query, timeout: 30_000 }),
     listingDraft: (itemId: number, platform: ListingSite) =>
       request<ListingDraft>(`/items/${itemId}/listing-draft`, { query: { platform } }),
+    /** Whether this computer has accounts yet, before anyone signs in. */
+    authStatus: () => request<AuthStatus>('/auth/status'),
+    backups: () => request<Backups>('/backups'),
+    createBackup: () => request<Backup>('/backups', { method: 'POST', timeout: 60_000 }),
+    /** Puts a copy back; returns the copy of the database taken just before. */
+    restoreBackup: (name: string) =>
+      request<Backup>(`/backups/${encodeURIComponent(name)}/restore`, {
+        method: 'POST',
+        timeout: 60_000,
+      }),
     browserStatus: () => request<BrowserStatus>('/browser/status'),
     browserActivity: () => request<BrowserActivity>('/browser/activity'),
     showBrowser: () => request<BrowserActivity>('/browser/show', { method: 'POST' }),

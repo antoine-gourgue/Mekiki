@@ -996,6 +996,32 @@ class PublishJobOut(BaseModel):
     error: str | None
 
 
+class BackupOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    # "mekiki-20261009-021500-000.sqlite3"
+    name: str
+    created_at: str
+    size_bytes: int
+
+
+class BackupsOut(BaseModel):
+    """The daily copies of the database, newest first."""
+
+    folder: str
+    backups: list[BackupOut]
+    # Only on the computer that keeps the database.
+    restore_allowed: bool
+    # Why the latest daily copy failed, if it did.
+    last_error: str | None = None
+
+
+class AuthStatus(BaseModel):
+    """Whether this computer has accounts yet: the sign-in page then suggests creating one."""
+
+    accounts_exist: bool
+
+
 class BrowserActivity(BaseModel):
     """What Mekiki's Chrome window is doing, for the progress log in the app."""
 

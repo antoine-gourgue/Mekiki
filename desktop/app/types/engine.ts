@@ -797,6 +797,27 @@ export interface LogLine {
 
 /** What Mekiki's Chrome window is doing, for the live preview. */
 
+export interface Backup {
+  /** "mekiki-20261009-021500-000.sqlite3" */
+  name: string
+  created_at: string
+  size_bytes: number
+}
+
+/** The daily copies of the database, newest first. */
+export interface Backups {
+  folder: string
+  backups: Backup[]
+  /** Only on the computer that keeps the database. */
+  restore_allowed: boolean
+  /** Why the latest daily copy failed, if it did. */
+  last_error: string | null
+}
+
+export interface AuthStatus {
+  accounts_exist: boolean
+}
+
 export interface BrowserActivity {
   /** "Vinted : « Dracaufeu 201/165 », page 2", or null when idle. */
   activity: string | null

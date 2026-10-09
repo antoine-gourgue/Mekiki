@@ -282,10 +282,13 @@ class ScannerWorker:
         client: PoliteClient,
         *,
         source_factory: SourceFactory = build_source,
+        on_tick: Callable[[], None] = lambda: None,
     ) -> None:
         self._session_factory = session_factory
         self._client = client
         self._source_factory = source_factory
+        # Daily chores that are no scan, such as the database's copy.
+        self._on_tick = on_tick
         self._wake = threading.Event()
         self._stop = threading.Event()
         self._lock = threading.Lock()
@@ -341,6 +344,7 @@ class ScannerWorker:
             with self._session_factory() as session:
                 # Prices still matter for the watch lists and the stock when no scan runs.
                 refresh_reference_data(session, self._client)
+            self._on_tick()
             self._wake.wait(self.TICK_S)
             self._wake.clear()
 

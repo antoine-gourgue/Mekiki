@@ -38,6 +38,7 @@ const sections = [
   { id: 'revente', label: 'Revente et cotisations' },
   { id: 'ebay', label: 'Clés eBay' },
   { id: 'scanner', label: 'Scanner' },
+  { id: 'sauvegardes', label: 'Sauvegardes' },
 ]
 // The panel body scrolls, not the window: a #hash link would not move it.
 function scrollTo(id: string) {
@@ -268,6 +269,8 @@ function scrollTo(id: string) {
               />
             </UFormField>
           </UCard>
+
+          <BackupsCard />
         </div>
       </div>
     </template>

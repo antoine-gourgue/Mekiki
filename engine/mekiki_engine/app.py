@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sqlite3
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 
@@ -19,6 +20,7 @@ from mekiki_engine.db import create_db_engine, session_factory
 from mekiki_engine.resale.ebay import EbayBrowse
 from mekiki_engine.routes import (
     auth,
+    backups,
     browser,
     items,
     lots,
@@ -32,6 +34,7 @@ from mekiki_engine.scanner.discovery import DiscoveryJobs
 from mekiki_engine.scanner.runner import ScannerWorker, SourceFactory
 from mekiki_engine.scanner.sources.base import PoliteClient
 from mekiki_engine.scanner.sources.registry import build_source
+from mekiki_engine.services import backups as backup_service
 from mekiki_engine.services.portfolio import NotFoundError
 
 BODY_METHODS = frozenset({"POST", "PUT", "PATCH"})
@@ -52,7 +55,16 @@ def create_app(
     engine = create_db_engine(config.database_url)
     sessions = session_factory(engine)
     http = PoliteClient(transport=http_transport)
-    worker = ScannerWorker(sessions, http, source_factory=source_factory)
+
+    def daily_backup() -> None:
+        # A full disk must not stop the scans: the next tick tries again.
+        try:
+            if backup_service.backup_if_due(engine, config.data_dir):
+                app.state.backup_error = None
+        except (OSError, sqlite3.Error) as error:
+            app.state.backup_error = f"Sauvegarde du jour impossible : {error}"
+
+    worker = ScannerWorker(sessions, http, source_factory=source_factory, on_tick=daily_backup)
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
@@ -66,6 +78,8 @@ def create_app(
 
     app = FastAPI(title="Mekiki engine", version=__version__, lifespan=lifespan)
     app.state.config = config
+    app.state.db_engine = engine
+    app.state.backup_error = None
     app.state.session_factory = sessions
     app.state.http = http
     app.state.scanner = worker
@@ -81,7 +95,18 @@ def create_app(
         else None
     )
 
-    for module in (system, auth, settings, lots, items, reports, scanner, resale, browser):
+    for module in (
+        system,
+        auth,
+        settings,
+        lots,
+        items,
+        reports,
+        scanner,
+        resale,
+        browser,
+        backups,
+    ):
         app.include_router(module.router)
 
     @app.exception_handler(NotFoundError)

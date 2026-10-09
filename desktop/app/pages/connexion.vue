@@ -28,6 +28,12 @@ const fields: AuthFormField[] = [
 const failure = ref<string | null>(null)
 const loading = ref(false)
 
+const engine = useEngine()
+// A fresh install has no account yet: signing in would only fail.
+const { data: status } = useAsyncData('auth-status', () => engine.authStatus(), {
+  server: false,
+})
+
 async function submit(event: FormSubmitEvent<LoginRequest>) {
   failure.value = null
   loading.value = true
@@ -53,6 +59,15 @@ async function submit(event: FormSubmitEvent<LoginRequest>) {
       @submit="submit"
     >
       <template #validation>
+        <UAlert
+          v-if="status && !status.accounts_exist"
+          color="info"
+          variant="subtle"
+          icon="i-lucide-user-plus"
+          title="Aucun compte n’existe encore sur ce PC"
+          description="Créez le vôtre : Mekiki vous guidera ensuite pour tout régler."
+          :actions="[{ label: 'Créer mon compte', to: '/inscription' }]"
+        />
         <UAlert
           v-if="route.query.session === 'expiree' && !failure"
           color="warning"
