@@ -27,6 +27,8 @@ CHROME_PATHS = (
 START_TIMEOUT_S = 20.0
 # Chrome writes the port it listens on there, in the profile folder.
 ACTIVE_PORT_FILE = "DevToolsActivePort"
+# The target id of Mekiki's own tab, for a later run of the engine to find it again.
+READING_TAB_FILE = "MekikiTab"
 # The window works off-screen; it only shows when the user has something to do in it.
 OFFSCREEN = {"left": -32000, "top": -32000, "width": 1280, "height": 900}
 ONSCREEN = {"left": 80, "top": 60, "width": 1280, "height": 900}
@@ -44,9 +46,13 @@ def find_chrome() -> Path | None:
 
 
 class Tab:
-    """One page of the window, spoken to over its DevTools websocket."""
+    """One page of the window, spoken to over its DevTools websocket.
 
-    def __init__(self, websocket_url: str) -> None:
+    ``accept_leave_prompts``: answers "leave this page?" prompts, which would freeze the page.
+    Only for Mekiki's own tab: on a listing form left to the user, the prompt is theirs.
+    """
+
+    def __init__(self, websocket_url: str, *, accept_leave_prompts: bool = False) -> None:
         try:
             self._socket = websocket.create_connection(
                 websocket_url, timeout=COMMAND_TIMEOUT_S, suppress_origin=True
@@ -54,6 +60,7 @@ class Tab:
         except (OSError, websocket.WebSocketException) as error:
             raise ChromeError(f"Chrome ne répond pas : {error}") from error
         self._ids = itertools.count(1)
+        self._accept_leave_prompts = accept_leave_prompts
 
     def call(self, method: str, **params: Any) -> dict[str, Any]:
         command_id = next(self._ids)
@@ -61,17 +68,18 @@ class Tab:
             self._socket.send(json.dumps({"id": command_id, "method": method, "params": params}))
             while True:
                 message = json.loads(self._socket.recv())
-                # A "leave this page?" prompt freezes the page until answered.
                 if message.get("method") == "Page.javascriptDialogOpening":
-                    self._socket.send(
-                        json.dumps(
-                            {
-                                "id": next(self._ids),
-                                "method": "Page.handleJavaScriptDialog",
-                                "params": {"accept": True},
-                            }
+                    kind = message.get("params", {}).get("type")
+                    if self._accept_leave_prompts and kind == "beforeunload":
+                        self._socket.send(
+                            json.dumps(
+                                {
+                                    "id": next(self._ids),
+                                    "method": "Page.handleJavaScriptDialog",
+                                    "params": {"accept": True},
+                                }
+                            )
                         )
-                    )
                     continue
                 # Other events arrive between answers; only our answer matters here.
                 if message.get("id") != command_id:
@@ -209,6 +217,9 @@ class ChromeSession:
         self.visible = False
         # The tab an action is using: its window is the one shown or hidden.
         self.current_target: str | None = None
+        # Mekiki's own tab, for reading and signing in: never one the user or a listing form
+        # is using.
+        self.reading_target: str | None = None
         self._http = httpx.Client(timeout=5)
 
     @property
@@ -253,6 +264,7 @@ class ChromeSession:
             port = self._profile_port()
             if port is not None and self._answers(port):
                 self.port = port
+                self._adopt_first_tab()
                 return
             if time.monotonic() > deadline or self.process.poll() is not None:
                 raise ChromeError(
@@ -263,12 +275,14 @@ class ChromeSession:
 
     @contextmanager
     def page(self) -> Iterator[Tab]:
-        """The window's first tab, started if needed; one caller at a time."""
+        """Mekiki's own tab, opened once and again only if it was closed: another tab may
+        hold a form the user is finishing. The window is started if needed; one caller at
+        a time."""
         with self.lock:
             self.start()
-            target_id, url = self._page_target()
+            target_id, url = self._reading_tab()
             self.current_target = target_id
-            tab = Tab(url)
+            tab = Tab(url, accept_leave_prompts=True)
             try:
                 tab.call("Page.enable")
                 tab.call("Page.bringToFront")
@@ -313,7 +327,7 @@ class ChromeSession:
         if not self._answers():
             return
         with suppress(ChromeError, httpx.HTTPError, KeyError, StopIteration):
-            target_id = self.current_target or self._page_target()[0]
+            target_id = self.current_target or self._reading_tab()[0]
             browser = self._browser()
             try:
                 window = browser.call("Browser.getWindowForTarget", targetId=target_id)
@@ -343,14 +357,42 @@ class ChromeSession:
         except (OSError, IndexError, ValueError):
             return None
 
-    def _page_target(self) -> tuple[str, str]:
-        """The first tab of the window, as (target id, websocket address)."""
+    def _pages(self) -> dict[str, str]:
+        """The window's tabs: target id → websocket address."""
         targets = self._http.get(f"http://127.0.0.1:{self.port}/json/list").json()
-        pages = [t for t in targets if t.get("type") == "page" and t.get("webSocketDebuggerUrl")]
-        if pages:
-            return str(pages[0]["id"]), str(pages[0]["webSocketDebuggerUrl"])
+        return {
+            str(target["id"]): str(target["webSocketDebuggerUrl"])
+            for target in targets
+            if target.get("type") == "page" and target.get("webSocketDebuggerUrl")
+        }
+
+    def _reading_tab(self) -> tuple[str, str]:
+        """Mekiki's own tab as (target id, websocket address), opened if it is gone."""
+        pages = self._pages()
+        known = self.reading_target or self._saved_reading_tab()
+        if known is not None and known in pages:
+            self.reading_target = known
+            return known, pages[known]
         created = self._http.put(f"http://127.0.0.1:{self.port}/json/new?about:blank").json()
+        self._remember_reading_tab(str(created["id"]))
         return str(created["id"]), str(created["webSocketDebuggerUrl"])
+
+    def _adopt_first_tab(self) -> None:
+        """Takes the blank tab Chrome opened with as Mekiki's own."""
+        pages = self._pages()
+        if len(pages) == 1:
+            self._remember_reading_tab(next(iter(pages)))
+
+    def _remember_reading_tab(self, target_id: str) -> None:
+        self.reading_target = target_id
+        with suppress(OSError):
+            (self.profile_dir / READING_TAB_FILE).write_text(target_id, encoding="utf-8")
+
+    def _saved_reading_tab(self) -> str | None:
+        try:
+            return (self.profile_dir / READING_TAB_FILE).read_text(encoding="utf-8").strip()
+        except OSError:
+            return None
 
     def _answers(self, port: int | None = None) -> bool:
         port = port or self.port

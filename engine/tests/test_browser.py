@@ -5,6 +5,7 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 
@@ -499,6 +500,86 @@ class FakeSocket:
 
     def close(self) -> None:
         pass
+
+
+class FakeDevTools:
+    """Chrome's /json endpoints, the user's listing form being the most recent tab."""
+
+    def __init__(self) -> None:
+        self.pages: list[dict[str, str]] = [self._target("form")]
+        self.created = 0
+
+    @staticmethod
+    def _target(target_id: str) -> dict[str, str]:
+        return {
+            "id": target_id,
+            "type": "page",
+            "url": "about:blank",
+            "webSocketDebuggerUrl": f"ws://127.0.0.1:9222/devtools/page/{target_id}",
+        }
+
+    def __call__(self, request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/json/version":
+            return httpx.Response(200, json={"webSocketDebuggerUrl": "ws://127.0.0.1/browser"})
+        if request.url.path == "/json/list":
+            return httpx.Response(200, json=self.pages)
+        assert request.url.path == "/json/new"
+        self.created += 1
+        target = self._target(f"mekiki-{self.created}")
+        self.pages.insert(0, target)
+        return httpx.Response(200, json=target)
+
+
+def devtools_session(profile: Path, devtools: FakeDevTools) -> chrome_module.ChromeSession:
+    session = chrome_module.ChromeSession(profile)
+    session._http = httpx.Client(transport=httpx.MockTransport(devtools))
+    session.port = 9222
+    return session
+
+
+def test_reading_never_takes_over_another_tab(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    devtools = FakeDevTools()
+    sockets: dict[str, FakeSocket] = {}
+    monkeypatch.setattr(
+        chrome_module.websocket,
+        "create_connection",
+        lambda url, **_options: sockets.setdefault(url, FakeSocket()),
+    )
+    session = devtools_session(tmp_path, devtools)
+
+    for _ in range(2):
+        with session.page():
+            pass
+    devtools.pages = [page for page in devtools.pages if page["id"] != "mekiki-1"]
+    with session.page():
+        pass
+    # A later run of the engine finds Mekiki's tab again.
+    with devtools_session(tmp_path, devtools).page():
+        pass
+
+    assert devtools.created == 2
+    assert [url.rsplit("/", 1)[1] for url in sockets] == ["mekiki-1", "mekiki-2"]
+    assert session.current_target == "mekiki-2"
+
+
+def test_only_mekiki_s_own_tab_leaves_a_page_without_asking(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def handled(tab_kind: str, own: bool) -> bool:
+        socket = FakeSocket()
+        socket.events = [
+            {"method": "Page.javascriptDialogOpening", "params": {"type": tab_kind, "message": ""}}
+        ]
+        monkeypatch.setattr(chrome_module.websocket, "create_connection", lambda *_a, **_k: socket)
+        chrome_module.Tab("ws://127.0.0.1/page", accept_leave_prompts=own).call("Page.reload")
+        return any(sent["method"] == "Page.handleJavaScriptDialog" for sent in socket.sent)
+
+    assert handled("beforeunload", own=True)
+    # A listing form's prompt is the user's; an alert is not a "leave this page?" prompt.
+    assert not handled("beforeunload", own=False)
+    assert not handled("alert", own=True)
 
 
 def test_a_page_chrome_cannot_load_is_an_error(monkeypatch: pytest.MonkeyPatch) -> None:
