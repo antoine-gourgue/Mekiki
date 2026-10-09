@@ -173,6 +173,8 @@ class MarketListing:
     best_offer: bool = False
     # Names the card's number, ungraded and alone: counts towards the median.
     relevant: bool = True
+    # Copies sold through this listing (eBay's API): each one is a sale.
+    quantity: int = 1
 
 
 def search_url(query: str) -> str:
@@ -420,10 +422,11 @@ def sold_caption(day: str | None) -> str | None:
 
 
 def sales_within(listings: list[MarketListing], days: int, today: date | None = None) -> int:
-    """Relevant sales dated within the last ``days`` days."""
+    """Relevant sales dated within the last ``days`` days, each copy of a listing sold
+    several times counting once."""
     since = ((today or datetime.now(UTC).date()) - timedelta(days=days)).isoformat()
     return sum(
-        1
+        listing.quantity
         for listing in listings
         if listing.relevant and listing.sold_on is not None and listing.sold_on > since
     )

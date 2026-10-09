@@ -15,6 +15,8 @@ from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 from typing import Any
 
+import httpx
+
 from mekiki_engine.resale.links import EBAY_CARDS_CATEGORY
 from mekiki_engine.scanner.sources.base import PoliteClient, SourceError
 
@@ -116,7 +118,7 @@ class EbayBrowse:
                 "Accept-Language": "fr-FR",
             },
         )
-        result = parse_search(response.json())
+        result = parse_search(_payload(response))
         with self._lock:
             self._cache[key] = (time.monotonic(), result)
         return result
@@ -165,7 +167,7 @@ class EbayBrowse:
             # The scope was granted but not this marketplace, or the access was withdrawn.
             self.insights = False
             return None
-        return parse_sales(response.json())
+        return parse_sales(_payload(response))
 
     def _app_token(self, scope: str = PUBLIC_SCOPE) -> str:
         with self._lock:
@@ -195,6 +197,18 @@ class EbayBrowse:
         with self._lock:
             self._tokens[scope] = (token, time.monotonic() + lifetime)
         return token
+
+
+def _payload(response: httpx.Response) -> dict[str, Any]:
+    """eBay's JSON answer; a page in its place (a portal, a maintenance notice) is an eBay
+    error like any other."""
+    try:
+        payload = response.json()
+    except ValueError as error:
+        raise SourceError("eBay a répondu par une page au lieu de ses résultats") from error
+    if not isinstance(payload, dict):
+        raise SourceError("eBay a répondu par des résultats illisibles")
+    return payload
 
 
 def parse_search(payload: dict[str, Any]) -> EbaySearch:

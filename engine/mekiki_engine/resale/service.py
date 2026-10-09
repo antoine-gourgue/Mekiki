@@ -117,6 +117,7 @@ def _api_sales(
             detail=markets.sold_caption(sale.sold_on),
             sold_on=sale.sold_on,
             relevant=markets.is_relevant(sale.title, card_number, names, version),
+            quantity=sale.quantity,
         )
         for sale in ordered
     ]

@@ -1,4 +1,5 @@
 import json
+from datetime import date, timedelta
 from urllib.parse import parse_qs, urlsplit
 
 import httpx
@@ -262,6 +263,47 @@ def test_ebay_listings_count_only_the_card_once_its_number_is_known() -> None:
     assert [listing.item_id for listing in prices.listings] == ["a", "b"]
     assert prices.median_cents == 4200
     assert prices.total == 5
+
+
+def test_a_page_in_place_of_ebay_s_results_is_an_ebay_error(client: TestClient) -> None:
+    from mekiki_engine.resale.service import ebay_prices
+
+    def portal(request: httpx.Request) -> httpx.Response:
+        if str(request.url) == TOKEN_URL:
+            return httpx.Response(200, json={"access_token": "app-token", "expires_in": 7200})
+        return httpx.Response(200, text="<html>Maintenance</html>")
+
+    prices = ebay_prices(browse(portal), "Pikachu 201/165", "201/165")  # type: ignore[arg-type]
+    client.app.state.ebay = browse(portal)  # type: ignore[arg-type,attr-defined]
+    verdict = client.get("/resale/verdict", params={"q": "Pikachu 201/165"})
+
+    assert prices.configured is True
+    assert "page" in (prices.error or "")
+    assert verdict.status_code == 200
+
+
+def test_a_listing_sold_several_times_counts_each_sale(client: TestClient, tmp_path) -> None:  # type: ignore[no-untyped-def]
+    class FakeRepeatedSales(FakeInsights):
+        def __call__(self, request: httpx.Request) -> httpx.Response:
+            if str(request.url).startswith(INSIGHTS_URL):
+                lately = (date.today() - timedelta(days=3)).isoformat()
+                sales = [
+                    ebay_sale("1", "Pikachu 201/165 SAR", "40.00", lately)
+                    | {"totalSoldQuantity": 4},
+                    ebay_sale("2", "Pikachu 201/165 SAR", "44.00", lately),
+                ]
+                return httpx.Response(200, json={"total": 2, "itemSales": sales})
+            return super().__call__(request)
+
+    use_fake_ebay(client, FakeRepeatedSales(granted=True))
+    client.app.state.browsers = Browsers(tmp_path, session_factory=NoChrome)  # type: ignore[attr-defined]
+    client.put("/settings/ebay", json={"client_id": "A-PRD-1", "client_secret": "PRD-1"})
+    body = {"query": "Pikachu 201/165", "card_number": "201/165", "names": ["Pikachu"]}
+
+    sold = client.post("/browser/ebay/sold", json=body).json()
+
+    assert sold["relevant_count"] == 2
+    assert sold["sales_90_days"] == 5
 
 
 def test_lots_and_slabs_never_count_even_without_the_number() -> None:
