@@ -182,6 +182,14 @@ const columns: TableColumn<SoldItem>[] = [
             <template #sold_on-cell="{ row }">
               <p>{{ PLATFORM_LABELS[row.original.sale.platform] }}</p>
               <p class="text-xs text-dimmed">{{ formatDate(row.original.sale.sold_on) }}</p>
+              <UBadge
+                v-if="!row.original.sale.shipped_on"
+                label="À expédier"
+                color="warning"
+                variant="soft"
+                size="sm"
+                class="mt-1"
+              />
             </template>
             <template #revenue-cell="{ row }">
               <span class="tabular-nums">
@@ -234,6 +242,15 @@ const columns: TableColumn<SoldItem>[] = [
             </template>
             <template #actions-cell="{ row }">
               <div class="flex justify-end gap-1">
+                <UButton
+                  v-if="trackingFor(row.original.sale.tracking_number)"
+                  icon="i-lucide-truck"
+                  size="sm"
+                  color="neutral"
+                  variant="ghost"
+                  :aria-label="`Suivre le colis sur ${trackingFor(row.original.sale.tracking_number)?.carrier}`"
+                  @click="openExternal(trackingFor(row.original.sale.tracking_number)!.url)"
+                />
                 <UButton
                   icon="i-lucide-pencil"
                   size="sm"

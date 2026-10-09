@@ -544,6 +544,8 @@ def _sale_out(sale: Sale, landed: ItemLandedCost) -> SaleOut:
         packaging_cents=sale.packaging_cents,
         contribution_rate_percent=Decimal(sale.contribution_rate) * 100,
         notes=sale.notes,
+        tracking_number=sale.tracking_number,
+        shipped_on=sale.shipped_on,
         breakdown=_breakdown_out(_recorded_sale(sale), landed.total_cents),
     )
 

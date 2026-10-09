@@ -244,3 +244,18 @@ def test_cors_allows_only_the_app_origins(client: TestClient) -> None:
 
     assert allowed.headers["access-control-allow-origin"] == "http://tauri.localhost"
     assert "access-control-allow-origin" not in denied.headers
+
+
+def test_a_sale_keeps_its_parcel(client: TestClient) -> None:
+    lot = create_reference_lot(client)
+    item_id = lot["items"][0]["id"]
+    sale = {"platform": "ebay", "sold_on": "2026-10-05", "sale_price_cents": 9000}
+
+    to_ship = client.put(f"/items/{item_id}/sale", json=sale).json()["sale"]
+    shipped = client.put(
+        f"/items/{item_id}/sale",
+        json={**sale, "tracking_number": "6A12345678901", "shipped_on": "2026-10-06"},
+    ).json()["sale"]
+
+    assert (to_ship["tracking_number"], to_ship["shipped_on"]) == (None, None)
+    assert (shipped["tracking_number"], shipped["shipped_on"]) == ("6A12345678901", "2026-10-06")

@@ -187,6 +187,9 @@ export interface Sale {
   packaging_cents: number
   contribution_rate_percent: number
   notes: string | null
+  tracking_number: string | null
+  /** `null` while the card is still to ship. */
+  shipped_on: string | null
   breakdown: SaleBreakdown
 }
 
@@ -214,6 +217,8 @@ export interface SaleUpsert {
   platform_fee_cents?: number | null
   packaging_cents?: number | null
   notes?: string | null
+  tracking_number?: string | null
+  shipped_on?: string | null
 }
 
 export interface MonthlySales {

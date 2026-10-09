@@ -277,6 +277,9 @@ class SaleUpsert(BaseModel):
     platform_fee_cents: Cents | None = None
     packaging_cents: Cents | None = None
     notes: str | None = None
+    tracking_number: Annotated[str, Field(max_length=60)] | None = None
+    # Left empty while the card is still to ship.
+    shipped_on: date | None = None
 
 
 class LandedCostOut(BaseModel):
@@ -309,6 +312,8 @@ class SaleOut(BaseModel):
     packaging_cents: int
     contribution_rate_percent: Rate
     notes: str | None
+    tracking_number: str | None = None
+    shipped_on: date | None = None
     breakdown: SaleBreakdownOut
 
 

@@ -114,6 +114,9 @@ class Sale(Base):
     packaging_cents: Mapped[int]
     contribution_rate: Mapped[str]
     notes: Mapped[str | None]
+    tracking_number: Mapped[str | None]
+    # Null while the card is still to ship.
+    shipped_on: Mapped[str | None]
     created_at: Mapped[str] = mapped_column(server_default=FetchedValue())
 
     item: Mapped[Item] = relationship(back_populates="sale")

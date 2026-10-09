@@ -275,10 +275,24 @@ const statusItems = selectItems(LOT_STATUS_LABELS)
               </span>
               <span class="tabular-nums">{{ formatCents(lot.landed_total_cents) }}</span>
             </div>
-            <p v-if="lot.shipping_method || lot.tracking_number" class="pt-1 text-dimmed">
-              {{ lot.shipping_method }}
-              <span v-if="lot.tracking_number">· {{ lot.tracking_number }}</span>
-            </p>
+            <div
+              v-if="lot.shipping_method || lot.tracking_number"
+              class="flex flex-wrap items-center gap-2 pt-1 text-dimmed"
+            >
+              <span>
+                {{ lot.shipping_method }}
+                <span v-if="lot.tracking_number">· {{ lot.tracking_number }}</span>
+              </span>
+              <UButton
+                v-if="trackingFor(lot.tracking_number)"
+                size="xs"
+                color="neutral"
+                variant="outline"
+                icon="i-lucide-truck"
+                :label="`Suivre (${trackingFor(lot.tracking_number)?.carrier})`"
+                @click="openExternal(trackingFor(lot.tracking_number)!.url)"
+              />
+            </div>
             <p v-if="lot.notes" class="text-sm whitespace-pre-line text-muted">{{ lot.notes }}</p>
           </UCard>
 

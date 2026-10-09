@@ -19,6 +19,8 @@ interface SaleForm {
   platform_fee_cents: number | null
   packaging_cents: number | null
   notes: string
+  tracking_number: string
+  shipped_on: string
 }
 
 const state = reactive<SaleForm>({
@@ -30,6 +32,8 @@ const state = reactive<SaleForm>({
   platform_fee_cents: null,
   packaging_cents: null,
   notes: '',
+  tracking_number: '',
+  shipped_on: '',
 })
 
 watch(open, (isOpen) => {
@@ -46,6 +50,8 @@ watch(open, (isOpen) => {
     platform_fee_cents: sale?.platform_fee_cents ?? null,
     packaging_cents: sale?.packaging_cents ?? null,
     notes: sale?.notes ?? '',
+    tracking_number: sale?.tracking_number ?? '',
+    shipped_on: sale?.shipped_on ?? '',
   })
 })
 
@@ -72,6 +78,8 @@ async function submit() {
       platform_fee_cents: state.platform_fee_cents,
       packaging_cents: state.packaging_cents,
       notes: state.notes.trim() || null,
+      tracking_number: state.tracking_number.trim() || null,
+      shipped_on: state.shipped_on || null,
     })
     emit('saved', saved)
     open.value = false
@@ -120,6 +128,12 @@ const platformItems = selectItems(PLATFORM_LABELS)
         </UFormField>
         <UFormField label="Emballage" name="packaging_cents" help="Vide : valeur des paramètres">
           <MoneyInput v-model="state.packaging_cents" currency="EUR" placeholder="Par défaut" />
+        </UFormField>
+        <UFormField label="Expédiée le" name="shipped_on" help="Vide : à expédier">
+          <UInput v-model="state.shipped_on" type="date" class="w-full" />
+        </UFormField>
+        <UFormField label="Numéro de suivi" name="tracking_number">
+          <UInput v-model="state.tracking_number" placeholder="6A12345678901" class="w-full" />
         </UFormField>
         <UFormField label="Notes" name="notes" class="sm:col-span-2">
           <UTextarea v-model="state.notes" :rows="2" autoresize class="w-full" />
