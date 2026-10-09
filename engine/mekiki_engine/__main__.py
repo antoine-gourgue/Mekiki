@@ -45,8 +45,11 @@ def main(argv: list[str] | None = None) -> None:
     # the database instead. The first file read wins.
     load_env_file(config.data_dir / ".env")
     config = load_config(data_dir=args.data_dir, port=args.port, host=args.host, dev=dev)
-    # Loopback unless deployed as a server (see config.DEFAULT_HOST).
-    server = uvicorn.Server(uvicorn.Config(create_app(config), host=config.host, port=config.port))
+    # Loopback unless deployed as a server (see config.DEFAULT_HOST). No access log: the app
+    # polls the engine all day, and its log file is kept for warnings and errors.
+    server = uvicorn.Server(
+        uvicorn.Config(create_app(config), host=config.host, port=config.port, access_log=False)
+    )
     if args.exit_with_parent and sys.stdin is not None:
         threading.Thread(target=_stop_on_stdin_eof, args=(server,), daemon=True).start()
     server.run()
