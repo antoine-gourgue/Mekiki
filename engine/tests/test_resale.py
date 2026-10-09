@@ -78,6 +78,23 @@ def test_search_queries_keep_the_name_and_the_printed_number() -> None:
     assert drafts.number_in_label(None) is None
 
 
+def test_dotted_one_piece_names_are_searched_and_matched_as_sellers_write_them(
+    client: TestClient,
+) -> None:
+    from mekiki_engine.resale.service import card_names
+
+    product = CardmarketProduct(
+        id_product=8, game=Game.ONE_PIECE.value, name="Monkey.D.Luffy (OP05-119)"
+    )
+    with client.app.state.session_factory() as session:  # type: ignore[attr-defined]
+        session.add(product)
+        session.commit()
+        found = card_names(session, product, "Monkey.D.Luffy")
+
+    assert found == ["Luffy"]
+    assert drafts.search_query(product.name, "OP05-119") == "Monkey D Luffy OP05-119"
+
+
 def test_drafts_describe_the_card_and_suggest_a_price() -> None:
     product = CardmarketProduct(id_product=1, game="pokemon", name="Pikachu", avg30_cents=4200)
 

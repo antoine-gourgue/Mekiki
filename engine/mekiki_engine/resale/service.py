@@ -220,7 +220,11 @@ def card_names(
     session: Session, product: CardmarketProduct | None, typed: str | None = None
 ) -> list[str]:
     """The card's name in French, English and Japanese: its first word is enough to tell
-    it from another card sharing its number ("Dracaufeu", "Charizard", "リザードンex")."""
+    it from another card sharing its number ("Dracaufeu", "Charizard", "リザードンex").
+
+    Of a dotted One Piece name, the last part: "Monkey.D.Luffy" is written "Monkey D. Luffy",
+    or only "Luffy", but "Luffy" is in every form.
+    """
     found: list[str] = []
     english = drafts.clean_card_name(product.name) if product and product.name else None
     if product is not None and english:
@@ -231,7 +235,9 @@ def card_names(
             found.append(printing.japanese_name)
     if typed:
         found.append(typed)
-    words = [name.split()[0] for name in found if name and name.split()]
+    words = [
+        markets.spaced_dots(name.split()[0]).split()[-1] for name in found if name and name.split()
+    ]
     return list(dict.fromkeys(word for word in words if len(word) > 2))
 
 

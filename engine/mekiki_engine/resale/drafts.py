@@ -20,6 +20,7 @@ LANGUAGE_LABELS = {"ja": "japonaise", "en": "anglaise", "fr": "française"}
 _NAME_EXTRAS = re.compile(r"\s*[\[(][^\])]*[\])]")
 _ONE_PIECE_CODE = re.compile(r"\b(?:OP|EB|PRB|ST|P)\d{0,2}-\d{3}\b", re.IGNORECASE)
 _CARD_NUMBER = re.compile(r"\b\d{1,3}/\d{1,3}\b")
+_INNER_DOT = re.compile(r"(?<=\w)\.(?=\w)")
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,7 +38,8 @@ def clean_card_name(name: str) -> str:
 
 def search_query(name: str, number: str | None = None) -> str:
     """Words to search a card on eBay or Vinted: its name and printed number or code."""
-    query = clean_card_name(name)
+    # "Monkey.D.Luffy" is one word to the sites' searches; sellers write "Monkey D. Luffy".
+    query = _INNER_DOT.sub(" ", clean_card_name(name))
     if number and number.lower() not in query.lower():
         query = f"{query} {number}"
     return query

@@ -98,6 +98,8 @@ _SEVERAL = re.compile(
     r"\b(?:lots?|bundle|playsets?|x\s?(?:[2-9]|\d{2,})|(?:[2-9]|\d{2,})\s?x)\b(?!\s?/)",
     re.IGNORECASE,
 )
+# A dot between two letters, as in One Piece names: "Monkey.D.Luffy".
+_INNER_DOT = re.compile(r"(?<=\w)\.(?=\w)")
 # eBay.fr dates its sold listings "Vendu le 6 oct. 2026".
 _SOLD_ON = re.compile(r"(\d{1,2})\s+([a-zéû]+)\.?\s+(\d{4})", re.IGNORECASE)
 FRENCH_MONTHS = {
@@ -159,8 +161,15 @@ def search_queries(query: str, card_number: str | None, names: list[str] | None)
         queries += [f"{name} {card_number}" for name in names or [] if _latin(name)]
     unique: dict[str, str] = {}
     for each in queries:
-        unique.setdefault(" ".join(each.lower().split()), " ".join(each.split()))
+        # eBay takes "Monkey.D.Luffy" as one word, which sellers seldom write.
+        words = " ".join(spaced_dots(each).split())
+        unique.setdefault(words.lower(), words)
     return list(unique.values())
+
+
+def spaced_dots(text: str) -> str:
+    """ "Monkey.D.Luffy" → "Monkey D Luffy"; "Mr. Mime" is left alone."""
+    return _INNER_DOT.sub(" ", text)
 
 
 def is_connected(tab: Tab, site: Site) -> bool:
@@ -337,6 +346,7 @@ def _latin(text: str) -> bool:
 
 
 def _compact(text: str) -> str:
-    """ "201 / 165" and "201/165" alike; "OP05-119" and "op05 119" alike."""
+    """ "201 / 165" and "201/165" alike; "OP05-119" and "op05 119" alike; "Monkey.D.Luffy" and
+    "Monkey D. Luffy" alike."""
     text = unicodedata.normalize("NFKC", text).lower()
-    return re.sub(r"[\s\-_/]+", "", text)
+    return re.sub(r"[\s\-_/.]+", "", text)

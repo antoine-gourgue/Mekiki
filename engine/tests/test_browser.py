@@ -176,6 +176,19 @@ def test_ace_is_a_card_not_a_grader() -> None:
     assert is_relevant("Portgas D. Ace OP02-013 SR", "OP02-013", ["Ace"])
 
 
+def test_dotted_one_piece_names_match_their_spaced_forms() -> None:
+    from mekiki_engine.browser.markets import search_queries
+
+    title = "Monkey D. Luffy OP05-119 SEC Japanese"
+    assert is_relevant(title, "OP05-119", ["Monkey.D.Luffy"])
+    assert is_relevant(title, "OP05-119", ["Luffy"])
+    assert is_relevant("Monkey.D.Luffy OP05-119", "OP05-119", ["Luffy"])
+    assert is_relevant("Luffy OP05-119 SEC", "OP05-119", ["Luffy"])
+    queries = search_queries("Monkey.D.Luffy OP05-119", "OP05-119", ["Monkey.D.Luffy", "Luffy"])
+    assert queries == ["Monkey D Luffy OP05-119", "Luffy OP05-119"]
+    assert search_queries("Mr. Mime 122/165", "122/165", []) == ["Mr. Mime 122/165"]
+
+
 def test_ebay_accepted_offers_only_count_when_nothing_else_is_left() -> None:
     sold = parse_listings(EBAY_RAW, "201/165")
 
