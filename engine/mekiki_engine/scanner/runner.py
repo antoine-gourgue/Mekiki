@@ -26,6 +26,7 @@ from mekiki_engine.scanner.service import (
 from mekiki_engine.scanner.sources.base import (
     FoundListing,
     PoliteClient,
+    SiteBlocked,
     Source,
     SourceError,
     search_safely,
@@ -97,6 +98,9 @@ def scan_tracked_cards(
         .where(TrackedCard.user_id == user_id, TrackedCard.active.is_(True))
         .order_by(TrackedCard.id)
     ).all()
+    # A site that blocks (429) or refuses Europe (403) is left for the rest of the scan: the
+    # next card would only ask it again.
+    blocked_sites: set[SourcePlatform] = set()
     for card in cards:
         if should_stop():
             break
@@ -108,15 +112,18 @@ def scan_tracked_cards(
         )
         printing = tracking.printing_of(session, product) if product is not None else None
         queries = tracking.search_queries(session, card, printing)
-        found, failed, errors = _search_card(
+        platforms = [p for p in settings.scanner.sources if p not in blocked_sites]
+        found, failed, errors, blocked = _search_card(
             client,
             source_factory,
-            settings.scanner.sources,
+            platforms,
             game,
             queries,
             should_stop=should_stop,
         )
+        blocked_sites |= blocked
         outcome.errors += [f"{source} ({card.name}) : {error}" for source, error in errors]
+        failed |= {platform.value for platform in blocked_sites}
         new_listings, new_deals = record_found_listings(
             session, settings, card, found, now=utc_now(), unchecked_sources=failed
         )
@@ -134,14 +141,16 @@ def _search_card(
     queries: list[str],
     *,
     should_stop: Callable[[], bool],
-) -> tuple[list[FoundListing], set[str], list[tuple[str, str]]]:
+) -> tuple[list[FoundListing], set[str], list[tuple[str, str]], set[SourcePlatform]]:
     """Every listing the ``queries`` find, over a few pages on each marketplace.
 
-    Returns the listings (each once), the marketplaces that failed and their errors.
+    Returns the listings (each once), the marketplaces that failed, their errors and those
+    that blocked the search.
     """
     found: dict[tuple[str, str], FoundListing] = {}
     failed: set[str] = set()
     errors: list[tuple[str, str]] = []
+    blocked: set[SourcePlatform] = set()
     lock = threading.Lock()
 
     def browse(platform: SourcePlatform) -> None:
@@ -156,6 +165,8 @@ def _search_card(
                     with lock:
                         failed.add(platform.value)
                         errors.append((SOURCE_LABELS[platform], str(error)))
+                        if isinstance(error, SiteBlocked):
+                            blocked.add(platform)
                     return
                 with lock:
                     for item in items:
@@ -167,7 +178,7 @@ def _search_card(
     # Each site keeps its own pace (see PoliteClient), so sites are searched side by side.
     with ThreadPoolExecutor(max_workers=len(platforms) or 1) as pool:
         list(pool.map(browse, platforms))
-    return list(found.values()), failed, errors
+    return list(found.values()), failed, errors, blocked
 
 
 def search_once(

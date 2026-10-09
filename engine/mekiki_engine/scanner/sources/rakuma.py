@@ -6,7 +6,7 @@ import html
 import re
 
 from mekiki_engine.domain import Game, SourcePlatform
-from mekiki_engine.scanner.sources.base import FoundListing, PoliteClient
+from mekiki_engine.scanner.sources.base import FoundListing, PoliteClient, SourceError
 
 SEARCH_URL = "https://fril.jp/s"
 # Rakuma has no card-game category worth filtering on; the game name narrows the results.
@@ -52,7 +52,16 @@ class RakumaSource:
         response = self.client.request("GET", SEARCH_URL, params=params, accept=(404,))
         if response.status_code == 404:
             return []
-        return parse_results(response.text)[:limit]
+        listings = parse_results(response.text)
+        total = _TOTAL.search(response.text)
+        # Rakuma says how many listings match: none read from a page that has some means the
+        # page changed, which must not pass for an empty search.
+        if not listings and total and int(total[1]) > 0 and not page:
+            raise SourceError("page de résultats Rakuma illisible (sa mise en page a changé ?)")
+        return listings[:limit]
+
+
+_TOTAL = re.compile(r'data-rat-cp-totalresults="(\d+)"')
 
 
 def parse_results(page: str) -> list[FoundListing]:

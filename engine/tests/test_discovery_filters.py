@@ -150,3 +150,30 @@ def test_the_catalog_lists_eras_sets_and_rarities(
 )
 def test_eras_follow_the_set_codes(code: str, era: str) -> None:
     assert era_of(code) == era
+
+
+def test_an_auction_never_enters_the_parcel(client: TestClient, cards: FakeMarketplace) -> None:
+    cards.listings[SourcePlatform.MERCARI] = [
+        replace(CARDS[1], ends_at="2099-01-01T00:00:00Z", bids=3),
+        CARDS[0],
+    ]
+
+    run = discover(client, **BUDGET)
+
+    assert "m1000002" not in ids(run)
+    [auction] = [a for a in run["alternatives"] if a["external_id"] == "m1000002"]
+    assert auction["warning"].startswith("Enchère en cours")
+
+
+def test_many_sets_never_make_a_quick_search_long(
+    client: TestClient, cards: FakeMarketplace
+) -> None:
+    from mekiki_engine.scanner.discovery import MAX_PAGES, search_plan
+    from mekiki_engine.schemas import DiscoveryRequest
+
+    codes = [f"sv{n}" for n in range(1, 12)] + [f"s{n}" for n in range(1, 13)]
+    request = DiscoveryRequest(budget_cents=100000, sets=codes * 2, depth="quick")
+    with client.app.state.session_factory() as session:  # type: ignore[attr-defined]
+        plan = search_plan(session, request)
+
+    assert sum(pages for _query, pages in plan) <= MAX_PAGES["quick"]

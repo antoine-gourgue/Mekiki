@@ -260,3 +260,43 @@ def test_listing_condition_is_kept_and_reserved_listings_left_out(
         ("m2", None, False),
     ]
     assert results[1]["reject_reason"] == "annonce réservée (専用)"
+
+
+def test_a_site_that_blocks_is_left_for_the_rest_of_the_scan(
+    client: TestClient, marketplace: FakeMarketplace
+) -> None:
+    track_charizard(client)
+    track_charizard(client, name="Charizard ex RR (2)")
+    marketplace.blocked_sites.add(SourcePlatform.MERCARI)
+
+    scan(client)
+
+    asked = [query for platform, query in marketplace.queries if platform is SourcePlatform.MERCARI]
+    # The first card's first search met the block; the second card never asked again.
+    assert len(asked) == 1
+
+
+def test_listings_gone_for_a_month_are_dropped(
+    client: TestClient, marketplace: FakeMarketplace
+) -> None:
+    from mekiki_engine.models import Listing
+
+    track_charizard(client)
+    marketplace.listings[SourcePlatform.MERCARI] = [
+        mercari("m1", "リザードンex 006/165", 4000),
+        mercari("m2", "リザードンex 006/165", 4100),
+    ]
+    scan(client)
+    with client.app.state.session_factory() as session:  # type: ignore[attr-defined]
+        for listing in session.query(Listing).all():
+            listing.last_seen_at = "2020-01-01T00:00:00Z"
+            if listing.external_id == "m2":
+                listing.triage = "bought"
+        session.commit()
+    marketplace.listings[SourcePlatform.MERCARI] = []
+
+    scan(client)
+
+    with client.app.state.session_factory() as session:  # type: ignore[attr-defined]
+        kept = [listing.external_id for listing in session.query(Listing).all()]
+    assert kept == ["m2"]

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 from sqlalchemy import func, select
@@ -44,6 +44,9 @@ from mekiki_engine.schemas import (
     TrackedCardUpdate,
 )
 from mekiki_engine.services.portfolio import NotFoundError
+
+# Listings not seen for this long are dropped from a tracked card (bought ones stay).
+STALE_LISTING_DAYS = 30
 
 
 def utc_now() -> str:
@@ -419,9 +422,20 @@ def record_found_listings(
     for listing in card.listings:
         if listing.source in unchecked and _online(listing, card):
             listing.last_seen_at = now
+    # Listings gone for a month are only weight in the database and in its daily copies: those
+    # the user marked bought stay, for the record.
+    stale = _iso_days_before(now, STALE_LISTING_DAYS)
+    for listing in list(card.listings):
+        if listing.last_seen_at < stale and listing.triage != ListingTriage.BOUGHT.value:
+            card.listings.remove(listing)
     card.last_scanned_at = now
     session.commit()
     return new_listings, new_deals
+
+
+def _iso_days_before(now: str, days: int) -> str:
+    moment = datetime.fromisoformat(now.replace("Z", "+00:00")) - timedelta(days=days)
+    return moment.strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _get_card(session: Session, user_id: int, card_id: int) -> TrackedCard:

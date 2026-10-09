@@ -10,7 +10,12 @@ from fastapi.testclient import TestClient
 from mekiki_engine.app import create_app
 from mekiki_engine.config import load_config
 from mekiki_engine.domain import Game, SourcePlatform
-from mekiki_engine.scanner.sources.base import FoundListing, PoliteClient, SourceError
+from mekiki_engine.scanner.sources.base import (
+    FoundListing,
+    PoliteClient,
+    SiteBlocked,
+    SourceError,
+)
 
 CARDMARKET_FILES = {
     "products_singles_6.json": {
@@ -303,6 +308,8 @@ class FakeSource:
             return []
         if self.platform in self.marketplace.failures:
             raise SourceError("bloqué (test)")
+        if self.platform in self.marketplace.blocked_sites:
+            raise SiteBlocked("limite les requêtes (test)")
         if query in self.marketplace.failing_queries:
             raise SourceError("page en erreur (test)")
         return list(self.marketplace.listings.get(self.platform, []))[:limit]
@@ -312,6 +319,8 @@ class FakeMarketplace:
     def __init__(self) -> None:
         self.listings: dict[SourcePlatform, list[FoundListing]] = {}
         self.failures: set[SourcePlatform] = set()
+        # Sites answering 429 or 403: a scan must not ask them again for the next card.
+        self.blocked_sites: set[SourcePlatform] = set()
         self.failing_queries: set[str] = set()
         self.queries: list[tuple[SourcePlatform, str]] = []
         # Mercari listings answered as sold when the engine checks them.

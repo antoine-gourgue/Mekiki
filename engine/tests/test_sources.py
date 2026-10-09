@@ -152,3 +152,16 @@ def test_neokyo_links() -> None:
     assert search is not None
     assert search.startswith("https://neokyo.com/fr/search/yahoo?keyword=")
     assert "translate=0" in search
+
+
+def test_a_rakuma_page_that_changed_is_an_error_not_an_empty_search() -> None:
+    page = '<div data-rat-cp-totalresults="772819">une nouvelle mise en page</div>'
+    client = PoliteClient(
+        intervals_s={},
+        default_interval_s=0,
+        transport=httpx.MockTransport(lambda _request: httpx.Response(200, text=page)),
+    )
+    source = rakuma.RakumaSource(client, Game.POKEMON)
+
+    with pytest.raises(SourceError, match="illisible"):
+        source.search("リザードン", limit=40)

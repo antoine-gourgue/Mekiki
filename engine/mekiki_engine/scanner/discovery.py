@@ -108,6 +108,10 @@ CONDITION_NAMES = {
 # Below this share of the market price, a listing is almost always a reproduction, an
 # accessory or another version of the card, not a bargain.
 SUSPICIOUS_PRICE_SHARE = 0.2
+# An auction's price only rises until it ends: it is never priced into a parcel.
+AUCTION_WARNING = "Enchère en cours : le prix final sera plus haut. Hors du colis proposé."
+# Pages each site may be asked per depth, whatever the filters: "quick" stays a matter of minutes.
+MAX_PAGES = {"quick": 15, "deep": 40, "max": 120}
 SUSPICIOUS_WARNING = (
     "Prix à moins de 20 % de la cote : sans doute une reproduction, un accessoire ou une "
     "autre version. Vérifiez l'annonce avant d'acheter."
@@ -187,7 +191,7 @@ def search_plan(
         plan = [(name, broad_pages + 1), *((f"{name} {word}", broad_pages) for word in words)]
         for code in request.sets[:MAX_NAME_SETS]:
             plan += [(f"{name} {query}", 1) for query in set_queries(session, game, [code])[:1]]
-        return _unique(plan)
+        return _capped(_unique(plan), MAX_PAGES[request.depth])
     pages = max(broad_pages, set_pages)
     if request.sets:
         plan = [(query, pages) for query in set_queries(session, game, request.sets)]
@@ -195,7 +199,7 @@ def search_plan(
             for code in request.sets:
                 first = set_queries(session, game, [code])[:1]
                 plan += [(f"{query} {word}", 1) for query in first for word in words]
-        return _unique(plan)
+        return _capped(_unique(plan), MAX_PAGES[request.depth])
     # Broad searches bring the newest listings, mostly of recent sets: for older eras, their
     # sets' own searches do better.
     recent = not request.eras or bool({"mega", "sv"} & set(request.eras))
@@ -207,7 +211,7 @@ def search_plan(
         plan += [(query, pages) for query in set_queries(session, game, codes)]
     elif set_count:
         plan += [(code, set_pages) for code in valuable_sets(session, game, set_count)]
-    return _unique(plan)
+    return _capped(_unique(plan), MAX_PAGES[request.depth])
 
 
 def set_queries(session: Session, game: Game, codes: list[str]) -> list[str]:
@@ -220,6 +224,14 @@ def set_queries(session: Session, game: Game, codes: list[str]) -> list[str]:
         if len(name := names.get(code) or "") >= 3:
             queries.append(name)
     return queries
+
+
+def _capped(plan: list[tuple[str, int]], max_pages: int) -> list[tuple[str, int]]:
+    """At most ``max_pages`` pages: one page per search first, then only the first searches,
+    which the plan puts most precise first."""
+    if sum(pages for _query, pages in plan) <= max_pages:
+        return plan
+    return [(query, 1) for query, _pages in plan][:max_pages]
 
 
 def _unique(plan: list[tuple[str, int]]) -> list[tuple[str, int]]:
@@ -573,7 +585,9 @@ def discover(
         )
         target = target_roi(settings, request)
         if run.totals.roi is not None and run.totals.roi < target:
-            run.errors.append(short_of_target(settings, request, platforms, candidates, picked))
+            run.errors.append(
+                short_of_target(settings, request, platforms, candidates, picked, gone)
+            )
             note(run, run.errors[-1])
     left_out = {id(candidate) for candidate in picked} | gone
     run.alternatives = [
@@ -650,7 +664,11 @@ def evaluate(
         refusal = avoided.get((listing.source.value, listing.seller_id or ""))
         identity = identify(listing.title, request.game)
         # Graded copies and lots are other products; the noise rule rejects both.
-        if identity.graded or not match_title(listing.title, noise).matched:
+        if (
+            identity.graded
+            or identity.several_copies
+            or not match_title(listing.title, noise).matched
+        ):
             dropped["noise"] += 1
             continue
         resolution = resolver.resolve(identity)
@@ -683,6 +701,8 @@ def evaluate(
         warning = (
             SUSPICIOUS_WARNING if price_cents < SUSPICIOUS_PRICE_SHARE * reference[0] else None
         )
+        if listing.ends_at is not None:
+            warning = AUCTION_WARNING
         below = margin < target * landed.total_cents
         candidate = Candidate(listing, identity, resolution, reference[0], estimate, warning, below)
         if refusal:
@@ -694,7 +714,7 @@ def evaluate(
         candidates.append(candidate)
     above = sum(1 for c in candidates if not c.below_target and not c.warning)
     below = sum(1 for c in candidates if c.below_target and not c.warning)
-    suspicious = sum(1 for c in candidates if c.warning)
+    suspicious = sum(1 for c in candidates if c.warning == SUSPICIOUS_WARNING)
     note(
         run,
         "Écartées : "
@@ -823,10 +843,12 @@ def short_of_target(
     platforms: Iterable[SourcePlatform],
     candidates: list[Candidate],
     picked: list[Candidate],
+    gone: set[int] = frozenset(),  # type: ignore[assignment]
 ) -> str:
-    """Why the parcel misses the ROI target, and what to change to find more cards."""
+    """Why the parcel misses the ROI target, and what to change to find more cards. Listings
+    found sold or of a refused seller (``gone``) no longer count as available."""
     target = percent(target_roi(settings, request))
-    above = sum(1 for c in candidates if not c.below_target and not c.warning)
+    above = sum(1 for c in candidates if not c.below_target and not c.warning and id(c) not in gone)
     fillers = sum(1 for c in picked if c.below_target)
     fixed = fixed_parcel_costs_eur(settings)
     if above < request.card_count:

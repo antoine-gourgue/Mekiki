@@ -103,7 +103,15 @@ class MercariSource:
             items = response.json().get("items") or []
         except ValueError as error:
             raise SourceError("Mercari a renvoyé une réponse illisible") from error
-        return [listing for item in items if (listing := parse_item(item)) is not None]
+        listings = [listing for item in items if (listing := parse_item(item)) is not None]
+        # Results that all lack an id are a change of Mercari's API, not an empty search.
+        if (
+            items
+            and not listings
+            and not any(isinstance(item, dict) and item.get("id") for item in items)
+        ):
+            raise SourceError("résultats Mercari illisibles (son format a changé ?)")
+        return listings
 
 
 def search_body(query: str, category_id: int, page_size: int, device_uuid: str) -> dict[str, Any]:
