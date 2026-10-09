@@ -1,14 +1,7 @@
 <script setup lang="ts">
 import type { DropdownMenuItem } from '@nuxt/ui'
-import type {
-  DiscoveryDepth,
-  DiscoveryPick,
-  DiscoveryRun,
-  Game,
-  ItemCreate,
-  ListingCondition,
-  ScannableSource,
-} from '~/types/engine'
+import type { DiscoveryPick, DiscoveryRun, ItemCreate } from '~/types/engine'
+import type { DiscoveryFormState } from '~/utils/discovery'
 
 const engine = useEngine()
 const showError = useErrorToast()
@@ -17,26 +10,24 @@ const favorites = useFavorites()
 const { data: settings } = useAsyncData('settings', () => engine.getSettings())
 const { data: lots } = useAsyncData('lots', () => engine.listLots())
 
-const form = reactive({
-  game: 'pokemon' as Game,
-  budget_cents: 50000 as number | null,
-  card_count: 10 as number | null,
-  min_roi_percent: null as number | null,
-  sources: [...DEFAULT_SOURCES] as ScannableSource[],
-  depth: 'quick' as DiscoveryDepth,
-  min_condition: 'all' as ListingCondition | 'all',
+const form = ref<DiscoveryFormState>({
+  game: 'pokemon',
+  budget_cents: 50000,
+  card_count: 10,
+  min_roi_percent: null,
+  sources: [...DEFAULT_SOURCES],
+  depth: 'quick',
+  min_condition: 'all',
+  ...noCardFilters(),
 })
 
-const depthItems: { value: DiscoveryDepth; label: string; description: string }[] = [
-  { value: 'quick', label: 'Rapide', description: '~1 500 annonces, 1 à 2 min' },
-  { value: 'deep', label: 'Approfondie', description: '~5 000 annonces, ~5 min' },
-  { value: 'max', label: 'Maximale', description: '10 000+ annonces, ~15 min' },
-]
 // The ROI target defaults to the scanner's one, shown as the field's starting value.
 watch(
   settings,
   (value) => {
-    if (value && form.min_roi_percent == null) form.min_roi_percent = value.scanner.min_roi_percent
+    if (value && form.value.min_roi_percent == null) {
+      form.value.min_roi_percent = value.scanner.min_roi_percent
+    }
   },
   { immediate: true },
 )
@@ -50,14 +41,15 @@ function prefill(current: DiscoveryRun | null) {
   if (prefilled || !current?.request) return
   prefilled = true
   const request = current.request
-  Object.assign(form, {
+  Object.assign(form.value, {
     game: request.game,
     budget_cents: request.budget_cents,
     card_count: request.card_count,
-    min_roi_percent: request.min_roi_percent ?? form.min_roi_percent,
-    sources: request.sources?.length ? [...request.sources] : form.sources,
-    depth: request.depth ?? form.depth,
+    min_roi_percent: request.min_roi_percent ?? form.value.min_roi_percent,
+    sources: request.sources?.length ? [...request.sources] : form.value.sources,
+    depth: request.depth ?? form.value.depth,
     min_condition: request.min_condition ?? 'all',
+    ...cardFiltersOf(request),
   })
 }
 
@@ -79,17 +71,9 @@ const running = computed(() => run.value?.status === 'running')
 const alternatives = useListingFilter(() => run.value?.alternatives ?? [])
 
 async function start() {
-  if (!form.budget_cents || !form.card_count) return
+  if (!form.value.budget_cents || !form.value.card_count) return
   try {
-    run.value = await engine.startDiscovery({
-      game: form.game,
-      budget_cents: form.budget_cents,
-      card_count: form.card_count,
-      min_roi_percent: form.min_roi_percent,
-      sources: form.sources,
-      depth: form.depth,
-      min_condition: form.min_condition === 'all' ? null : form.min_condition,
-    })
+    run.value = await engine.startDiscovery(toDiscoveryRequest(form.value))
     void poll()
   } catch (error) {
     showError(error, 'Recherche impossible')
@@ -110,9 +94,9 @@ const progress = computed(() => {
   return Math.round((current.searches_done / current.searches_total) * 100)
 })
 const targetRoi = computed(
-  () => (run.value?.request?.min_roi_percent ?? form.min_roi_percent ?? 30) / 100,
+  () => (run.value?.request?.min_roi_percent ?? form.value.min_roi_percent ?? 30) / 100,
 )
-const budget = computed(() => run.value?.request?.budget_cents ?? form.budget_cents ?? 0)
+const budget = computed(() => run.value?.request?.budget_cents ?? form.value.budget_cents ?? 0)
 
 // "Acheté" opens the card form pre-filled, to put the card straight into a lot.
 const buying = ref(false)
@@ -161,24 +145,36 @@ function menu(pick: DiscoveryPick): DropdownMenuItem[] {
       icon: 'i-lucide-package-plus',
       onSelect: () => bought(pick),
     },
-    ...(pick.source === 'mercari'
-      ? [
-          {
-            label: 'Vendeur bloqué sur Neokyo',
-            icon: 'i-lucide-ban',
-            onSelect: () => blockPickSeller(pick),
-          },
-        ]
-      : []),
+    ...(pick.blocked_reason
+      ? pick.seller_id
+        ? [
+            {
+              label: 'Débloquer ce vendeur',
+              icon: 'i-lucide-undo-2',
+              onSelect: () => unblockPickSeller(pick),
+            },
+          ]
+        : []
+      : pick.source === 'mercari'
+        ? [
+            {
+              label: 'Vendeur bloqué sur Neokyo',
+              icon: 'i-lucide-ban',
+              onSelect: () => blockPickSeller(pick),
+            },
+          ]
+        : []),
   ]
 }
 
 const blockSeller = useBlockSeller()
 const toast = useToast()
 
-/** Neokyo refused this seller: the pick leaves the results; a new search recomposes. */
+const BLOCKED_BY_HAND = 'bloqué par vous après un refus de Neokyo'
+
+/** Neokyo refused this seller: the pick moves to the blocked ones; a new search recomposes. */
 async function blockPickSeller(pick: DiscoveryPick) {
-  if (!(await blockSeller(pick))) return
+  if (!(await blockSeller(pick, { sellerId: pick.seller_id, reason: BLOCKED_BY_HAND }))) return
   const current = run.value
   if (!current) return
   const other = (p: DiscoveryPick) =>
@@ -188,6 +184,7 @@ async function blockPickSeller(pick: DiscoveryPick) {
     ...current,
     picks: current.picks.filter(other),
     alternatives: current.alternatives.filter(other),
+    blocked: [{ ...pick, blocked_reason: BLOCKED_BY_HAND }, ...(current.blocked ?? [])],
   }
   if (wasPicked) {
     toast.add({
@@ -197,6 +194,34 @@ async function blockPickSeller(pick: DiscoveryPick) {
       color: 'neutral',
     })
   }
+}
+
+/** A seller blocked by mistake: their listing goes back among the others. */
+async function unblockPickSeller(pick: DiscoveryPick) {
+  if (!pick.seller_id) return
+  try {
+    await engine.unblockSeller(pick.source, pick.seller_id)
+  } catch (error) {
+    showError(error)
+    return
+  }
+  const current = run.value
+  if (current) {
+    const others = (p: DiscoveryPick) => p.seller_id !== pick.seller_id || p.source !== pick.source
+    run.value = {
+      ...current,
+      blocked: current.blocked.filter(others),
+      alternatives: [
+        ...current.blocked.filter((p) => !others(p)).map((p) => ({ ...p, blocked_reason: null })),
+        ...current.alternatives,
+      ],
+    }
+  }
+  toast.add({
+    title: 'Vendeur débloqué',
+    description: 'Ses annonces vous seront de nouveau proposées.',
+    color: 'success',
+  })
 }
 
 function toFavorite(pick: DiscoveryPick) {
@@ -211,7 +236,7 @@ function subtitle(pick: DiscoveryPick) {
   return [pick.card_label, pick.product.expansion_name].filter(Boolean).join(' · ')
 }
 
-const gameItems = selectItems(GAME_LABELS)
+const blockedOpen = ref(true)
 </script>
 
 <template>
@@ -224,86 +249,7 @@ const gameItems = selectItems(GAME_LABELS)
     </template>
 
     <template #body>
-      <UCard :ui="{ body: 'sm:p-5' }">
-        <form class="space-y-5" @submit.prevent="start">
-          <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-5">
-            <UFormField label="Jeu">
-              <SegmentedControl
-                v-model="form.game"
-                :items="gameItems"
-                label="Jeu"
-                class="flex w-full *:flex-1"
-              />
-            </UFormField>
-            <UFormField label="Budget du colis" hint="tout compris">
-              <MoneyInput v-model="form.budget_cents" currency="EUR" />
-            </UFormField>
-            <UFormField label="Nombre de cartes">
-              <UInputNumber v-model="form.card_count" :min="1" :max="50" class="w-full" />
-            </UFormField>
-            <UFormField label="ROI minimum">
-              <PercentInput v-model="form.min_roi_percent" :max="1000" />
-            </UFormField>
-            <UFormField
-              label="État minimum"
-              :hint="form.min_condition === 'all' ? undefined : 'Rakuma : lu sur l’annonce'"
-              :help="
-                form.min_condition === 'new' || form.min_condition === 'like_new'
-                  ? 'Écarte environ 6 annonces Mercari sur 10 : la plupart des cartes parfaites y sont en « Bon état ».'
-                  : undefined
-              "
-            >
-              <USelect v-model="form.min_condition" :items="MIN_CONDITION_ITEMS" class="w-full" />
-            </UFormField>
-          </div>
-
-          <div class="flex flex-wrap gap-4">
-            <UFormField label="Profondeur" class="min-w-0 flex-[3_1_520px]">
-              <URadioGroup
-                v-model="form.depth"
-                :items="depthItems"
-                variant="card"
-                orientation="horizontal"
-                :ui="{
-                  fieldset: 'grid gap-2.5 sm:grid-cols-3',
-                  item: 'bg-default',
-                  description: 'text-xs',
-                }"
-              />
-            </UFormField>
-            <UFormField label="Sites" class="min-w-0 flex-[1_1_240px]">
-              <UCheckboxGroup
-                v-model="form.sources"
-                :items="SCANNABLE_SOURCE_ITEMS"
-                variant="card"
-                orientation="horizontal"
-                :ui="{
-                  fieldset: 'flex flex-wrap gap-2',
-                  item: 'bg-default py-2.5',
-                  description: 'text-xs',
-                }"
-              />
-            </UFormField>
-          </div>
-
-          <div
-            class="flex flex-wrap items-center justify-between gap-3 border-t border-default pt-4"
-          >
-            <p class="text-sm text-dimmed">
-              Les cartes du colis sont vérifiées sur leur site avant d’être proposées : les bonnes
-              affaires partent en quelques minutes.
-            </p>
-            <UButton
-              type="submit"
-              icon="i-lucide-wand-sparkles"
-              label="Trouver des cartes"
-              size="xl"
-              :loading="running"
-              :disabled="!form.budget_cents || !form.card_count || !form.sources.length"
-            />
-          </div>
-        </form>
-      </UCard>
+      <DiscoveryForm v-model="form" :running="running" @submit="start" />
 
       <UCard v-if="running && run" :ui="{ body: 'sm:p-5' }">
         <div class="space-y-3">
@@ -518,6 +464,57 @@ const gameItems = selectItems(GAME_LABELS)
               @open="openPick(pick)"
             />
           </div>
+        </section>
+        <section v-if="run.blocked?.length" class="space-y-3">
+          <UCollapsible v-model:open="blockedOpen">
+            <button
+              type="button"
+              class="group flex w-full items-start justify-between gap-3 text-left"
+            >
+              <span>
+                <span class="flex items-center gap-2 text-lg font-semibold text-highlighted">
+                  <UIcon name="i-lucide-ban" class="size-5 text-error" />
+                  Vendeurs bloqués par Neokyo
+                  <UBadge :label="String(run.blocked.length)" color="error" variant="soft" />
+                </span>
+                <span class="mt-1 block text-sm text-dimmed">
+                  Rentables, mais Neokyo refuse d’acheter chez ces vendeurs : impossible de les
+                  commander par lui. Gardées ici pour savoir ce qui a été écarté, et pourquoi.
+                </span>
+              </span>
+              <UIcon
+                name="i-lucide-chevron-down"
+                class="mt-1.5 size-5 shrink-0 text-dimmed transition-transform duration-200 group-data-[state=open]:rotate-180"
+              />
+            </button>
+            <template #content>
+              <div class="mt-3 space-y-2.5">
+                <DealCard
+                  v-for="pick in run.blocked"
+                  :key="`${pick.source}-${pick.external_id}`"
+                  :title="pick.title"
+                  :heading="pick.product.name"
+                  :subtitle="subtitle(pick)"
+                  :source="pick.source"
+                  :price-jpy="pick.price_jpy"
+                  :shipping-included="pick.shipping_included"
+                  :url="pick.url"
+                  :neokyo-url="pick.neokyo_url"
+                  :thumbnail-url="pick.thumbnail_url"
+                  :listed-at="pick.listed_at"
+                  :ends-at="pick.ends_at"
+                  :bids="pick.bids"
+                  :condition="pick.condition"
+                  :landed-cost="pick.landed_cost"
+                  :sale="pick.sale"
+                  :target-roi="targetRoi"
+                  :blocked="pick.blocked_reason"
+                  :menu="menu(pick)"
+                  @open="openPick(pick)"
+                />
+              </div>
+            </template>
+          </UCollapsible>
         </section>
       </template>
 

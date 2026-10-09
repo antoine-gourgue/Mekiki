@@ -670,6 +670,10 @@ class ListingAvailability(BaseModel):
     seller_warning: str | None = None
 
 
+# Pokémon eras, from the set codes: "mega" (m1…), "sv", "swsh" (s1…), "sm", "xy", "bw", "older".
+Era = Literal["mega", "sv", "swsh", "sm", "xy", "bw", "older"]
+
+
 class DiscoveryRequest(BaseModel):
     """Compose a parcel: ``card_count`` listings whose total landed cost fits ``budget_cents``."""
 
@@ -684,6 +688,58 @@ class DiscoveryRequest(BaseModel):
     depth: Literal["quick", "deep", "max"] = "quick"
     # Only listings in this condition or better; those that do not say are left out too.
     min_condition: ListingCondition | None = None
+    # What to look for; left empty, every card of the game. A name is searched as typed,
+    # French and English card names translated to Japanese.
+    name: Annotated[str, Field(max_length=60)] | None = None
+    eras: Annotated[list[Era], Field(max_length=7)] = []
+    # Set codes as the catalog gives them: "sv2a", "op05".
+    sets: Annotated[list[Annotated[str, Field(max_length=12)]], Field(max_length=60)] = []
+    # Catalog rarity ids: "sar", "ar", "sec", "parallel"…
+    rarities: Annotated[list[Annotated[str, Field(max_length=12)]], Field(max_length=20)] = []
+    # The card's Cardmarket price, and the listing's price; left empty, the listing's price
+    # window follows the budget per card.
+    min_market_cents: Cents | None = None
+    max_market_cents: Cents | None = None
+    min_price_jpy: Yen | None = None
+    max_price_jpy: Yen | None = None
+    # Listings put online within this many days; those without a date are kept.
+    max_age_days: Annotated[int, Field(ge=1, le=60)] | None = None
+    exclude_mirrors: bool = False
+    # Leave out cards recognised without their number ("medium" confidence).
+    confident_only: bool = False
+
+
+class DiscoveryEra(BaseModel):
+    id: Era
+    label: str
+    # "2023-2025"
+    years: str
+
+
+class DiscoverySet(BaseModel):
+    code: str
+    # As printed on the cards: "SV2a", "OP05".
+    printed: str
+    # Cardmarket's expansion name: "Pokémon Card 151".
+    name: str | None
+    japanese_name: str | None
+    era: Era | None
+    cards: int
+
+
+class DiscoveryRarity(BaseModel):
+    id: str
+    label: str
+    description: str
+
+
+class DiscoveryCatalog(BaseModel):
+    """What a discovery can be narrowed to, for the search form."""
+
+    game: Game
+    eras: list[DiscoveryEra]
+    sets: list[DiscoverySet]
+    rarities: list[DiscoveryRarity]
 
 
 class DiscoveryPick(BaseModel):
@@ -708,6 +764,9 @@ class DiscoveryPick(BaseModel):
     # Set when the price is too far below the market to be the real card (copy, accessory,
     # wrong version): such listings never enter the parcel.
     warning: str | None = None
+    seller_id: str | None = None
+    # Why Neokyo would refuse the seller: the listing is shown apart, never in the parcel.
+    blocked_reason: str | None = None
     landed_cost: LandedCostOut
     sale: SaleBreakdownOut
 
@@ -751,6 +810,8 @@ class DiscoveryRun(BaseModel):
     totals: DiscoveryTotals | None = None
     # Other listings reaching the ROI target, best first, to swap into the parcel.
     alternatives: list[DiscoveryPick] = Field(default_factory=list)
+    # Listings that would have made it but whose seller Neokyo refuses.
+    blocked: list[DiscoveryPick] = Field(default_factory=list)
     errors: list[str] = Field(default_factory=list)
     # Stopped by the user: the results cover the listings browsed until then.
     stopped: bool = False

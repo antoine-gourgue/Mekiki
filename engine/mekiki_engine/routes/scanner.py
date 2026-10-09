@@ -12,6 +12,7 @@ from mekiki_engine.scanner import (
     availability,
     card_index,
     cardmarket,
+    catalog,
     favorites,
     names,
     service,
@@ -25,6 +26,7 @@ from mekiki_engine.schemas import (
     CardmarketStatus,
     DealOut,
     DealUpdate,
+    DiscoveryCatalog,
     DiscoveryRequest,
     DiscoveryRun,
     FavoriteCreate,
@@ -236,6 +238,14 @@ def discovery_status(request: Request, user: UserDep) -> DiscoveryRun:
 def start_discovery(payload: DiscoveryRequest, request: Request, user: UserDep) -> DiscoveryRun:
     background = request.app.state.config.background_jobs
     return _discovery(request, user.id).start(payload, background=background)
+
+
+@router.get("/discovery/catalog")
+def discovery_catalog(
+    session: SessionDep, _user: UserDep, game: Game = Game.POKEMON
+) -> DiscoveryCatalog:
+    """Eras, sets and rarities a discovery can be narrowed to."""
+    return catalog.catalog(session, game)
 
 
 @router.post("/discovery/stop")

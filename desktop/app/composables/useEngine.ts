@@ -21,6 +21,7 @@ import type {
   DashboardQuery,
   Deal,
   DealQuery,
+  DiscoveryCatalog,
   DiscoveryRequest,
   DiscoveryRun,
   EbayKeysUpdate,
@@ -181,6 +182,8 @@ export function useEngine() {
     scanStatus: () => request<ScanStatus>('/scanner/status'),
     runScan: () => request<ScanStatus>('/scanner/run', { method: 'POST', body: {} }),
     discovery: () => request<DiscoveryRun>('/discovery'),
+    discoveryCatalog: (game: Game) =>
+      request<DiscoveryCatalog>('/discovery/catalog', { query: { game } }),
     startDiscovery: (body: DiscoveryRequest) =>
       request<DiscoveryRun>('/discovery', { method: 'POST', body }),
     stopDiscovery: () => request<DiscoveryRun>('/discovery/stop', { method: 'POST', body: {} }),

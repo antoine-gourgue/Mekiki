@@ -515,9 +515,62 @@ export interface DiscoveryRequest {
   depth?: DiscoveryDepth
   /** Only listings in this condition or better; those that do not say are left out too. */
   min_condition?: ListingCondition | null
+  /** A card name, French and English names searched in Japanese. */
+  name?: string | null
+  eras?: Era[]
+  /** Set codes from the catalog: "sv2a", "op05". */
+  sets?: string[]
+  /** Catalog rarity ids: "sar", "ar", "sec", "parallel"… */
+  rarities?: string[]
+  /** Bounds of the card's Cardmarket price. */
+  min_market_cents?: number | null
+  max_market_cents?: number | null
+  /** Bounds of the listing's price; left empty, they follow the budget per card. */
+  min_price_jpy?: number | null
+  max_price_jpy?: number | null
+  /** Listings put online within this many days; those without a date are kept. */
+  max_age_days?: number | null
+  exclude_mirrors?: boolean
+  /** Leaves out cards recognised without their number. */
+  confident_only?: boolean
 }
 
 export type DiscoveryDepth = 'quick' | 'deep' | 'max'
+
+/** Pokémon eras, from the set codes: "mega" (m1…), "sv", "swsh" (s1…), "sm", "xy", "bw". */
+export type Era = 'mega' | 'sv' | 'swsh' | 'sm' | 'xy' | 'bw' | 'older'
+
+export interface DiscoveryEra {
+  id: Era
+  label: string
+  /** "2023-2025" */
+  years: string
+}
+
+export interface DiscoverySet {
+  code: string
+  /** As printed on the cards: "SV2a", "OP05". */
+  printed: string
+  /** Cardmarket's expansion name. */
+  name: string | null
+  japanese_name: string | null
+  era: Era | null
+  cards: number
+}
+
+export interface DiscoveryRarity {
+  id: string
+  label: string
+  description: string
+}
+
+/** What a discovery can be narrowed to, for the search form. */
+export interface DiscoveryCatalog {
+  game: Game
+  eras: DiscoveryEra[]
+  sets: DiscoverySet[]
+  rarities: DiscoveryRarity[]
+}
 
 export interface DiscoveryPick {
   source: SourcePlatform
@@ -540,6 +593,9 @@ export interface DiscoveryPick {
   confidence_note: string | null
   /** Set when the price is too far below the market to be the real card. */
   warning: string | null
+  seller_id: string | null
+  /** Why Neokyo would refuse the seller: shown apart, never in the parcel. */
+  blocked_reason: string | null
   landed_cost: LandedCost
   sale: SaleBreakdown
 }
@@ -575,6 +631,8 @@ export interface DiscoveryRun {
   totals: DiscoveryTotals | null
   /** Other listings reaching the ROI target, best first. */
   alternatives: DiscoveryPick[]
+  /** Listings that would have made it but whose seller Neokyo refuses. */
+  blocked: DiscoveryPick[]
   errors: string[]
   /** Stopped by the user: the results cover the listings browsed until then. */
   stopped: boolean

@@ -50,9 +50,11 @@ def seller_problem(item: dict[str, Any]) -> str | None:
     return None
 
 
-def blocked(session: Session) -> set[tuple[str, str]]:
-    """(source, seller id) of every seller to avoid."""
-    return {(row.source, row.seller_id) for row in session.scalars(select(BlockedSeller))}
+def blocked(session: Session) -> dict[tuple[str, str], str]:
+    """Every seller to avoid, by (source, seller id), with why."""
+    return {
+        (row.source, row.seller_id): row.reason for row in session.scalars(select(BlockedSeller))
+    }
 
 
 def block(session: Session, source: str, seller_id: str, reason: str) -> BlockedSeller:

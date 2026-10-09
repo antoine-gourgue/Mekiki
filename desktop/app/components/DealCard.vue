@@ -31,6 +31,8 @@ const props = withDefaults(
     offline?: boolean
     muted?: boolean
     note?: string | null
+    /** Why Neokyo refuses the seller: the card says so and offers no purchase. */
+    blocked?: string | null
     menu?: DropdownMenuItem[]
     /** Shows the star button. */
     favoritable?: boolean
@@ -46,6 +48,7 @@ const props = withDefaults(
     bids: null,
     condition: null,
     note: null,
+    blocked: null,
     menu: undefined,
     layout: 'row',
   },
@@ -117,6 +120,14 @@ const meta = computed(() =>
         :title="CONDITION_JAPANESE[condition]"
         class="absolute bottom-2.5 left-2.5"
       />
+      <UBadge
+        v-if="blocked"
+        color="error"
+        variant="solid"
+        icon="i-lucide-ban"
+        label="Vendeur bloqué"
+        class="absolute right-2.5 bottom-2.5"
+      />
       <UButton
         v-if="favoritable"
         :color="favorite ? 'primary' : 'neutral'"
@@ -174,6 +185,9 @@ const meta = computed(() =>
         <dd class="text-right tabular-nums">{{ sale ? formatCents(sale.revenue_cents) : '—' }}</dd>
       </dl>
 
+      <p v-if="blocked" class="rounded-md bg-error/10 px-2.5 py-1.5 text-xs text-error">
+        Neokyo refuse ce vendeur : {{ blocked }}
+      </p>
       <p v-if="note" class="text-xs text-error">{{ note }}</p>
 
       <div class="mt-auto flex items-center justify-between gap-2 border-t border-default pt-3">
@@ -190,7 +204,7 @@ const meta = computed(() =>
             @click="openExternal(url)"
           />
           <UButton
-            v-if="neokyoUrl"
+            v-if="neokyoUrl && !blocked"
             size="sm"
             variant="soft"
             label="Neokyo"
@@ -251,6 +265,14 @@ const meta = computed(() =>
             Plus en ligne
           </span>
           <UBadge
+            v-if="blocked"
+            color="error"
+            variant="soft"
+            size="sm"
+            icon="i-lucide-ban"
+            label="Vendeur bloqué par Neokyo"
+          />
+          <UBadge
             v-if="condition"
             :color="CONDITION_COLORS[condition]"
             variant="soft"
@@ -264,6 +286,9 @@ const meta = computed(() =>
         </p>
         <p class="mt-0.5 truncate text-xs text-dimmed" :title="subtitle">
           {{ [subtitle, meta].filter(Boolean).join(' · ') }}
+        </p>
+        <p v-if="blocked" class="mt-1 text-xs text-error">
+          Neokyo refuse ce vendeur : {{ blocked }}
         </p>
         <p v-if="note" class="mt-1 text-xs text-error">{{ note }}</p>
       </div>
@@ -329,7 +354,7 @@ const meta = computed(() =>
           @click="openExternal(url)"
         />
         <UButton
-          v-if="neokyoUrl"
+          v-if="neokyoUrl && !blocked"
           variant="soft"
           label="Neokyo"
           trailing-icon="i-lucide-arrow-up-right"

@@ -14,6 +14,7 @@ from collections import Counter
 from collections.abc import Callable, Iterable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, replace
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 from sqlalchemy import func, select
@@ -26,7 +27,7 @@ from mekiki_engine.costing.money import percent_to_fraction
 from mekiki_engine.costing.sale import SaleBreakdown
 from mekiki_engine.domain import Game, ListingCondition, SourcePlatform
 from mekiki_engine.models import CardIndexEntry, CardmarketProduct, SettingRow
-from mekiki_engine.scanner import availability, card_index, links, sellers
+from mekiki_engine.scanner import availability, card_index, catalog, links, sellers
 from mekiki_engine.scanner.identify import CardIdentity, identify
 from mekiki_engine.scanner.matching import MatchRule, match_title, split_keywords
 from mekiki_engine.scanner.pricing import (
@@ -36,8 +37,8 @@ from mekiki_engine.scanner.pricing import (
     parcel_totals,
     reference_price,
 )
-from mekiki_engine.scanner.resolver import CatalogResolver, Resolution
-from mekiki_engine.scanner.runner import SOURCE_LABELS, SourceFactory
+from mekiki_engine.scanner.resolver import CatalogResolver, Resolution, compact
+from mekiki_engine.scanner.runner import SOURCE_LABELS, SourceFactory, japanese_query
 from mekiki_engine.scanner.service import (
     landed_cost_out,
     market_price_out,
@@ -80,6 +81,12 @@ MAX_SAME_PRODUCT = 2
 # A site failing this many searches in a row is down or has changed: stop browsing it.
 MAX_FAILURES_IN_A_ROW = 3
 MAX_ALTERNATIVES = 30
+MAX_BLOCKED = 30
+# Sets searched for the chosen eras, per depth; set searches combined with each rarity when
+# this few sets are chosen; searches combining a card's name with a set.
+ERA_SETS = {"quick": 8, "deep": 20, "max": 40}
+MAX_SETS_WITH_RARITIES = 3
+MAX_NAME_SETS = 10
 # The log keeps the latest lines only: a maximal discovery reads hundreds of pages.
 MAX_LOG_LINES = 400
 DEPTH_LABELS = {"quick": "rapide", "deep": "approfondie", "max": "maximale"}
@@ -117,6 +124,8 @@ class Candidate:
     warning: str | None = None
     # Under the ROI target on its own: only used to fill a parcel left short of cards.
     below_target: bool = False
+    # Why Neokyo refuses the seller: shown apart, never in the parcel.
+    blocked: str | None = None
 
     @property
     def landed_cents(self) -> int:
@@ -159,21 +168,72 @@ def counted(count: int, words: str) -> str:
     return f"{count:,}".replace(",", " ") + " " + words
 
 
-def search_plan(session: Session, game: Game, depth: str) -> list[tuple[str, int]]:
-    """(query, pages) to run on each site: broad searches, then the most valuable sets.
+def search_plan(
+    session: Session, request: DiscoveryRequest, name: str | None = None
+) -> list[tuple[str, int]]:
+    """(query, pages) to run on each site.
 
-    Set-code searches find listings whose title carries the set code, the ones the card
-    index recognises best.
+    Without filters: broad searches, then the most valuable sets. A card's name (in
+    Japanese), chosen sets or eras turn them into searches of that name or of those sets: set
+    code and Japanese set name, the titles the card index recognises best. Rarities replace
+    the broad searches. Listings are filtered again once recognised: searches only bring the
+    right ones closer.
     """
-    broad_pages, set_count, set_pages = DEPTHS[depth]
-    plan = [(query, broad_pages) for query in DISCOVERY_QUERIES[game]]
-    if set_count:
+    game = request.game
+    broad_pages, set_count, set_pages = DEPTHS[request.depth]
+    searches = catalog.RARITY_SEARCHES[game]
+    words = [searches[rarity] for rarity in request.rarities if rarity in searches]
+    if name:
+        plan = [(name, broad_pages + 1), *((f"{name} {word}", broad_pages) for word in words)]
+        for code in request.sets[:MAX_NAME_SETS]:
+            plan += [(f"{name} {query}", 1) for query in set_queries(session, game, [code])[:1]]
+        return _unique(plan)
+    pages = max(broad_pages, set_pages)
+    if request.sets:
+        plan = [(query, pages) for query in set_queries(session, game, request.sets)]
+        if len(request.sets) <= MAX_SETS_WITH_RARITIES:
+            for code in request.sets:
+                first = set_queries(session, game, [code])[:1]
+                plan += [(f"{query} {word}", 1) for query in first for word in words]
+        return _unique(plan)
+    # Broad searches bring the newest listings, mostly of recent sets: for older eras, their
+    # sets' own searches do better.
+    recent = not request.eras or bool({"mega", "sv"} & set(request.eras))
+    broad = words or (list(DISCOVERY_QUERIES[game]) if recent else [])
+    plan = [(query, broad_pages) for query in broad]
+    if request.eras and game is Game.POKEMON:
+        eras = set(request.eras)
+        codes = valuable_sets(session, game, ERA_SETS[request.depth], eras=eras)
+        plan += [(query, pages) for query in set_queries(session, game, codes)]
+    elif set_count:
         plan += [(code, set_pages) for code in valuable_sets(session, game, set_count)]
-    return plan
+    return _unique(plan)
 
 
-def valuable_sets(session: Session, game: Game, limit: int) -> list[str]:
-    """Set codes with the most cards priced at ``VALUABLE_CENTS`` or more."""
+def set_queries(session: Session, game: Game, codes: list[str]) -> list[str]:
+    """What titles write for each set: its code when searchable, and its Japanese name."""
+    names = catalog.set_names(session, game, codes)
+    queries = []
+    for code in codes:
+        if _searchable_set_code(code):
+            queries.append(code.upper() if game is Game.ONE_PIECE else code)
+        if len(name := names.get(code) or "") >= 3:
+            queries.append(name)
+    return queries
+
+
+def _unique(plan: list[tuple[str, int]]) -> list[tuple[str, int]]:
+    """The plan without repeated searches, in its order."""
+    kept: dict[str, tuple[str, int]] = {}
+    for query, pages in plan:
+        kept.setdefault(" ".join(query.lower().split()), (query, pages))
+    return list(kept.values())
+
+
+def valuable_sets(
+    session: Session, game: Game, limit: int, *, eras: set[str] | None = None
+) -> list[str]:
+    """Set codes with the most cards priced at ``VALUABLE_CENTS`` or more, of ``eras``."""
     price = func.coalesce(
         CardmarketProduct.avg30_cents,
         CardmarketProduct.avg7_cents,
@@ -188,7 +248,11 @@ def valuable_sets(session: Session, game: Game, limit: int) -> list[str]:
             .group_by(CardIndexEntry.set_code)
             .order_by(func.count().desc())
         ).all()
-        return [code for code, _count in rows if _searchable_set_code(code)][:limit]
+        return [
+            code
+            for code, _count in rows
+            if _searchable_set_code(code) and (not eras or catalog.era_of(code) in eras)
+        ][:limit]
     codes: Counter[str] = Counter()
     names = session.scalars(
         select(CardmarketProduct.name).where(
@@ -210,10 +274,126 @@ def _searchable_set_code(code: str) -> bool:
 
 
 def price_window_jpy(settings: AppSettings, request: DiscoveryRequest) -> tuple[int, int]:
+    """The listing prices searched: as asked, or else around the budget per card."""
     per_card_eur = request.budget_cents / request.card_count / 100
     fx = float(settings.fx_jpy_per_eur)
     low, high = PRICE_WINDOW
-    return int(per_card_eur * low * fx), int(per_card_eur * high * fx)
+    price_min = request.min_price_jpy
+    if price_min is None:
+        price_min = int(per_card_eur * low * fx)
+    price_max = request.max_price_jpy
+    if price_max is None:
+        price_max = max(int(per_card_eur * high * fx), price_min)
+    return price_min, price_max
+
+
+@dataclass(frozen=True, slots=True)
+class CardFilter:
+    """Which recognised cards a discovery keeps, from the request's filters."""
+
+    sets: frozenset[str] = frozenset()
+    eras: frozenset[str] = frozenset()
+    rarities: frozenset[str] = frozenset()
+    # The card's name in Japanese, compacted as titles are.
+    name: str | None = None
+    min_market_cents: int | None = None
+    max_market_cents: int | None = None
+    exclude_mirrors: bool = False
+    confident_only: bool = False
+    # Listings put online before this moment (ISO, UTC) are left out.
+    since: str | None = None
+
+    @classmethod
+    def of(cls, request: DiscoveryRequest, name: str | None) -> CardFilter:
+        since = None
+        if request.max_age_days:
+            moment = datetime.now(UTC) - timedelta(days=request.max_age_days)
+            since = moment.strftime("%Y-%m-%dT%H:%M:%SZ")
+        return cls(
+            sets=frozenset(code.lower() for code in request.sets),
+            eras=frozenset(request.eras) if request.game is Game.POKEMON else frozenset(),
+            rarities=frozenset(request.rarities),
+            name=compact(name) if name else None,
+            min_market_cents=request.min_market_cents,
+            max_market_cents=request.max_market_cents,
+            exclude_mirrors=request.exclude_mirrors,
+            confident_only=request.confident_only,
+            since=since,
+        )
+
+    def recent_enough(self, listing: FoundListing) -> bool:
+        # Without a date, nothing says the listing is old.
+        return not self.since or not listing.listed_at or listing.listed_at >= self.since
+
+    def accepts(
+        self, title: str, identity: CardIdentity, resolution: Resolution, market_cents: int
+    ) -> bool:
+        set_code = resolution.set_code or ""
+        checks = (
+            not self.sets or set_code in self.sets,
+            not self.eras or catalog.era_of(set_code) in self.eras,
+            not self.rarities or bool(self.rarities & card_rarities(identity, resolution)),
+            not self.name or self.name in compact(title),
+            self.min_market_cents is None or market_cents >= self.min_market_cents,
+            self.max_market_cents is None or market_cents <= self.max_market_cents,
+            not (self.exclude_mirrors and identity.mirror),
+            not (self.confident_only and resolution.confidence != "high"),
+        )
+        return all(checks)
+
+
+def narrowed(request: DiscoveryRequest) -> bool:
+    """Whether the request asks for some cards only: a name, eras, sets, rarities…"""
+    return any(
+        (
+            (request.name or "").strip(),
+            request.eras,
+            request.sets,
+            request.rarities,
+            request.min_market_cents is not None,
+            request.max_market_cents is not None,
+            request.max_age_days,
+            request.exclude_mirrors,
+            request.confident_only,
+        )
+    )
+
+
+def card_rarities(identity: CardIdentity, resolution: Resolution) -> set[str]:
+    """The catalog's rarity ids a recognised card answers to."""
+    found = {resolution.rarity or identity.rarity or ""}
+    if identity.game is Game.ONE_PIECE:
+        found |= {"parallel"} if identity.parallel else set()
+        found |= {"manga"} if identity.manga else set()
+    return found - {""}
+
+
+def describe_filters(request: DiscoveryRequest, name: str | None) -> str | None:
+    """The request's filters in French, for the log; None without any."""
+    parts = []
+    if request.name:
+        translated = f" ({name})" if name and name != request.name else ""
+        parts.append(f"nom « {request.name} »{translated}")
+    if request.eras and request.game is Game.POKEMON:
+        labels = {era.id: era.label for era in catalog.ERAS}
+        parts.append("époques " + ", ".join(labels[era] for era in request.eras))
+    if request.sets:
+        shown = ", ".join(code.upper() for code in request.sets[:8])
+        parts.append(f"extensions {shown}" + ("…" if len(request.sets) > 8 else ""))
+    if request.rarities:
+        labels = {rarity.id: rarity.label for rarity in catalog.RARITIES[request.game]}
+        parts.append("raretés " + ", ".join(labels.get(r, r) for r in request.rarities))
+    if request.min_market_cents is not None:
+        parts.append(f"cote d'au moins {euros(request.min_market_cents)}")
+    if request.max_market_cents is not None:
+        parts.append(f"cote d'au plus {euros(request.max_market_cents)}")
+    if request.max_age_days:
+        parts.append(f"en ligne depuis {request.max_age_days} jours au plus")
+    if request.exclude_mirrors:
+        parts.append("sans les miroirs")
+    if request.confident_only:
+        parts.append("cartes reconnues par leur numéro seulement")
+    return "Filtres : " + " ; ".join(parts) + "." if parts else None
 
 
 def discover(
@@ -251,7 +431,12 @@ def discover(
             note(run, error)
         else:
             note(run, f"Index prêt : {card_index.indexed_count(session)} cartes.")
-    plan = search_plan(session, request.game, request.depth)
+    # Listings name cards in Japanese: "Dracaufeu" is searched as "リザードン".
+    typed = (request.name or "").strip()
+    name = japanese_query(session, client, request.game, typed) if typed else None
+    if described := describe_filters(request, name):
+        note(run, described)
+    plan = search_plan(session, request, name)
     run.searches_total = len(platforms) * sum(pages for _query, pages in plan)
     price_min, price_max = price_window_jpy(settings, request)
     note(
@@ -336,7 +521,17 @@ def discover(
         f"{counted(run.listings_seen, 'annonce lue')} au total : lecture des titres et des cotes…",
     )
     on_progress(run)
-    candidates = evaluate(session, settings, request, found.values(), run)
+    # Listings of sellers Neokyo refuses: kept apart, to show what was missed and why.
+    blocked: list[Candidate] = []
+    candidates = evaluate(
+        session,
+        settings,
+        request,
+        found.values(),
+        run,
+        cards=CardFilter.of(request, name),
+        blocked=blocked,
+    )
     on_progress(run)
     picked, gone = compose_available_parcel(
         session,
@@ -347,6 +542,7 @@ def discover(
         request,
         on_progress=on_progress,
         should_stop=should_stop,
+        blocked=blocked,
     )
     run.picks, run.totals = price_parcel(settings, picked)
     # Picked cards were priced as if the parcel held ``card_count`` cards; with fewer, each
@@ -383,6 +579,13 @@ def discover(
         for candidate in candidates
         if id(candidate) not in left_out and not candidate.below_target
     ][:MAX_ALTERNATIVES]
+    run.blocked = [
+        _pick(candidate, candidate.estimate.landed, candidate.estimate.sale)
+        for candidate in sorted(blocked, key=lambda c: -c.roi)
+    ][:MAX_BLOCKED]
+    if run.blocked:
+        apart = counted(len(run.blocked), "annonce rentable")
+        note(run, f"Vendeurs bloqués par Neokyo : {apart} à part.")
     run.stopped = should_stop()
     note(
         run,
@@ -409,20 +612,28 @@ def evaluate(
     request: DiscoveryRequest,
     listings: Iterable[FoundListing],
     run: DiscoveryRun,
+    *,
+    cards: CardFilter | None = None,
+    blocked: list[Candidate] | None = None,
 ) -> list[Candidate]:
-    """Listings recognised and priced at a profit, best return first.
+    """Listings recognised, within ``cards`` and priced at a profit, best return first.
 
     Those under the ROI target come last, flagged ``below_target``: they only fill a parcel
-    that would otherwise stay short of cards.
+    that would otherwise stay short of cards. Those of a seller Neokyo refuses go to
+    ``blocked`` instead, when they reach the target.
     """
     resolver = CatalogResolver(session)
     noise = MatchRule(global_excluded=split_keywords(settings.scanner.excluded_keywords))
     target = target_roi(settings, request)
     avoided = sellers.blocked(session)
+    cards = cards or CardFilter()
     # Why the other listings were left out, for the log: most never become a candidate.
     dropped: Counter[str] = Counter()
     candidates: list[Candidate] = []
     for listing in listings:
+        if not cards.recent_enough(listing):
+            dropped["filters"] += 1
+            continue
         minimum = request.min_condition
         # Without a condition in the results, the listing's page is checked if it makes the
         # parcel (see compose_available_parcel).
@@ -434,9 +645,7 @@ def evaluate(
         ):
             dropped["condition"] += 1
             continue
-        if (listing.source.value, listing.seller_id) in avoided:
-            dropped["seller"] += 1
-            continue
+        refusal = avoided.get((listing.source.value, listing.seller_id or ""))
         identity = identify(listing.title, request.game)
         # Graded copies and lots are other products; the noise rule rejects both.
         if identity.graded or not match_title(listing.title, noise).matched:
@@ -451,6 +660,9 @@ def evaluate(
         if reference is None:
             continue
         run.listings_priced += 1
+        if not cards.accepts(listing.title, identity, resolution, reference[0]):
+            dropped["filters"] += 1
+            continue
         landed = parcel_landed_cost(
             settings,
             price_jpy=listing.price_jpy,
@@ -470,9 +682,14 @@ def evaluate(
             SUSPICIOUS_WARNING if price_cents < SUSPICIOUS_PRICE_SHARE * reference[0] else None
         )
         below = margin < target * landed.total_cents
-        candidates.append(
-            Candidate(listing, identity, resolution, reference[0], estimate, warning, below)
-        )
+        candidate = Candidate(listing, identity, resolution, reference[0], estimate, warning, below)
+        if refusal:
+            dropped["seller"] += 1
+            if blocked is not None and not below and not warning:
+                candidate.blocked = refusal
+                blocked.append(candidate)
+            continue
+        candidates.append(candidate)
     above = sum(1 for c in candidates if not c.below_target and not c.warning)
     below = sum(1 for c in candidates if c.below_target and not c.warning)
     suspicious = sum(1 for c in candidates if c.warning)
@@ -483,6 +700,7 @@ def evaluate(
             ", ".join(
                 f"{counted(count, 'annonce')} {why}"
                 for count, why in (
+                    (dropped["filters"], "hors de vos filtres"),
                     (dropped["condition"], "par l'état (insuffisant ou non précisé)"),
                     (dropped["seller"], "d'un vendeur bloqué par Neokyo"),
                     (dropped["noise"], "en lot, booster, gradée ou avec un mot exclu"),
@@ -634,6 +852,8 @@ def short_of_target(
         ideas.append("Rakuma")
     if request.min_condition is not None:
         ideas.append("un état minimum moins strict")
+    if narrowed(request):
+        ideas.append("des filtres moins stricts")
     ideas.append("un ROI minimum plus bas")
     return message + " Pour plus de choix : " + ", ".join(ideas) + "."
 
@@ -648,8 +868,11 @@ def compose_available_parcel(
     *,
     on_progress: Callable[[DiscoveryRun], None],
     should_stop: Callable[[], bool],
+    blocked: list[Candidate] | None = None,
 ) -> tuple[list[Candidate], set[int]]:
     """The best parcel among listings still for sale, and the ids of the candidates gone.
+
+    A listing whose seller turns out to be refused by Neokyo leaves for ``blocked``.
 
     Good deals sell within minutes: each picked listing is checked on its marketplace, one
     request at a time, and a sold one gives its place to the next candidate. A listing that
@@ -695,6 +918,10 @@ def compose_available_parcel(
                 sellers.block(
                     session, listing.source.value, result.seller_id, result.seller_warning
                 )
+                if blocked is not None:
+                    candidate.blocked = result.seller_warning
+                    candidate.listing = replace(listing, seller_id=result.seller_id)
+                    blocked.append(candidate)
                 note(run, f"{label} ({site}) : vendeur à éviter, {result.seller_warning}.")
             elif minimum and not (condition and condition.at_least(minimum)):
                 gone.add(id(candidate))
@@ -770,6 +997,8 @@ def _pick(
         confidence=candidate.resolution.confidence,
         confidence_note=candidate.resolution.note,
         warning=candidate.warning,
+        seller_id=listing.seller_id,
+        blocked_reason=candidate.blocked,
         landed_cost=landed_cost_out(estimate),
         sale=breakdown,
     )

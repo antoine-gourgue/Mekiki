@@ -41,6 +41,9 @@ class Resolution:
     label: str
     confidence: Literal["high", "medium"]
     note: str | None = None
+    # The card's set ("sv2a", "op05") and rarity ("sar", "sec"), for discovery's filters.
+    set_code: str | None = None
+    rarity: str | None = None
 
 
 class CatalogResolver:
@@ -119,21 +122,26 @@ class CatalogResolver:
         if not products:
             return None
         row = rows[0]
-        label = f"{_printed_code(row.set_code)} {row.number:03d}"
+        label = f"{printed_code(row.set_code)} {row.number:03d}"
         if row.set_total:
             label += f"/{row.set_total:03d}"
         if row.rarity:
             label += f" · {row.rarity}"
         if identity.mirror:
             label += " · miroir"
+        rarity = row.rarity.lower() if row.rarity else identity.rarity
         if len(products) == 1:
-            return Resolution(products[0], label, "medium" if note else "high", note)
+            return Resolution(
+                products[0], label, "medium" if note else "high", note, row.set_code, rarity
+            )
         # Unclear printing: the cheapest price never makes a listing look better than it is.
         return Resolution(
             products[0],
             label,
             "medium",
             note or f"{len(products)} versions sur Cardmarket : vérifiez la cote",
+            row.set_code,
+            rarity,
         )
 
     def _resolve_one_piece(self, identity: CardIdentity) -> Resolution | None:
@@ -142,8 +150,9 @@ class CatalogResolver:
         if not versions:
             return None
         code = identity.code.upper()
+        set_code = identity.code.split("-")[0]
         if len(versions) == 1:
-            return Resolution(versions[0], code, "high")
+            return Resolution(versions[0], code, "high", None, set_code, identity.rarity)
         # Versions share the same name; in creation order the regular print comes first,
         # then the parallel, then the manga (comic) parallel when there is one.
         if identity.manga:
@@ -157,6 +166,8 @@ class CatalogResolver:
             f"{code} · {kind}",
             "medium",
             f"{len(versions)} versions japonaises sur Cardmarket : vérifiez laquelle",
+            set_code,
+            identity.rarity,
         )
 
     def one_piece_versions(self, code: str) -> list[CardmarketProduct]:
@@ -294,7 +305,7 @@ def _matching_printing(rows: list[CardIndexEntry], mirror: str | None) -> list[C
     return chosen or rows
 
 
-def _printed_code(set_code: str) -> str:
+def printed_code(set_code: str) -> str:
     """ "sv2a" → "SV2a", "s8b" → "S8b", "s-p" → "S-P": as printed on the cards."""
     if set_code.endswith("-p"):
         return set_code.upper()
