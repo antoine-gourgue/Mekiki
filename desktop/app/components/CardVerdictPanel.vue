@@ -9,8 +9,8 @@ import type {
 
 /**
  * "Faut-il l'acheter ?": the verdict on a card, its resale on each outlet with the most to
- * pay in Japan, warning signals, then its eBay sales (read in Chrome when the card opens) and
- * its live eBay listings.
+ * pay in Japan, warning signals, then its eBay sales (read when asked, once signed in to eBay)
+ * and its live eBay listings.
  */
 const props = defineProps<{ query: VerdictQuery }>()
 
@@ -71,8 +71,8 @@ const SIGNAL_LOOKS: Record<VerdictSignal['tone'], { icon: string; class: string 
 // A few listings at first, all of them on demand.
 const SHOWN_LISTINGS = 6
 
-// eBay's sold listings, read in Mekiki's Chrome window when the card opens. The engine keeps
-// them six hours: opening the card again loads nothing.
+// eBay's sold listings: read when the user asks, in Mekiki's Chrome window (or through eBay's
+// API when the keys may). The engine keeps them six hours, shown again when the card opens.
 const sold = ref<BrowserPrices | null>(null)
 const soldFailure = ref<string | null>(null)
 const readingSold = ref(false)
@@ -89,11 +89,38 @@ const soldError = computed(() => soldFailure.value ?? sold.value?.error ?? null)
 // eBay shows its sold listings to signed-in visitors only.
 const needsSignIn = computed(() => /connectez-vous/i.test(soldError.value ?? ''))
 
+// Reading needs eBay's API or a Chrome window signed in to eBay; Chrome's last known state
+// is read without opening it, and shared with the accounts card (ConnectedAccounts).
+const { access, refresh: refreshAccess } = useEbaySoldAccess()
+const api = computed(() => access.value?.api ?? false)
+const canRead = computed(() => api.value || access.value?.signedIn === true)
+
+// The sign-in page is open in the Chrome window, waiting for the user.
+const signingIn = ref(false)
+const checkingSignIn = ref(false)
+
 async function signInToEbay() {
   try {
     await engine.openSite('ebay')
+    signingIn.value = true
   } catch (error) {
     soldFailure.value = engineErrorMessage(error)
+  }
+}
+
+async function checkSignIn() {
+  checkingSignIn.value = true
+  try {
+    const { connected } = await engine.checkSite('ebay')
+    access.value = { api: api.value, signedIn: connected }
+    if (connected) {
+      signingIn.value = false
+      soldFailure.value = null
+    }
+  } catch (error) {
+    soldFailure.value = engineErrorMessage(error)
+  } finally {
+    checkingSignIn.value = false
   }
 }
 
@@ -112,12 +139,33 @@ async function readSold() {
     })
     if (card !== opened) return
     sold.value = read
+    if (read.source === 'chrome') {
+      access.value = { api: api.value, signedIn: !/connectez-vous/i.test(read.error ?? '') }
+    }
     // The verdict now counts these sales.
     if (!read.error) result.value = await engine.verdict(props.query)
   } catch (error) {
     if (card === opened) soldFailure.value = engineErrorMessage(error)
   } finally {
     if (card === opened) readingSold.value = false
+  }
+}
+
+// Sales read in the last six hours, shown without loading anything.
+async function showReadSales() {
+  const current = result.value
+  const query = current?.market_queries.ebay
+  if (!current?.card_number || !query) return
+  const card = opened
+  try {
+    const kept = await engine.ebaySoldCached({
+      query,
+      card_number: current.card_number,
+      names: current.card_names,
+    })
+    if (card === opened && kept) sold.value = kept
+  } catch {
+    // Nothing kept: the button reads them.
   }
 }
 
@@ -129,8 +177,10 @@ watch(
     soldFailure.value = null
     soldExpanded.value = false
     readingSold.value = false
+    signingIn.value = false
     await load()
-    void readSold()
+    void refreshAccess()
+    void showReadSales()
   },
   { immediate: true },
 )
@@ -278,9 +328,9 @@ const costLine = computed(() => {
         <p class="text-xs text-dimmed">
           Ce que la carte s’est vraiment vendue,
           {{
-            sold?.source === 'api'
+            sold?.source === 'api' || (!sold && api)
               ? 'lu par l’API d’eBay (90 derniers jours).'
-              : 'lu dans la fenêtre Chrome de Mekiki.'
+              : 'lu sur eBay dans la fenêtre Chrome de Mekiki, quand vous le demandez.'
           }}
         </p>
         <p v-if="!result.card_number" class="text-sm text-muted">
@@ -288,31 +338,8 @@ const costLine = computed(() => {
           autres. Choisissez l’impression japonaise, ou indiquez le numéro sur la carte.
         </p>
         <BrowserLog v-else-if="readingSold" active />
-        <div v-else-if="soldError" class="flex flex-wrap items-center gap-2">
-          <p class="flex-1 text-sm" :class="needsSignIn ? 'text-muted' : 'text-error'">
-            {{
-              needsSignIn
-                ? 'Connectez-vous à eBay dans la fenêtre Chrome de Mekiki pour voir les ventes réussies.'
-                : soldError
-            }}
-          </p>
-          <UButton
-            v-if="needsSignIn"
-            size="sm"
-            icon="i-lucide-log-in"
-            label="Se connecter à eBay"
-            @click="signInToEbay"
-          />
-          <UButton
-            size="sm"
-            color="neutral"
-            variant="outline"
-            icon="i-lucide-rotate-cw"
-            label="Réessayer"
-            @click="readSold"
-          />
-        </div>
-        <template v-else-if="sold">
+        <p v-else-if="soldError && !needsSignIn" class="text-sm text-error">{{ soldError }}</p>
+        <template v-else-if="sold && !sold.error">
           <p v-if="!sold.relevant_count" class="text-sm text-muted">
             Aucune vente de cette carte trouvée sur eBay.
           </p>
@@ -357,6 +384,62 @@ const costLine = computed(() => {
             * Offre acceptée : le prix réel était plus bas.
           </p>
         </template>
+
+        <div
+          v-if="result.card_number && !readingSold"
+          class="flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-default pt-3"
+        >
+          <UButton
+            size="sm"
+            :icon="sold && !sold.error ? 'i-lucide-rotate-cw' : 'i-lucide-search'"
+            :label="sold && !sold.error ? 'Relire les ventes' : 'Lire les ventes réussies'"
+            :color="sold && !sold.error ? 'neutral' : 'primary'"
+            :variant="sold && !sold.error ? 'outline' : 'solid'"
+            :disabled="!canRead"
+            @click="readSold"
+          />
+          <template v-if="canRead">
+            <span v-if="sold && !sold.error" class="text-xs text-dimmed">
+              lues {{ formatDateTime(sold.fetched_at) }}
+            </span>
+            <span v-else class="text-xs text-dimmed">
+              {{
+                api
+                  ? 'Par l’API d’eBay, sans ouvrir Chrome.'
+                  : 'Trois recherches sur eBay dans la fenêtre Chrome de Mekiki, une dizaine de secondes.'
+              }}
+            </span>
+          </template>
+          <template v-else-if="access">
+            <span class="text-xs text-muted">
+              {{
+                signingIn
+                  ? 'Connectez-vous dans la fenêtre Chrome qui vient de s’ouvrir, puis vérifiez.'
+                  : access.signedIn === false
+                    ? 'Pas connecté à eBay dans la fenêtre Chrome de Mekiki.'
+                    : 'Connexion à eBay pas encore vérifiée.'
+              }}
+            </span>
+            <UButton
+              v-if="signingIn || access.signedIn === null"
+              size="sm"
+              color="neutral"
+              variant="soft"
+              icon="i-lucide-user-check"
+              :label="signingIn ? 'C’est fait, vérifier' : 'Vérifier la connexion'"
+              :loading="checkingSignIn"
+              @click="checkSignIn"
+            />
+            <UButton
+              v-if="!signingIn"
+              size="sm"
+              variant="soft"
+              icon="i-lucide-log-in"
+              label="Se connecter à eBay"
+              @click="signInToEbay"
+            />
+          </template>
+        </div>
       </section>
 
       <section v-if="ebayLive" class="space-y-2.5 rounded-xl border border-default p-4">

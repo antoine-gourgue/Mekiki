@@ -14,6 +14,7 @@ const SITES: { site: BrowserSite; label: string; icon: string }[] = [
 ]
 
 const status = ref<BrowserStatus | null>(null)
+const { access: ebayAccess } = useEbaySoldAccess()
 const connected = reactive<Partial<Record<BrowserSite, boolean>>>({})
 const busy = ref<BrowserSite | null>(null)
 // Chrome works out of sight, except while the user signs in.
@@ -44,6 +45,10 @@ async function check(site: BrowserSite) {
   try {
     connected[site] = (await engine.checkSite(site)).connected
     if (connected[site]) windowShown.value = false
+    // Card panels enable their eBay reading from this.
+    if (site === 'ebay' && ebayAccess.value) {
+      ebayAccess.value = { ...ebayAccess.value, signedIn: connected[site] ?? null }
+    }
   } catch (error) {
     showError(error, 'Vérification impossible')
   } finally {

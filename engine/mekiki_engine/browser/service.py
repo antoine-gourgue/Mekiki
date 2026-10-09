@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import random
 import threading
 import time
@@ -118,10 +119,34 @@ class Browsers:
         session.set_visible(True)
         self._note(user_id, f"{markets.SITE_LABELS[site]} : page de connexion ouverte")
 
+    def known_connections(self, user_id: int) -> dict[Site, bool]:
+        """Whether the account was signed in to each site when Chrome last saw it.
+
+        Kept on disk with the profile, whose cookies outlive the engine: the app reads it
+        without opening Chrome. A site never checked is missing.
+        """
+        try:
+            saved = json.loads(self._connections_file(user_id).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return {}
+        return {site: bool(saved[site]) for site in markets.SITE_LABELS if site in saved}
+
+    def _remember_connection(self, user_id: int, site: Site, connected: bool) -> None:
+        with self._lock:
+            known = self.known_connections(user_id)
+            known[site] = connected
+            path = self._connections_file(user_id)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps(known), encoding="utf-8")
+
+    def _connections_file(self, user_id: int) -> Path:
+        return self.data_dir / "chrome" / f"{user_id}-connections.json"
+
     def is_connected(self, user_id: int, site: Site) -> bool:
         session = self.session(user_id)
         with session.page() as tab:
             connected = markets.is_connected(tab, site)
+        self._remember_connection(user_id, site, connected)
         self._note(
             user_id,
             f"{markets.SITE_LABELS[site]} : {'connecté' if connected else 'pas connecté'}",
@@ -186,9 +211,12 @@ class Browsers:
             self._note(user_id, f"eBay : {error}")
             if isinstance(error, markets.BotChallenge):
                 self.session(user_id).set_visible(True)
+            if isinstance(error, markets.SignInRequired):
+                self._remember_connection(user_id, "ebay", False)
             return MarketPrices("ebay", query, [], None, markets.utc_now(), error=str(error))
         finally:
             self._doing(user_id, None)
+        self._remember_connection(user_id, "ebay", True)
         listings = markets.parse_listings(raw, card_number, names)
         relevant = sum(listing.relevant for listing in listings)
         self._note(user_id, f"eBay : {len(listings)} ventes lues, {relevant} de cette carte")

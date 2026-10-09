@@ -882,6 +882,8 @@ export interface BrowserStatus {
   chrome_installed: boolean
   /** The Mekiki Chrome window is open. */
   running: boolean
+  /** Signed in to each site when Chrome last saw it; a site never checked is missing. */
+  connections: Partial<Record<BrowserSite, boolean>>
 }
 
 export interface SiteConnection {

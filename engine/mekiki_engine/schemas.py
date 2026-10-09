@@ -1080,6 +1080,8 @@ class BrowserStatus(BaseModel):
     chrome_installed: bool
     # The Mekiki Chrome window is open.
     running: bool
+    # Signed in to each site when Chrome last saw it; a site never checked is missing.
+    connections: dict[BrowserSite, bool] = {}
 
 
 class SiteConnection(BaseModel):

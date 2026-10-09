@@ -68,9 +68,13 @@ class FakeTab:
         self.pages = pages
         self.connected = connected
         self.challenge = False
+        # eBay sends signed-out visitors of its sold searches to its sign-in page.
+        self.signed_out = False
         self.visited: list[str] = []
 
     def navigate(self, url: str, *, timeout: float = 30) -> None:
+        if self.signed_out and "ebay.fr/sch" in url:
+            url = "https://signin.ebay.fr/ws/eBayISAPI.dll?SignIn"
         self.visited.append(url)
 
     def url(self) -> str:
@@ -335,3 +339,37 @@ def test_a_card_reads_one_page_of_three_searches_at_most() -> None:
 
     assert len(tab.visited) == 3
     assert len(pauses) == 2
+
+
+def test_the_ebay_sign_in_is_remembered_without_opening_chrome(
+    client: TestClient, chrome: FakeSession
+) -> None:
+    body = {"query": "Dracaufeu ex 201/165", "card_number": "201/165"}
+    assert client.get("/browser/status").json()["connections"] == {}
+
+    chrome.tab.signed_out = True
+    signed_out = client.post("/browser/ebay/sold", json=body).json()
+    status = client.get("/browser/status").json()
+
+    assert "connectez-vous" in signed_out["error"]
+    assert status["connections"] == {"ebay": False}
+    chrome.tab.signed_out = False
+    client.post("/browser/ebay/sold", json=body)
+    assert client.get("/browser/status").json()["connections"] == {"ebay": True}
+    client.post("/browser/vinted/check")
+    assert client.get("/browser/status").json()["connections"] == {"ebay": True, "vinted": True}
+
+
+def test_sales_already_read_are_given_without_loading_anything(
+    client: TestClient, chrome: FakeSession
+) -> None:
+    chrome.tab.pages["ebay"] = FRENCH_SALES
+    body = {"query": "Dracaufeu ex 201/165", "card_number": "201/165"}
+
+    before = client.post("/browser/ebay/sold/cached", json=body).json()
+    read = client.post("/browser/ebay/sold", json=body).json()
+    after = client.post("/browser/ebay/sold/cached", json=body).json()
+
+    assert before is None
+    assert after == read
+    assert chrome.pages_opened == 1

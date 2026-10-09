@@ -162,6 +162,10 @@ def is_connected(tab: Tab, site: Site) -> bool:
         return False
 
 
+class SignInRequired(ChromeError):
+    """The site sent the window to its sign-in page."""
+
+
 def read_listings(
     tab: Tab,
     queries: list[str],
@@ -178,7 +182,7 @@ def read_listings(
         progress(f"eBay : ventes réussies « {query} »")
         tab.navigate(search_url(query))
         if "signin" in tab.url():
-            raise ChromeError("connectez-vous à eBay dans la fenêtre Chrome de Mekiki")
+            raise SignInRequired("connectez-vous à eBay dans la fenêtre Chrome de Mekiki")
         check_bot_challenge(tab)
         # Results render after the page itself: wait for them, or for an empty search.
         try:

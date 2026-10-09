@@ -234,6 +234,9 @@ export function useEngine() {
     /** A card's sales on eBay, read in Mekiki's Chrome window (kept six hours). */
     ebaySold: (body: BrowserPricesRequest) =>
       request<BrowserPrices>('/browser/ebay/sold', { method: 'POST', body, timeout: 90_000 }),
+    /** The sales read in the last six hours, if any; nothing is loaded. */
+    ebaySoldCached: (body: BrowserPricesRequest) =>
+      request<BrowserPrices | null>('/browser/ebay/sold/cached', { method: 'POST', body }),
     publishListing: (site: BrowserSite, itemId: number, body: PublishRequest) =>
       request<PublishJob>(`/browser/${site}/publish/${itemId}`, { method: 'POST', body }),
     publishStatus: (site: BrowserSite, itemId: number) =>

@@ -38,7 +38,9 @@ def _unavailable(error: ChromeError) -> HTTPException:
 def browser_status(request: Request, user: UserDep) -> BrowserStatus:
     browsers = _browsers(request)
     return BrowserStatus(
-        chrome_installed=browsers.chrome_installed(), running=browsers.running(user.id)
+        chrome_installed=browsers.chrome_installed(),
+        running=browsers.running(user.id),
+        connections=browsers.known_connections(user.id),
     )
 
 
@@ -93,6 +95,15 @@ def ebay_sold(
         request.app.state, session, user.id, payload.query, payload.card_number, payload.names
     )
     return prices_out(prices)
+
+
+@router.post("/ebay/sold/cached")
+def ebay_sold_cached(
+    payload: BrowserPricesRequest, request: Request, user: UserDep
+) -> BrowserPricesOut | None:
+    """A card's eBay sales read in the last six hours, if any; nothing is loaded."""
+    prices = _browsers(request).cached(user.id, payload.query)
+    return prices_out(prices) if prices is not None else None
 
 
 @router.post("/{site}/publish/{item_id}", status_code=status.HTTP_202_ACCEPTED)
