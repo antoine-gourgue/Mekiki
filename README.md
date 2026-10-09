@@ -52,7 +52,8 @@ Vinted et eBay), et pour Tauri [Rust et les dépendances système](https://tauri
 # Terminal 1 : le moteur (données dans engine/.data)
 cd engine
 uv sync
-uv run python -m mekiki_engine
+# --dev : autorise l'interface servie par Nuxt sur le port 3000 (comme « npm run engine »)
+uv run python -m mekiki_engine --dev
 
 # Terminal 2 : l'interface dans le navigateur (http://localhost:3000)…
 cd desktop

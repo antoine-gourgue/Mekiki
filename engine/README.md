@@ -6,6 +6,7 @@ tracks stock, landed costs and margins of TCG cards imported from Japan.
 ```bash
 uv sync
 uv run python -m mekiki_engine                 # http://127.0.0.1:18421, data in ./.data
+uv run python -m mekiki_engine --dev           # also lets the Nuxt dev server (port 3000) in
 uv run python -m mekiki_engine --port 18500 --data-dir /tmp/mekiki
 ```
 

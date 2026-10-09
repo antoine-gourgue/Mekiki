@@ -11,13 +11,10 @@ from mekiki_engine.services import backups
 
 router = APIRouter(prefix="/backups", tags=["backups"])
 
-LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
-
-
 def _restore_allowed(request: Request) -> bool:
     # Served to other machines, the engine holds other people's books: only the computer
     # the database lives on may put an old copy back.
-    return request.app.state.config.host in LOOPBACK_HOSTS
+    return bool(request.app.state.config.loopback)
 
 
 @router.get("")

@@ -76,7 +76,10 @@ function showItem(item: Item) {
 async function deleteItem(item: Item) {
   const confirmed = await confirm({
     title: `Supprimer « ${item.name} » ?`,
-    description: item.sale ? 'Sa vente sera supprimée aussi.' : undefined,
+    // A sold card stays in the books: the engine refuses until its sale is cancelled.
+    description: item.sale
+      ? 'Elle est vendue : annulez d’abord sa vente, qui reste sinon dans la comptabilité.'
+      : undefined,
   })
   if (!confirmed) return
   try {
