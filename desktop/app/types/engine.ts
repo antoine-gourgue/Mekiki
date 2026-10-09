@@ -485,6 +485,19 @@ export interface ListingAvailability {
   seller_id?: string | null
   /** Why Neokyo would refuse this seller, when the listing gives it away. */
   seller_warning?: string | null
+  /** The seller's own description, in Japanese. */
+  description?: string | null
+}
+
+export interface TranslationOut {
+  text: string
+  /** "deepl" with the account's key, else "mymemory", free and limited. */
+  provider: 'deepl' | 'mymemory'
+}
+
+export interface TranslationStatus {
+  provider: 'deepl' | 'mymemory'
+  deepl_configured: boolean
 }
 
 /** A seller Neokyo refuses: their listings are never proposed. */

@@ -83,7 +83,15 @@ EEA_BLOCK_MESSAGE = (
 # undocumented and its maintainers never published a limit.
 # eBay's official API allows thousands of calls a day: no need to wait as long.
 # TCGCSV is a static export on a CDN: the index reads a few dozen of its files once a week.
-HOST_INTERVALS_S = {"api.mercari.jp": 6.0, "api.ebay.com": 0.2, "tcgcsv.com": 1.0}
+# Translation APIs are asked once per description opened, a few requests each.
+HOST_INTERVALS_S = {
+    "api.mercari.jp": 6.0,
+    "api.ebay.com": 0.2,
+    "tcgcsv.com": 1.0,
+    "api.mymemory.translated.net": 1.0,
+    "api-free.deepl.com": 0.2,
+    "api.deepl.com": 0.2,
+}
 DEFAULT_INTERVAL_S = 3.0
 
 

@@ -34,6 +34,12 @@ MERCARI_STATUSES = {
 _RAKUMA_AVAILABILITY = re.compile(r'<meta property="product:availability" content="([^"]*)"')
 _RAKUMA_PRICE = re.compile(r'<meta property="product:price:amount" content="(\d+)"')
 _RAKUMA_CONDITION = re.compile(r"商品の状態\s*</th>\s*<td>\s*([^<]+?)\s*</td>")
+_RAKUMA_DESCRIPTION = re.compile(
+    r'class="item__description only__pc">.*?class="item__description__line-limited">(.*?)</div>',
+    re.DOTALL,
+)
+_LINE_BREAK = re.compile(r"<br\s*/?>", re.IGNORECASE)
+_TAG = re.compile(r"<[^>]+>")
 
 
 def check_listing(
@@ -88,6 +94,7 @@ def _mercari(client: PoliteClient, item_id: str) -> ListingAvailability:
         checked_at=_now(),
         seller_id=str(seller) if seller else None,
         seller_warning=sellers.seller_problem(data),
+        description=_clean(str(data.get("description") or "")),
     )
 
 
@@ -102,13 +109,23 @@ def _rakuma(client: PoliteClient, item_id: str) -> ListingAvailability:
     available = availability[1].strip().lower() == "in stock"
     condition = _RAKUMA_CONDITION.search(page)
     price = _RAKUMA_PRICE.search(page)
+    description = _RAKUMA_DESCRIPTION.search(page)
     return ListingAvailability(
         available=available,
         status="en vente" if available else "vendue",
         condition=JAPANESE_CONDITIONS.get(html.unescape(condition[1])) if condition else None,
         price_jpy=int(price[1]) if price else None,
         checked_at=_now(),
+        description=_clean(_TAG.sub("", _LINE_BREAK.sub("\n", description[1])))
+        if description
+        else None,
     )
+
+
+def _clean(text: str) -> str | None:
+    """A description's text, unescaped, without blank lines at either end."""
+    lines = [line.strip() for line in html.unescape(text).splitlines()]
+    return "\n".join(lines).strip() or None
 
 
 def _unknown(status: str) -> ListingAvailability:

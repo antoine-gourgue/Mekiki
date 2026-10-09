@@ -62,6 +62,8 @@ import type {
   TrackedCardCreate,
   TrackedCardTemplate,
   TrackedCardUpdate,
+  TranslationOut,
+  TranslationStatus,
   User,
   VerdictQuery,
 } from '~/types/engine'
@@ -110,6 +112,13 @@ export function useEngine() {
     saveEbayKeys: (body: EbayKeysUpdate) =>
       request<EbayStatus>('/settings/ebay', { method: 'PUT', body, timeout: 30_000 }),
     removeEbayKeys: () => request<EbayStatus>('/settings/ebay', { method: 'DELETE' }),
+    translationStatus: () => request<TranslationStatus>('/settings/translation'),
+    saveDeeplKey: (key: string) =>
+      request<TranslationStatus>('/settings/translation', { method: 'PUT', body: { key } }),
+    removeDeeplKey: () => request<TranslationStatus>('/settings/translation', { method: 'DELETE' }),
+    /** A listing's description in French; a long one takes several requests. */
+    translate: (text: string) =>
+      request<TranslationOut>('/translate', { method: 'POST', body: { text }, timeout: 60_000 }),
 
     listLots: () => request<LotSummary[]>('/lots'),
     getLot: (id: number) => request<LotDetail>(`/lots/${id}`),

@@ -33,6 +33,7 @@ from mekiki_engine.routes import (
     settings,
     system,
     tasks,
+    translation,
 )
 from mekiki_engine.scanner.discovery import DiscoveryJobs
 from mekiki_engine.scanner.runner import ScannerWorker, SourceFactory
@@ -114,6 +115,7 @@ def create_app(
         tasks,
         sellers,
         sales_import,
+        translation,
     ):
         app.include_router(module.router)
 

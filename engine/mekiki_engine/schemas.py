@@ -668,6 +668,8 @@ class ListingAvailability(BaseModel):
     seller_id: str | None = None
     # Why Neokyo would refuse this seller, when the listing gives it away.
     seller_warning: str | None = None
+    # The seller's own description, in Japanese.
+    description: str | None = None
 
 
 # Pokémon eras, from the set codes: "mega" (m1…), "sv", "swsh" (s1…), "sm", "xy", "bw", "older".
@@ -947,6 +949,25 @@ class EbayPrices(BaseModel):
     median_cents: int | None = None
     max_cents: int | None = None
     listings: list[EbayListingOut] = []
+
+
+class TranslationRequest(BaseModel):
+    text: Annotated[str, Field(min_length=1, max_length=10_000)]
+
+
+class TranslationOut(BaseModel):
+    text: str
+    # "deepl" with the account's key, else "mymemory", free and limited.
+    provider: Literal["deepl", "mymemory"]
+
+
+class TranslationStatus(BaseModel):
+    provider: Literal["deepl", "mymemory"]
+    deepl_configured: bool
+
+
+class DeeplKeyUpdate(BaseModel):
+    key: Annotated[str, Field(min_length=10, max_length=200)]
 
 
 class EbayKeys(BaseModel):

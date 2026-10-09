@@ -42,6 +42,28 @@ def save_ebay_keys(session: Session, user_id: int, keys: EbayKeys | None) -> Non
     session.commit()
 
 
+def deepl_key_key(user_id: int) -> str:
+    return f"deepl:{user_id}"
+
+
+def load_deepl_key(session: Session, user_id: int) -> str | None:
+    """The account's DeepL API key; like the eBay keys, never part of the settings sent out."""
+    row = session.get(SettingRow, deepl_key_key(user_id))
+    return row.value if row is not None else None
+
+
+def save_deepl_key(session: Session, user_id: int, key: str | None) -> None:
+    row = session.get(SettingRow, deepl_key_key(user_id))
+    if key is None:
+        if row is not None:
+            session.delete(row)
+    elif row is None:
+        session.add(SettingRow(key=deepl_key_key(user_id), value=key))
+    else:
+        row.value = key
+    session.commit()
+
+
 def save_settings(session: Session, user_id: int, settings: AppSettings) -> AppSettings:
     payload = settings.model_dump_json()
     row = session.get(SettingRow, settings_key(user_id))

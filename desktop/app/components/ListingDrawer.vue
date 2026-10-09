@@ -193,6 +193,8 @@ const verdictQuery = computed(() => ({
         ]"
       />
 
+      <ListingDescription v-if="availability?.description" :text="availability.description" />
+
       <section class="space-y-2.5">
         <h3 class="text-xs font-semibold tracking-[0.12em] text-dimmed uppercase">
           Faut-il l’acheter ?

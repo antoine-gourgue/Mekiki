@@ -34,6 +34,7 @@ const sections = [
   { id: 'import', label: 'Import' },
   { id: 'revente', label: 'Revente et cotisations' },
   { id: 'ebay', label: 'Clés eBay' },
+  { id: 'traduction', label: 'Traduction' },
   { id: 'scanner', label: 'Scanner' },
   { id: 'vendeurs', label: 'Vendeurs bloqués' },
   { id: 'sauvegardes', label: 'Sauvegardes' },
@@ -107,6 +108,8 @@ function scrollTo(id: string) {
           <SellingSettingsCard v-model="state" />
 
           <EbayKeysCard />
+
+          <TranslationCard />
 
           <ScannerSettingsCard v-model="state" />
 
