@@ -288,8 +288,11 @@ class Browsers:
         """Starts publishing in the background; a running job for the same card is reused.
 
         On success the tab closes and ``on_published`` gets the listing's address; on failure
-        the tab stays open on the form, for the user to finish by hand.
+        the tab stays open on the form, for the user to finish by hand. Raises
+        ``publish.UnknownCondition`` at once, before any tab opens, when the card's condition
+        does not say which grade to choose.
         """
+        publish.listing_grade(listing)
         key = (user_id, item_id, site)
         with self._lock:
             running = self._jobs.get(key)

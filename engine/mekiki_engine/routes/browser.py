@@ -146,7 +146,10 @@ def publish_item(
             card.listing_ref = sales_import.listing_ref(url)
             listed.commit()
 
-    job = _browsers(request).publish(user.id, item_id, site, listing, mark_listed)
+    try:
+        job = _browsers(request).publish(user.id, item_id, site, listing, mark_listed)
+    except publish.UnknownCondition as error:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)) from error
     return PublishJobOut.model_validate(job)
 
 

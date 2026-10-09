@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import re
 import time
+import unicodedata
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -36,6 +37,26 @@ EBAY_CONDITIONS = {
 }
 EBAY_GAMES = {Game.POKEMON: "Pokémon", Game.ONE_PIECE: "One Piece"}
 STEP_TIMEOUT_S = 20
+# Best first: a condition naming two grades ("Near Mint, coin abîmé") takes the worst.
+GRADES = ("mint", "excellent", "good", "played")
+# How conditions are written, Cardmarket's codes (MT, NM, EX, GD, LP, PL, PO) included, with
+# their grade; checked in this order, each phrase found being taken out of the text so that
+# "très bon état" is not read again as "bon état". eBay's grades follow TCGplayer's scale,
+# where Lightly Played is Excellent.
+CONDITION_WORDS = (
+    (r"light(?:ly)? played", "excellent"),
+    (r"moderately played", "good"),
+    (r"heavily played", "played"),
+    (r"very good", "good"),
+    (r"tres bon(?: etat)?", "excellent"),
+    (r"near mint|gem mint|(?:comme|quasi|etat) neu(?:f|ve)|parfait etat", "mint"),
+    (r"bon etat", "good"),
+    (r"etat correct|mauvais etat|satisfaisant|correct", "played"),
+    (r"mt|nm|mint|neu(?:f|ve)", "mint"),
+    (r"ex|excellent|tbe|lp", "excellent"),
+    (r"gd|good|be|mp|rayures?|raye(?:e|s|es)?", "good"),
+    (r"pl|played|hp|po|poor|damaged|abime(?:e|s|es)?", "played"),
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,18 +70,39 @@ class Listing:
     grading: str | None
 
 
-def condition_grade(condition: str | None) -> str:
-    """The card's condition as one of four grades, near mint unless told otherwise."""
-    text = (condition or "").lower()
-    if re.search(r"\b(hp|heavily|poor|abîm|abim|damaged)", text):
-        return "played"
-    if re.search(r"\b(mp|moderately|good|bon état|bon etat|very good)\b", text) and not re.search(
-        r"très bon|tres bon", text
-    ):
-        return "good"
-    if re.search(r"\b(lp|lightly|excellent|ex|très bon|tres bon)\b", text):
-        return "excellent"
-    return "mint"
+def condition_grade(condition: str | None) -> str | None:
+    """The card's condition as one of the four ``GRADES``; None when it is not recognised,
+    never a guess."""
+    text = unicodedata.normalize("NFKD", (condition or "").lower())
+    text = "".join(char for char in text if not unicodedata.combining(char))
+    found = set()
+    for words, grade in CONDITION_WORDS:
+        pattern = rf"\b(?:{words})\b"
+        if re.search(pattern, text):
+            found.add(grade)
+            text = re.sub(pattern, " ", text)
+    return max(found, key=GRADES.index) if found else None
+
+
+def listing_grade(listing: Listing) -> str:
+    """The grade to publish ``listing`` with; an unknown condition stops the publication
+    before anything is sent, rather than claim a near mint card."""
+    grade = condition_grade(listing.condition)
+    if grade is None:
+        raise UnknownCondition(unknown_condition_message(listing.condition))
+    return grade
+
+
+def unknown_condition_message(condition: str | None) -> str:
+    said = f"« {condition.strip()} » n'est pas un état reconnu" if condition else "état absent"
+    return (
+        f"{said} : indiquez l'état de la carte dans sa fiche (Near Mint, Excellent, Good, "
+        "Light Played, Played ou Poor) avant de la publier automatiquement"
+    )
+
+
+class UnknownCondition(ChromeError):
+    """The card's condition does not say which grade to choose on the site."""
 
 
 def euros(cents: int) -> str:
@@ -79,6 +121,7 @@ def publish_vinted(
 
     Without ``submit`` the form is only filled, e.g. to check these steps still work.
     """
+    grade = VINTED_CONDITIONS[listing_grade(listing)]
     progress("Vinted : ouverture du formulaire")
     _step(tab.navigate, VINTED_NEW, step="ouverture du formulaire Vinted")
     check_bot_challenge(tab)
@@ -104,7 +147,6 @@ def publish_vinted(
     # Vinted may already guess the brand from the title.
     if tab.evaluate("document.querySelector('#brand')?.value") != VINTED_BRAND_NAMES[listing.game]:
         _pick(tab, "#brand", f"#brand-radio-{VINTED_BRANDS[listing.game]}")
-    grade = VINTED_CONDITIONS[condition_grade(listing.condition)]
     _pick(tab, "#condition", f"#condition-radio-{grade}")
     progress("Vinted : prix et envoi")
     tab.type_text("#price", euros(listing.price_cents))
@@ -136,6 +178,7 @@ def publish_ebay(
         raise ChromeError(
             "les cartes gradées se publient encore à la main sur eBay (organisme et note)"
         )
+    condition = EBAY_CONDITIONS[listing_grade(listing)]
     progress("eBay : ouverture de la mise en vente")
     _step(tab.navigate, EBAY_NEW, step="ouverture de la mise en vente eBay")
     check_bot_challenge(tab)
@@ -154,7 +197,6 @@ def publish_ebay(
         tab.click_text("Continuer sans objet correspondant")
     progress("eBay : état de la carte")
     _wait_text(tab, "Non gradée", step="choix de l'état eBay")
-    condition = EBAY_CONDITIONS[condition_grade(listing.condition)]
     _choose_and_continue(tab, "Non gradée", until=condition, step="choix de l'état eBay")
     _choose_and_continue(
         tab, condition, until=None, step="état de la carte eBay", url_part="/lstng"

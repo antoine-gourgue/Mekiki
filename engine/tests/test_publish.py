@@ -56,6 +56,11 @@ def chrome(client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
     return seen
 
 
+def card(client: TestClient, condition: str | None = "Near Mint") -> dict[str, Any]:
+    item = new_item(client)
+    return client.patch(f"/items/{item['id']}", json={"condition": condition}).json()  # type: ignore[no-any-return]
+
+
 def wait_job(client: TestClient, site: str, item_id: int) -> dict[str, Any]:
     for _ in range(50):
         job = client.get(f"/browser/{site}/publish/{item_id}").json()
@@ -65,13 +70,37 @@ def wait_job(client: TestClient, site: str, item_id: int) -> dict[str, Any]:
     raise AssertionError("the job never ended")
 
 
-def test_conditions_map_to_the_sites_grades() -> None:
-    assert condition_grade(None) == "mint"
-    assert condition_grade("Near Mint") == "mint"
-    assert condition_grade("Très bon état") == "excellent"
-    assert condition_grade("LP") == "excellent"
-    assert condition_grade("Bon état") == "good"
-    assert condition_grade("HP, coin abîmé") == "played"
+@pytest.mark.parametrize(
+    ("condition", "grade"),
+    [
+        ("Near Mint", "mint"),
+        ("NM", "mint"),
+        ("MT", "mint"),
+        ("Comme neuve", "mint"),
+        ("Très bon état", "excellent"),
+        ("EX", "excellent"),
+        ("LP", "excellent"),
+        ("Light Played", "excellent"),
+        ("Bon état", "good"),
+        ("GD", "good"),
+        ("Rayures", "good"),
+        ("Near Mint, légères rayures", "good"),
+        ("Played", "played"),
+        ("PL", "played"),
+        ("PO", "played"),
+        ("Etat correct", "played"),
+        ("Satisfaisant", "played"),
+        ("HP, coin abîmé", "played"),
+        (None, None),
+        ("", None),
+        ("Superbe", None),
+    ],
+)
+def test_conditions_map_to_the_sites_grades(condition: str | None, grade: str | None) -> None:
+    assert condition_grade(condition) == grade
+
+
+def test_listing_text_is_written_as_the_sites_take_it() -> None:
     assert euros(1250) == "12,50"
     assert _html("Carte : Pikachu.\nÉtat : NM\n\nEnvoi <soigné>") == (
         "<p>Carte : Pikachu.<br>État : NM</p><p>Envoi &lt;soigné&gt;</p>"
@@ -79,7 +108,7 @@ def test_conditions_map_to_the_sites_grades() -> None:
 
 
 def test_a_published_card_is_marked_for_sale(client: TestClient, chrome: dict[str, Any]) -> None:
-    item = new_item(client)
+    item = card(client)
     client.post(f"/items/{item['id']}/photos", json=encoded(JPEG))
     body = {"title": "Pikachu 025/165", "description": "Carte japonaise.", "price_cents": 1500}
 
@@ -100,7 +129,7 @@ def test_a_published_card_is_marked_for_sale(client: TestClient, chrome: dict[st
 def test_a_failed_publication_leaves_the_form_open(
     client: TestClient, chrome: dict[str, Any]
 ) -> None:
-    item = new_item(client)
+    item = card(client)
     body = {"title": "Pikachu 025/165", "description": "Carte japonaise.", "price_cents": 1500}
 
     client.post(f"/browser/ebay/publish/{item['id']}", json=body)
@@ -115,3 +144,21 @@ def test_a_failed_publication_leaves_the_form_open(
     assert client.get("/browser/ebay/publish/999").json() is None
     other = client.post("/browser/vinted/publish/999", json=body)
     assert other.status_code == 404
+
+
+@pytest.mark.parametrize("condition", [None, "Superbe"])
+def test_a_card_whose_condition_is_unknown_is_not_published_as_near_mint(
+    client: TestClient, chrome: dict[str, Any], condition: str | None
+) -> None:
+    item = card(client, condition)
+    body = {"title": "Pikachu 025/165", "description": "Carte japonaise.", "price_cents": 1500}
+
+    refused = client.post(f"/browser/vinted/publish/{item['id']}", json=body)
+
+    assert refused.status_code == 422
+    assert "indiquez l'état de la carte" in refused.json()["detail"]
+    if condition:
+        assert f"« {condition} »" in refused.json()["detail"]
+    assert chrome["session"].opened == 0
+    assert chrome["listings"] == []
+    assert client.get(f"/browser/vinted/publish/{item['id']}").json() is None
