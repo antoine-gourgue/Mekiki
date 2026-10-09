@@ -9,7 +9,8 @@ from __future__ import annotations
 import re
 import time
 import unicodedata
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -37,6 +38,10 @@ EBAY_CONDITIONS = {
 }
 EBAY_GAMES = {Game.POKEMON: "Pokémon", Game.ONE_PIECE: "One Piece"}
 STEP_TIMEOUT_S = 20
+# Where eBay lands once the listing is online; the whole address, not a word in it.
+EBAY_SUCCESS = (
+    r"^https://(?:www\.)?ebay\.fr/(?:(?:sl|lstng)(?:/[\w-]+)*/success|itm/\d+)(?:[/?#]|$)"
+)
 # Best first: a condition naming two grades ("Near Mint, coin abîmé") takes the worst.
 GRADES = ("mint", "excellent", "good", "played")
 # How conditions are written, Cardmarket's codes (MT, NM, EX, GD, LP, PL, PO) included, with
@@ -105,6 +110,20 @@ class UnknownCondition(ChromeError):
     """The card's condition does not say which grade to choose on the site."""
 
 
+class PublishUnconfirmed(ChromeError):
+    """Something failed once the form was sent: the listing may well be online."""
+
+
+@contextmanager
+def _sending() -> Iterator[None]:
+    """From the click that sends the form on, a failure no longer means nothing was
+    published: trying again could list the card twice."""
+    try:
+        yield
+    except Exception as error:
+        raise PublishUnconfirmed(str(error)) from error
+
+
 def euros(cents: int) -> str:
     """ "12,50": how both sites take a price."""
     return f"{cents / 100:.2f}".replace(".", ",")
@@ -158,8 +177,11 @@ def publish_vinted(
     if not submit:
         return tab.url()
     progress("Vinted : publication")
-    tab.click('[data-testid="upload-form-save-button"]')
-    item_url = _wait_url(tab, r"vinted\.fr/items/\d+", step="enregistrement de l'annonce Vinted")
+    with _sending():
+        tab.click('[data-testid="upload-form-save-button"]')
+        item_url = _wait_url(
+            tab, r"vinted\.fr/items/\d+", step="enregistrement de l'annonce Vinted"
+        )
     return item_url.split("?")[0]
 
 
@@ -227,13 +249,14 @@ def publish_ebay(
     if not submit:
         return tab.url()
     progress("eBay : mise en vente")
-    tab.click(button)
-    return _wait_url(
-        tab,
-        r"ebay\.fr/(sl/success|lstng/success|itm/\d+)|success",
-        step="mise en vente eBay",
-        errors="[role=alert], .page-notice--attention, .field__error",
-    )
+    with _sending():
+        tab.click(button)
+        return _wait_url(
+            tab,
+            EBAY_SUCCESS,
+            step="mise en vente eBay",
+            errors="[role=alert], .page-notice--attention, .field__error",
+        )
 
 
 def _choose_and_continue(

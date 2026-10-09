@@ -63,9 +63,15 @@ class PublishJob:
     site: Site
     item_id: int
     started_at: str
-    status: Literal["running", "done", "failed"] = "running"
+    # "failed": stopped before the form was sent; "to_check": stopped after, the listing may
+    # be online.
+    status: Literal["running", "done", "failed", "to_check"] = "running"
     url: str | None = None
     error: str | None = None
+
+
+class PublishConflict(Exception):
+    """The card was published on the site, or may have been, by an earlier job."""
 
 
 PUBLISHERS: dict[Site, Callable[..., str]] = {
@@ -284,24 +290,38 @@ class Browsers:
         site: Site,
         listing: publish.Listing,
         on_published: Callable[[str], None],
+        *,
+        force: bool = False,
     ) -> PublishJob:
         """Starts publishing in the background; a running job for the same card is reused.
 
         On success the tab closes and ``on_published`` gets the listing's address; on failure
         the tab stays open on the form, for the user to finish by hand. Raises
         ``publish.UnknownCondition`` at once, before any tab opens, when the card's condition
-        does not say which grade to choose.
+        does not say which grade to choose, and ``PublishConflict`` when an earlier job
+        published the card, or may have, unless ``force``.
         """
         publish.listing_grade(listing)
         key = (user_id, item_id, site)
+        label = markets.SITE_LABELS[site]
         with self._lock:
-            running = self._jobs.get(key)
-            if running is not None and running.status == "running":
-                return running
+            previous = self._jobs.get(key)
+            if previous is not None and previous.status == "running":
+                return previous
+            if previous is not None and not force:
+                if previous.status == "done":
+                    raise PublishConflict(
+                        f"cette carte a déjà été publiée sur {label}"
+                        + (f" ({previous.url})" if previous.url else "")
+                    )
+                if previous.status == "to_check":
+                    raise PublishConflict(
+                        f"la dernière publication de cette carte sur {label} n'a pas été "
+                        f"confirmée : vérifiez vos annonces {label} avant de réessayer"
+                    )
             job = PublishJob(site=site, item_id=item_id, started_at=markets.utc_now())
             self._jobs[key] = job
         session = self.session(user_id)
-        label = markets.SITE_LABELS[site]
         self._note(user_id, f"{label} : publication de « {listing.title} »")
 
         def run() -> None:
@@ -320,6 +340,14 @@ class Browsers:
                     job.error = f"annonce publiée, mais la carte n'a pas été mise à jour : {error}"
                 job.status = "done"
                 self._note(user_id, f"{label} : annonce publiée")
+            except publish.PublishUnconfirmed as error:
+                job.error = (
+                    f"{error} ; l'annonce est peut-être en ligne : vérifiez vos annonces "
+                    f"{label} avant de réessayer"
+                )
+                job.status = "to_check"
+                self._note(user_id, f"{label} : publication à vérifier, {error}")
+                session.set_visible(True)
             except ChromeError as error:
                 job.error = str(error)
                 job.status = "failed"

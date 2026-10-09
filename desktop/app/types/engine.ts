@@ -954,6 +954,8 @@ export interface PublishRequest {
   title: string
   description: string
   price_cents: number
+  /** Publishes even though the card is, or may be, already for sale on the site. */
+  force?: boolean
 }
 
 /** A listing being published in Mekiki's Chrome window, and how it ended. */
@@ -961,7 +963,11 @@ export interface PublishJob {
   site: BrowserSite
   item_id: number
   started_at: string
-  status: 'running' | 'done' | 'failed'
+  /**
+   * `failed`: stopped before the form was sent. `to_check`: stopped after, the listing may be
+   * online.
+   */
+  status: 'running' | 'done' | 'failed' | 'to_check'
   /** The published listing, once done. */
   url: string | null
   error: string | null

@@ -1160,6 +1160,8 @@ class PublishRequest(BaseModel):
     title: Annotated[str, Field(min_length=3, max_length=80)]
     description: Annotated[str, Field(min_length=1, max_length=5000)]
     price_cents: Annotated[int, Field(gt=0)]
+    # Publishes even though the card is, or may be, already for sale on the site.
+    force: bool = False
 
 
 class PublishJobOut(BaseModel):
@@ -1168,7 +1170,9 @@ class PublishJobOut(BaseModel):
     site: BrowserSite
     item_id: int
     started_at: str
-    status: Literal["running", "done", "failed"]
+    # "failed": stopped before the form was sent; "to_check": stopped after, the listing may
+    # be online.
+    status: Literal["running", "done", "failed", "to_check"]
     # The published listing, once done.
     url: str | None
     error: str | None

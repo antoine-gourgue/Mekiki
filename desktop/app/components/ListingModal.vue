@@ -70,8 +70,11 @@ async function copy(text: string, what: string) {
   }
 }
 
-// Publishing in Mekiki's Chrome window: started here, followed until it ends.
+// Publishing in Mekiki's Chrome window: started here, followed until it ends, even with the
+// modal closed. Reopened, the modal shows the card's last publication on the site.
 const job = ref<PublishJob | null>(null)
+// Why the engine refused to publish the card again: already for sale, or maybe online.
+const conflict = ref<string | null>(null)
 let jobTimer: ReturnType<typeof setTimeout> | undefined
 // Cleared on unmount, so a read still on its way does not start the loop again.
 let alive = true
@@ -79,22 +82,47 @@ onBeforeUnmount(() => {
   alive = false
   clearTimeout(jobTimer)
 })
-watch(open, (isOpen) => {
-  if (isOpen) job.value = null
-})
+watch(
+  [open, site],
+  async ([isOpen, current]) => {
+    if (!isOpen) return
+    clearTimeout(jobTimer)
+    job.value = null
+    conflict.value = null
+    if (!current || !props.item) return
+    const itemId = props.item.id
+    let last: PublishJob | null = null
+    try {
+      last = await engine.publishStatus(current, itemId)
+    } catch {
+      // Unknown: the engine refuses a second publication anyway.
+    }
+    // Another site or card may have been chosen meanwhile.
+    if (site.value !== current || props.item?.id !== itemId) return
+    job.value = last
+    if (last?.status === 'running') followJob(current, itemId)
+  },
+  { immediate: true },
+)
 
-async function publishNow() {
+async function publishNow(force = false) {
   const current = site.value
   if (!props.item || !current || !draft.value || state.price_cents == null) return
+  conflict.value = null
   try {
     job.value = await engine.publishListing(current, props.item.id, {
       title: draft.value.title,
       description: draft.value.description,
       price_cents: state.price_cents,
+      force,
     })
     followJob(current, props.item.id)
   } catch (error) {
-    showError(error, 'Publication impossible')
+    if ((error as { statusCode?: number }).statusCode === 409) {
+      conflict.value = engineErrorMessage(error)
+    } else {
+      showError(error, 'Publication impossible')
+    }
   }
 }
 
@@ -107,7 +135,7 @@ function followJob(current: ListingSite, itemId: number) {
     }
     if (!alive) return
     if (job.value?.status === 'running') return followJob(current, itemId)
-    if (job.value?.status === 'done' && props.item) {
+    if (job.value?.status === 'done') {
       toast.add({
         title: `Annonce publiée sur ${SITES[current]}`,
         color: 'success',
@@ -115,7 +143,7 @@ function followJob(current: ListingSite, itemId: number) {
           ? [{ label: 'Voir l’annonce', onClick: () => void openExternal(job.value!.url!) }]
           : [],
       })
-      emit('saved', await engine.getItem(props.item.id))
+      emit('saved', await engine.getItem(itemId))
     }
   }, 2000)
 }
@@ -280,6 +308,38 @@ const platformItems = selectItems(PLATFORM_LABELS)
             title="La publication n’est pas allée au bout"
             :description="`${job.error}. La fenêtre Chrome s’est affichée avec le formulaire : vérifiez-le et terminez la publication à la main.`"
           />
+          <UAlert
+            v-else-if="job?.status === 'to_check'"
+            color="warning"
+            variant="subtle"
+            icon="i-lucide-search-check"
+            title="Publication à vérifier"
+            :description="`${job.error}. Le formulaire a été envoyé : l’annonce est peut-être en ligne. Ne republiez qu’après avoir vérifié vos annonces ${SITES[site]}.`"
+            :actions="[
+              {
+                label: 'Vérifié : publier à nouveau',
+                color: 'neutral',
+                variant: 'outline',
+                onClick: () => publishNow(true),
+              },
+            ]"
+          />
+          <UAlert
+            v-if="conflict"
+            color="warning"
+            variant="subtle"
+            icon="i-lucide-copy-check"
+            title="Déjà publiée ?"
+            :description="conflict"
+            :actions="[
+              {
+                label: 'Publier une autre annonce',
+                color: 'neutral',
+                variant: 'outline',
+                onClick: () => publishNow(true),
+              },
+            ]"
+          />
 
           <UButton
             block
@@ -292,9 +352,14 @@ const platformItems = selectItems(PLATFORM_LABELS)
             "
             :loading="job?.status === 'running'"
             :disabled="
-              !draft || !photos.length || state.price_cents == null || job?.status === 'done'
+              !draft ||
+              !photos.length ||
+              state.price_cents == null ||
+              job?.status === 'done' ||
+              job?.status === 'to_check' ||
+              !!conflict
             "
-            @click="publishNow"
+            @click="publishNow()"
           />
           <p class="text-xs text-dimmed">
             Une vérification anti-robot ? La fenêtre s’affiche pour que vous la passiez vous-même.

@@ -1,3 +1,4 @@
+import re
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -10,7 +11,7 @@ from test_photos import JPEG, encoded, new_item
 
 from mekiki_engine.browser import publish, service
 from mekiki_engine.browser.chrome import ChromeError
-from mekiki_engine.browser.publish import _html, condition_grade, euros
+from mekiki_engine.browser.publish import EBAY_SUCCESS, _html, condition_grade, euros
 from mekiki_engine.browser.service import Browsers
 
 
@@ -49,7 +50,11 @@ def chrome(client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
         return "https://www.vinted.fr/items/42-pikachu"
 
     def failing_ebay(_tab: object, _listing: publish.Listing, **_options: object) -> str:
-        raise ChromeError("mise en vente eBay : le site n'a pas confirmé la publication")
+        raise seen["ebay_error"]
+
+    seen["ebay_error"] = ChromeError(
+        "choix de l'état eBay : la page n'a pas affiché « Non gradée »"
+    )
 
     monkeypatch.setitem(service.PUBLISHERS, "vinted", fake_vinted)
     monkeypatch.setitem(service.PUBLISHERS, "ebay", failing_ebay)
@@ -136,7 +141,7 @@ def test_a_failed_publication_leaves_the_form_open(
     job = wait_job(client, "ebay", item["id"])
 
     assert job["status"] == "failed"
-    assert "n'a pas confirmé" in job["error"]
+    assert "Non gradée" in job["error"]
     assert chrome["session"].closed == []
     # The form left open shows, for the user to finish it.
     assert chrome["session"].visible is True
@@ -162,3 +167,73 @@ def test_a_card_whose_condition_is_unknown_is_not_published_as_near_mint(
     assert chrome["session"].opened == 0
     assert chrome["listings"] == []
     assert client.get(f"/browser/vinted/publish/{item['id']}").json() is None
+
+
+BODY = {"title": "Pikachu 025/165", "description": "Carte japonaise.", "price_cents": 1500}
+
+
+def test_a_card_already_for_sale_on_the_site_is_not_published_twice(
+    client: TestClient, chrome: dict[str, Any]
+) -> None:
+    item = card(client)
+    client.post(f"/browser/vinted/publish/{item['id']}", json=BODY)
+    wait_job(client, "vinted", item["id"])
+
+    again = client.post(f"/browser/vinted/publish/{item['id']}", json=BODY)
+    elsewhere = client.patch(f"/items/{item['id']}", json={"listing_platform": "ebay"})
+    withdrawn_here = client.post(f"/browser/vinted/publish/{item['id']}", json=BODY)
+    forced = client.post(f"/browser/vinted/publish/{item['id']}", json=BODY | {"force": True})
+    wait_job(client, "vinted", item["id"])
+
+    assert again.status_code == 409
+    listed = "déjà en vente sur Vinted (https://www.vinted.fr/items/42-pikachu)"
+    assert listed in again.json()["detail"]
+    assert elsewhere.status_code == 200
+    # The card no longer says so, but the job remembers it was published.
+    assert withdrawn_here.status_code == 409
+    assert "déjà été publiée sur Vinted" in withdrawn_here.json()["detail"]
+    assert forced.status_code == 202
+    assert len(chrome["listings"]) == 2
+
+
+def test_a_failure_once_the_form_is_sent_is_left_to_check(
+    client: TestClient, chrome: dict[str, Any]
+) -> None:
+    item = card(client)
+    chrome["ebay_error"] = publish.PublishUnconfirmed(
+        "mise en vente eBay : le site n'a pas confirmé la publication"
+    )
+
+    client.post(f"/browser/ebay/publish/{item['id']}", json=BODY)
+    job = wait_job(client, "ebay", item["id"])
+    again = client.post(f"/browser/ebay/publish/{item['id']}", json=BODY)
+    forced = client.post(f"/browser/ebay/publish/{item['id']}", json=BODY | {"force": True})
+
+    assert job["status"] == "to_check"
+    assert "vérifiez vos annonces eBay avant de réessayer" in job["error"]
+    assert chrome["session"].visible is True
+    assert client.get(f"/items/{item['id']}").json()["listing_platform"] is None
+    assert again.status_code == 409
+    assert "n'a pas été confirmée" in again.json()["detail"]
+    assert forced.status_code == 202
+
+
+def test_errors_after_the_form_is_sent_say_the_listing_may_be_online() -> None:
+    sent = publish._sending()
+    with pytest.raises(publish.PublishUnconfirmed, match="Chrome a fermé la page"), sent:
+        raise ChromeError("Chrome a fermé la page")
+
+
+@pytest.mark.parametrize(
+    ("url", "published"),
+    [
+        ("https://www.ebay.fr/sl/success?itemId=1", True),
+        ("https://www.ebay.fr/lstng/success", True),
+        ("https://www.ebay.fr/itm/123456789012", True),
+        ("https://www.ebay.fr/lstng?draftId=1&mode=AddItem&success=0", False),
+        ("https://signin.ebay.fr/ws?ru=https%3A%2F%2Fwww.ebay.fr%2Fsl%2Fsuccess", False),
+        ("https://www.ebay.fr/sl/prelist/suggest?from=success", False),
+    ],
+)
+def test_ebay_s_confirmation_is_its_own_address(url: str, published: bool) -> None:
+    assert bool(re.search(EBAY_SUCCESS, url)) is published

@@ -4,7 +4,7 @@ from fastapi import APIRouter, HTTPException, Request, status
 
 from mekiki_engine.browser import markets, publish
 from mekiki_engine.browser.chrome import ChromeError
-from mekiki_engine.browser.service import Browsers, MarketPrices
+from mekiki_engine.browser.service import Browsers, MarketPrices, PublishConflict
 from mekiki_engine.deps import DataDirDep, SessionDep, UserDep
 from mekiki_engine.domain import Game, SalePlatform
 from mekiki_engine.resale import service as resale_service
@@ -122,8 +122,17 @@ def publish_item(
     user: UserDep,
     data_dir: DataDirDep,
 ) -> PublishJobOut:
-    """Fills and sends the site's listing form in Chrome, in the background."""
+    """Fills and sends the site's listing form in Chrome, in the background; refused when
+    the card is already for sale on the site, unless the request insists (``force``)."""
     item = get_item(session, user.id, item_id)
+    label = markets.SITE_LABELS[site]
+    if item.listing_platform == SalePlatform(site).value and not payload.force:
+        where = f" ({item.listing_url})" if item.listing_url else ""
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            detail=f"cette carte est déjà en vente sur {label}{where} : vérifiez vos annonces "
+            "avant d'en publier une autre",
+        )
     listing = publish.Listing(
         game=Game(item.game),
         title=payload.title,
@@ -147,9 +156,13 @@ def publish_item(
             listed.commit()
 
     try:
-        job = _browsers(request).publish(user.id, item_id, site, listing, mark_listed)
+        job = _browsers(request).publish(
+            user.id, item_id, site, listing, mark_listed, force=payload.force
+        )
     except publish.UnknownCondition as error:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(error)) from error
+    except PublishConflict as error:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=str(error)) from error
     return PublishJobOut.model_validate(job)
 
 
