@@ -82,7 +82,8 @@ async function ignore(row: PendingSale) {
       <h2 class="font-semibold text-highlighted">Ventes eBay à rapprocher</h2>
       <p class="mt-1 text-sm text-dimmed">
         Lignes du rapport eBay dont la carte n’a pas été retrouvée : choisissez la carte vendue (★
-        les plus probables), ou écartez une vente qui ne vient pas de votre stock Mekiki.
+        les plus probables), ou écartez une vente qui ne vient pas de votre stock Mekiki. Une ligne
+        de plusieurs cartes s’associe carte par carte, chacune avec sa part du prix et du port.
       </p>
     </div>
     <ul class="divide-y divide-default rounded-lg border border-default">
@@ -99,7 +100,10 @@ async function ignore(row: PendingSale) {
         <p class="text-xs text-dimmed">
           Vendue le {{ formatDate(row.sold_on) }}
           <template v-if="row.buyer"> · {{ row.buyer }}</template>
-          <template v-if="row.quantity > 1"> · quantité {{ row.quantity }}</template>
+          <template v-if="row.quantity > 1">
+            · {{ row.quantity }} cartes à associer, {{ row.matched }}
+            {{ row.matched > 1 ? 'faites' : 'faite' }}</template
+          >
           <template v-if="row.shipped_on"> · expédiée le {{ formatDate(row.shipped_on) }}</template>
         </p>
         <div class="flex flex-wrap items-center gap-2">

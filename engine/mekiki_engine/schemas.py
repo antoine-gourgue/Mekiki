@@ -1204,7 +1204,10 @@ class PendingSaleOut(BaseModel):
     platform: SalePlatform
     title: str
     buyer: str | None
+    # Copies sold by the line, and how many of them already have their card: each gets an
+    # even share of the line's price and shipping, which are for all the copies.
     quantity: int
+    matched: int = 0
     sold_on: str
     price_cents: int
     shipping_cents: int

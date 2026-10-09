@@ -172,3 +172,84 @@ def test_a_line_repeated_in_one_report_is_booked_once(client: TestClient) -> Non
     result = client.post("/sales/import/ebay", json={"content": doubled}).json()
 
     assert (result["imported"], result["pending"]) == (1, 1)
+
+
+# One order of two copies of the same card: one line, quantity 2.
+TWO_COPIES_REPORT = (
+    "Order Number;Item Number;Item Title;Quantity;Sold For;Shipping And Handling;Sale Date;"
+    "Shipped On Date\n"
+    "12-00000-00001;123456789012;Pikachu ex SAR 132/106 x2;2;90,01 €;3,01 €;05-oct.-26;\n"
+)
+
+
+def set_ebay_rule(client: TestClient, percent: float, fixed_cents: int) -> None:
+    settings = client.get("/settings").json()
+    settings["platform_fees"]["ebay"] = {
+        "percent": percent,
+        "fixed_cents": fixed_cents,
+        "applies_to_shipping": True,
+    }
+    assert client.put("/settings", json=settings).status_code == 200
+
+
+def test_a_line_of_two_copies_is_shared_by_two_cards(client: TestClient) -> None:
+    set_ebay_rule(client, 10, 35)
+    lot = create_reference_lot(client)
+    first, second = lot["items"][0]["id"], lot["items"][1]["id"]
+    # Even listed by Mekiki, one listing cannot say which two cards left.
+    listed_on_ebay(client, first, "123456789012")
+
+    result = client.post("/sales/import/ebay", json={"content": TWO_COPIES_REPORT}).json()
+    [line] = client.get("/sales/pending").json()
+    client.post(f"/sales/pending/{line['id']}/match", json={"item_id": first})
+    [waiting] = client.get("/sales/pending").json()
+    client.post(f"/sales/pending/{line['id']}/match", json={"item_id": second})
+
+    assert (result["imported"], result["pending"]) == (0, 1)
+    assert (line["quantity"], line["matched"], waiting["matched"]) == (2, 0, 1)
+    assert client.get("/sales/pending").json() == []
+    sales = [client.get(f"/items/{item_id}").json()["sale"] for item_id in (first, second)]
+    # The line's price, shipping and fees (10 % of 93,02 € plus 0,35 € once) split evenly.
+    assert [sale["sale_price_cents"] for sale in sales] == [4501, 4500]
+    assert [sale["shipping_charged_cents"] for sale in sales] == [151, 150]
+    assert [sale["platform_fee_cents"] for sale in sales] == [483, 482]
+
+    shipped = TWO_COPIES_REPORT.replace("05-oct.-26;", "05-oct.-26;07-oct.-26")
+    again = client.post("/sales/import/ebay", json={"content": shipped}).json()
+
+    assert (again["imported"], again["pending"], again["updated"]) == (0, 0, 1)
+    assert client.get("/sales/pending").json() == []
+    shipped_on = [client.get(f"/items/{i}").json()["sale"]["shipped_on"] for i in (first, second)]
+    assert shipped_on == ["2026-10-07", "2026-10-07"]
+
+
+def test_a_cancelled_copy_goes_back_to_its_line(client: TestClient) -> None:
+    set_ebay_rule(client, 0, 0)
+    lot = create_reference_lot(client)
+    first, second, third = (item["id"] for item in lot["items"][:3])
+    client.post("/sales/import/ebay", json={"content": TWO_COPIES_REPORT})
+    [line] = client.get("/sales/pending").json()
+    client.post(f"/sales/pending/{line['id']}/match", json={"item_id": first})
+
+    # The wrong card was picked: its sale is cancelled, and the copy waits again.
+    client.delete(f"/items/{first}/sale")
+    [waiting] = client.get("/sales/pending").json()
+    client.post(f"/sales/pending/{line['id']}/match", json={"item_id": second})
+    client.post(f"/sales/pending/{line['id']}/match", json={"item_id": third})
+    refused = client.post(f"/sales/pending/{line['id']}/match", json={"item_id": first})
+
+    assert waiting["matched"] == 0
+    prices = [client.get(f"/items/{i}").json()["sale"]["sale_price_cents"] for i in (second, third)]
+    assert prices == [4501, 4500]
+    assert refused.status_code == 404
+    assert client.get(f"/items/{first}").json()["sale"] is None
+
+
+def test_the_total_tells_whether_the_price_is_for_one_copy() -> None:
+    header = "Order Number;Item Number;Item Title;Quantity;Sold For;Shipping And Handling;"
+    header += "Total Price;Sale Date\n"
+    per_copy = read_report(header + "1;123456789012;Carte;2;45,00 €;3,00 €;93,00 €;05/10/2026\n")
+    whole_line = read_report(header + "1;123456789012;Carte;2;45,00 €;3,00 €;48,00 €;05/10/2026\n")
+
+    assert per_copy.lines[0].price_cents == 9000
+    assert whole_line.lines[0].price_cents == 4500

@@ -283,6 +283,8 @@ def cancel_sale(session: Session, user_id: int, settings: AppSettings, item_id: 
 def _remember_cancelled(session: Session, user_id: int, item: Item, sale: Sale) -> None:
     """A sale imported from a platform's report, then cancelled (a return, a refund), is kept
     as an ignored line of that report: importing the report again must not sell the card again.
+    A line of several copies still waiting for some of them takes the cancelled copy back, to
+    be named again (the wrong card was picked) or the line set aside.
     """
     exists = session.scalar(
         select(PendingSale).where(
@@ -290,7 +292,8 @@ def _remember_cancelled(session: Session, user_id: int, item: Item, sale: Sale) 
         )
     )
     if exists is not None:
-        exists.ignored = True
+        if exists.ignored or exists.quantity <= 1:
+            exists.ignored = True
         return
     session.add(
         PendingSale(

@@ -2,17 +2,21 @@
 
 A line is matched to the card whose listing Mekiki published (its eBay item number); a sale
 already imported is only brought up to date (shipped, tracking); the other lines wait as
-pending sales for the user to name their card, with the likeliest cards first.
+pending sales for the user to name their card, with the likeliest cards first. A line that
+sold several copies waits until each copy is named: each card gets an even share of it.
 """
 
 from __future__ import annotations
 
 import re
+from collections import defaultdict
 from datetime import UTC, datetime
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from mekiki_engine.costing.money import split_cents
+from mekiki_engine.costing.sale import compute_platform_fee
 from mekiki_engine.domain import SalePlatform
 from mekiki_engine.models import Item, Lot, PendingSale, Sale
 from mekiki_engine.schemas import (
@@ -47,32 +51,31 @@ def import_ebay_report(
     )
     items = _user_items(session, user_id)
     by_ref = {item.listing_ref: item for item in items if item.listing_ref}
-    sales = {
-        item.sale.external_ref: item.sale
-        for item in items
-        if item.sale is not None and item.sale.external_ref
-    }
+    # A line of several copies is recorded on several cards.
+    sales: defaultdict[str, list[Sale]] = defaultdict(list)
+    for item in items:
+        if item.sale is not None and item.sale.external_ref:
+            sales[item.sale.external_ref].append(item.sale)
     pending = {
         row.external_ref: row
         for row in session.scalars(select(PendingSale).where(PendingSale.user_id == user_id))
     }
     for line in report.lines:
-        sale = sales.get(line.reference)
-        if sale is not None:
-            if _bring_up_to_date(sale, line):
-                result.updated += 1
-            continue
+        recorded = sales.get(line.reference, [])
         waiting = pending.get(line.reference)
-        if waiting is not None:
-            waiting.shipped_on = _iso(line.shipped_on) or waiting.shipped_on
-            waiting.tracking_number = line.tracking_number or waiting.tracking_number
+        if recorded or waiting is not None:
+            if [sale for sale in recorded if _bring_up_to_date(sale, line)]:
+                result.updated += 1
+            if waiting is not None:
+                waiting.shipped_on = _iso(line.shipped_on) or waiting.shipped_on
+                waiting.tracking_number = line.tracking_number or waiting.tracking_number
             continue
         item = by_ref.get(line.item)
         if item is not None and item.sale is None and line.quantity == 1:
             _record(session, user_id, settings, item.id, line)
             # The same line may come twice (overlapping reports joined): booked once.
             assert item.sale is not None
-            sales[line.reference] = item.sale
+            sales[line.reference].append(item.sale)
             result.imported += 1
             continue
         row = PendingSale(
@@ -103,7 +106,9 @@ def list_pending(session: Session, user_id: int) -> list[PendingSaleOut]:
         .where(PendingSale.user_id == user_id, PendingSale.ignored.is_(False))
         .order_by(PendingSale.sold_on.desc())
     )
+    rows = list(rows)
     unsold = [item for item in _user_items(session, user_id) if item.sale is None]
+    recorded = _recorded_sales(session, user_id, [row.external_ref for row in rows])
     return [
         PendingSaleOut(
             id=row.id,
@@ -111,6 +116,7 @@ def list_pending(session: Session, user_id: int) -> list[PendingSaleOut]:
             title=row.title,
             buyer=row.buyer,
             quantity=row.quantity,
+            matched=len(recorded[row.external_ref]),
             sold_on=row.sold_on,
             price_cents=row.price_cents,
             shipping_cents=row.shipping_cents,
@@ -124,25 +130,52 @@ def list_pending(session: Session, user_id: int) -> list[PendingSaleOut]:
 def match_pending(
     session: Session, user_id: int, settings: AppSettings, pending_id: int, item_id: int
 ) -> ItemOut:
+    """Records one copy of the line on the card, with an even share of its price, shipping
+    and fees. The line waits until each of its copies has its card."""
     row = _pending(session, user_id, pending_id)
     item = portfolio.get_item(session, user_id, item_id)
     if item.sale is not None:
         raise portfolio.NotFoundError(f"item {item_id} is already sold")
+    recorded = _recorded_sales(session, user_id, [row.external_ref])[row.external_ref]
+    copies_left = row.quantity - len(recorded)
+    if copies_left < 1:
+        raise portfolio.NotFoundError(f"pending sale {pending_id} has no copy left to match")
+    # Each copy takes its share of what the copies already named left, so the shares add up
+    # to the line whatever the order, even after one of them was cancelled.
+    line_fee = compute_platform_fee(
+        portfolio.fee_rule(settings, SalePlatform(row.platform)),
+        row.price_cents,
+        row.shipping_cents,
+    )
+    price = _share(row.price_cents - sum(s.sale_price_cents for s in recorded), copies_left)
+    shipping = _share(
+        row.shipping_cents - sum(s.shipping_charged_cents for s in recorded), copies_left
+    )
+    fee = _share(line_fee - sum(s.platform_fee_cents for s in recorded), copies_left)
     line = ebay_report.ReportLine(
         order=row.external_ref,
         item=row.listing_ref or "",
         title=row.title,
         buyer=row.buyer,
-        quantity=row.quantity,
-        price_cents=row.price_cents,
-        shipping_cents=row.shipping_cents,
+        quantity=1,
+        price_cents=price,
+        shipping_cents=shipping,
         sold_on=datetime.fromisoformat(row.sold_on).date(),
         shipped_on=datetime.fromisoformat(row.shipped_on).date() if row.shipped_on else None,
         tracking_number=row.tracking_number,
     )
-    out = _record(session, user_id, settings, item_id, line, reference=row.external_ref)
-    session.delete(row)
-    session.commit()
+    out = _record(
+        session,
+        user_id,
+        settings,
+        item_id,
+        line,
+        reference=row.external_ref,
+        platform_fee_cents=fee,
+    )
+    if copies_left == 1:
+        session.delete(row)
+        session.commit()
     return out
 
 
@@ -171,6 +204,7 @@ def _record(
     line: ebay_report.ReportLine,
     *,
     reference: str | None = None,
+    platform_fee_cents: int | None = None,
 ) -> ItemOut:
     note = " · ".join(filter(None, [f"Commande eBay {line.order}", line.buyer]))
     out = portfolio.record_sale(
@@ -183,6 +217,7 @@ def _record(
             sold_on=line.sold_on,
             sale_price_cents=line.price_cents,
             shipping_charged_cents=line.shipping_cents,
+            platform_fee_cents=platform_fee_cents,
             shipped_on=line.shipped_on,
             tracking_number=line.tracking_number,
             notes=note if reference is None else None,
@@ -227,6 +262,29 @@ def _suggestions(title: str, unsold: list[Item]) -> list[SuggestedItem]:
         )
         for _score, item in scored[:MAX_SUGGESTIONS]
     ]
+
+
+def _recorded_sales(
+    session: Session, user_id: int, references: list[str]
+) -> defaultdict[str, list[Sale]]:
+    """The account's sales recorded from these report lines, by line."""
+    found: defaultdict[str, list[Sale]] = defaultdict(list)
+    if not references:
+        return found
+    statement = (
+        select(Sale)
+        .join(Sale.item)
+        .join(Item.lot)
+        .where(Lot.user_id == user_id, Sale.external_ref.in_(set(references)))
+    )
+    for sale in session.scalars(statement):
+        found[sale.external_ref or ""].append(sale)
+    return found
+
+
+def _share(cents: int, copies: int) -> int:
+    """The next copy's share of what is left of an amount, split without losing a cent."""
+    return split_cents(max(cents, 0), [1] * copies)[0]
 
 
 def _user_items(session: Session, user_id: int) -> list[Item]:

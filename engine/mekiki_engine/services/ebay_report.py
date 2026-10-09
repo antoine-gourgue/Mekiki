@@ -32,6 +32,7 @@ COLUMNS = {
     "sold_on": ("sale date", "date de vente", "date de la vente"),
     "shipped_on": ("shipped on date", "date d'expedition", "date d'envoi"),
     "tracking": ("tracking number", "numero de suivi"),
+    "total": ("total price", "prix total", "montant total"),
 }
 REQUIRED = ("order", "item", "title", "price", "sold_on")
 
@@ -65,6 +66,7 @@ class ReportLine:
     title: str
     buyer: str | None
     quantity: int
+    # What the line sold for, all its copies together.
     price_cents: int
     shipping_cents: int
     sold_on: date
@@ -115,6 +117,9 @@ def read_report(text: str) -> Report:
             report.errors.append(f"Ligne {number} : prix ou date de vente illisible, ignorée.")
             continue
         quantity = int(cell("quantity")) if cell("quantity").isdigit() else 1
+        shipping = money_cents(cell("shipping")) or 0
+        if quantity > 1:
+            price = _line_price(price, quantity, shipping, money_cents(cell("total")))
         report.lines.append(
             ReportLine(
                 order=order,
@@ -123,13 +128,25 @@ def read_report(text: str) -> Report:
                 buyer=cell("buyer") or None,
                 quantity=quantity,
                 price_cents=price,
-                shipping_cents=money_cents(cell("shipping")) or 0,
+                shipping_cents=shipping,
                 sold_on=sold_on,
                 shipped_on=parse_date(cell("shipped_on")),
                 tracking_number=cell("tracking") or None,
             )
         )
     return report
+
+
+def _line_price(price: int, quantity: int, shipping: int, total: int | None) -> int:
+    """The price of all the line's copies.
+
+    Whether "Sold for" is the price of one copy or of the line is not documented: the line's
+    total, when the report has it, tells which of the two adds up with the shipping.
+    """
+    if total is None:
+        return price
+    goods = total - shipping
+    return price * quantity if abs(goods - price * quantity) < abs(goods - price) else price
 
 
 def money_cents(text: str) -> int | None:

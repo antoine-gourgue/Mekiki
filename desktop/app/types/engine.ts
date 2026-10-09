@@ -1004,7 +1004,12 @@ export interface PendingSale {
   platform: SalePlatform
   title: string
   buyer: string | null
+  /**
+   * Copies sold by the line, and how many already have their card: each gets an even share of
+   * the line's price and shipping, which are for all the copies.
+   */
   quantity: number
+  matched: number
   sold_on: string
   price_cents: number
   shipping_cents: number
