@@ -82,13 +82,13 @@ const meta = computed(() =>
   <!-- Tile: photo on top, figures below (the proposed parcel). -->
   <article
     v-if="layout === 'tile'"
-    class="flex flex-col overflow-hidden rounded-lg border border-default bg-muted"
+    class="flex flex-col overflow-hidden rounded-lg border border-default bg-muted transition-colors hover:border-accented"
     :class="{ 'opacity-60': muted }"
   >
     <div class="relative h-40 bg-elevated">
       <button
         type="button"
-        class="flex size-full items-center justify-center"
+        class="flex size-full items-center justify-center transition hover:brightness-110"
         aria-label="Ouvrir la fiche de l’annonce"
         @click="emit('open')"
       >
@@ -131,8 +131,11 @@ const meta = computed(() =>
 
     <div class="flex flex-1 flex-col gap-3 p-4">
       <div class="flex items-start gap-2">
-        <button type="button" class="min-w-0 flex-1 text-left" @click="emit('open')">
-          <p class="truncate font-semibold text-highlighted" :title="heading ?? title">
+        <button type="button" class="group min-w-0 flex-1 text-left" @click="emit('open')">
+          <p
+            class="truncate font-semibold text-highlighted group-hover:underline"
+            :title="heading ?? title"
+          >
             {{ heading ?? title }}
           </p>
           <p class="mt-0.5 truncate text-xs text-dimmed" :title="subtitle">
@@ -203,14 +206,14 @@ const meta = computed(() =>
   <!-- Row: thumbnail, titles, three figures, actions (lists of deals and results). -->
   <article
     v-else
-    class="rounded-lg border border-default bg-muted px-4 py-3.5"
+    class="rounded-lg border border-default bg-muted px-4 py-3.5 transition-colors hover:border-accented"
     :class="{ 'opacity-60': muted }"
   >
     <div class="flex flex-wrap items-center gap-x-6 gap-y-3">
       <slot name="leading" />
       <button
         type="button"
-        class="flex h-[72px] w-[52px] shrink-0 items-center justify-center overflow-hidden rounded-md border border-accented bg-elevated"
+        class="flex h-[72px] w-[52px] shrink-0 items-center justify-center overflow-hidden rounded-md border border-accented bg-elevated transition hover:brightness-110"
         aria-label="Ouvrir la fiche de l’annonce"
         @click="emit('open')"
       >

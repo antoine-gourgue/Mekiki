@@ -79,3 +79,30 @@ body {
 .tabular-nums {
   font-family: var(--font-mono);
 }
+
+/* Tailwind 4 gives buttons the default arrow: what can be clicked should show it. */
+button:not(:disabled),
+[role='button']:not([aria-disabled='true']) {
+  cursor: pointer;
+}
+
+/* Thin rounded scrollbars on the dark theme, without Windows' arrows and grey track. */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 9999px;
+  background: var(--ui-border-accented) padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: var(--ui-text-dimmed);
+}
+::-webkit-scrollbar-button {
+  display: none;
+}
