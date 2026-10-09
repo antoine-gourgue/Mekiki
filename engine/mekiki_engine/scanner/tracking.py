@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 from mekiki_engine.domain import Game
 from mekiki_engine.models import CardIndexEntry, CardmarketProduct, TrackedCard
 from mekiki_engine.scanner import names
-from mekiki_engine.scanner.identify import CardIdentity
+from mekiki_engine.scanner.identify import CardIdentity, mirror_of
 from mekiki_engine.scanner.resolver import CatalogResolver
 
 Version = Literal["regular", "parallel", "manga"]
@@ -118,11 +118,12 @@ def is_printing(printing: Printing, identity: CardIdentity) -> bool:
             return False
     elif identity.total is None or identity.total != printing.total:
         return False
+    mirror = mirror_of(identity.text, printing.japanese_name) if identity.mirror else None
     if printing.mirror is None:
-        return identity.mirror is None
+        return mirror is None
     if printing.mirror == "reverse":
-        return identity.mirror == "reverse"
-    return identity.mirror == printing.mirror
+        return mirror == "reverse"
+    return mirror == printing.mirror
 
 
 def printing_queries(printing: Printing) -> list[str]:

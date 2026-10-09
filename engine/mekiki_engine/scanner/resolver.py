@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from mekiki_engine.domain import Game
 from mekiki_engine.models import CardIndexEntry, CardmarketProduct
-from mekiki_engine.scanner.identify import CardIdentity
+from mekiki_engine.scanner.identify import CardIdentity, mirror_of
 from mekiki_engine.scanner.matching import normalize
 from mekiki_engine.scanner.pricing import reference_price
 
@@ -47,6 +47,8 @@ class Resolution:
     # The card's set ("sv2a", "op05") and rarity ("sar", "sec"), for discovery's filters.
     set_code: str | None = None
     rarity: str | None = None
+    # The mirror printing sold, once the card's own name is set apart (see mirror_of).
+    mirror: str | None = None
 
 
 class CatalogResolver:
@@ -120,7 +122,8 @@ class CatalogResolver:
     def _resolution(
         self, rows: list[CardIndexEntry], identity: CardIdentity, note: str | None = None
     ) -> Resolution | None:
-        rows = _matching_printing(rows, identity.mirror)
+        mirror = mirror_of(identity.text, rows[0].name) if identity.mirror else None
+        rows = _matching_printing(rows, mirror)
         products = self._priced({row.id_product for row in rows})
         if not products:
             return None
@@ -130,12 +133,12 @@ class CatalogResolver:
             label += f"/{row.set_total:03d}"
         if row.rarity:
             label += f" · {row.rarity}"
-        if identity.mirror:
+        if mirror:
             label += " · miroir"
         rarity = row.rarity.lower() if row.rarity else identity.rarity
         if len(products) == 1:
             return Resolution(
-                products[0], label, "medium" if note else "high", note, row.set_code, rarity
+                products[0], label, "medium" if note else "high", note, row.set_code, rarity, mirror
             )
         # Unclear printing: the cheapest price never makes a listing look better than it is.
         return Resolution(
@@ -145,6 +148,7 @@ class CatalogResolver:
             note or f"{len(products)} versions sur Cardmarket : vérifiez la cote",
             row.set_code,
             rarity,
+            mirror,
         )
 
     def _resolve_one_piece(self, identity: CardIdentity) -> Resolution | None:

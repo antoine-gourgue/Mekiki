@@ -10,7 +10,7 @@ import re
 from dataclasses import dataclass
 
 from mekiki_engine.domain import Game
-from mekiki_engine.scanner.matching import normalize
+from mekiki_engine.scanner.matching import GRADED, normalize
 
 # Pokémon set codes printed on Japanese cards: sv2a, s12a, sm12a, m2a, cp6, xy11, bw8…
 _POKEMON_SET = re.compile(
@@ -46,8 +46,8 @@ _RARITY = re.compile(
 )
 # Manga ("comic") parallels are by far the most expensive One Piece version.
 _MANGA = re.compile(r"コミパラ|コミック|マンガ|漫画|manga|スーパーパラレル")
-_PARALLEL = re.compile(r"パラレル|パラ(?![a-z])|parallel")
-_GRADED = re.compile(r"(?<![a-z])(?:psa|bgs|cgc|ars)(?![a-z])|鑑定")
+# "ノンパラ" is the regular print, not a parallel.
+_PARALLEL = re.compile(r"(?<!ノン)パラレル|(?<!ノン)パラ(?![a-z])|(?<!non )parallel")
 # Mirror ("reverse") printings of the same number are separate Cardmarket products.
 _MIRRORS = (
     ("マスターボール", "masterball"),
@@ -91,7 +91,7 @@ def identify(title: str, game: Game) -> CardIdentity:
     text = normalize(title)
     rarity_match = _RARITY.search(text)
     rarity = rarity_match[1] if rarity_match else None
-    graded = _GRADED.search(text) is not None
+    graded = GRADED.search(text) is not None
     several_copies = any(int(count) > 1 for count in _QUANTITY.findall(text))
 
     if game is Game.ONE_PIECE:
@@ -124,6 +124,14 @@ def identify(title: str, game: Game) -> CardIdentity:
         rarity=rarity,
         graded=graded,
         several_copies=several_copies,
-        mirror=next((kind for word, kind in _MIRRORS if word in text), None),
+        mirror=mirror_of(text),
         text=text,
     )
+
+
+def mirror_of(text: str, card_name: str | None = None) -> str | None:
+    """The mirror printing a normalised title names. A card named after a ball (the trainer
+    card マスターボール) is not its own masterball mirror: its name is left out first."""
+    if card_name:
+        text = text.replace(normalize(card_name), " ", 1)
+    return next((kind for word, kind in _MIRRORS if word in text), None)

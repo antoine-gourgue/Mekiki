@@ -1,5 +1,8 @@
+import pytest
+
 from mekiki_engine.domain import Game
 from mekiki_engine.scanner.identify import identify
+from mekiki_engine.scanner.matching import MatchRule, match_title
 
 
 def test_pokemon_title_with_set_code_and_number() -> None:
@@ -60,3 +63,29 @@ def test_one_piece_code_and_versions() -> None:
 
 def test_one_piece_bundles_are_not_identified() -> None:
     assert identify("OP05-119 OP05-118 セット", Game.ONE_PIECE).code is None
+
+
+@pytest.mark.parametrize(
+    ("title", "graded"),
+    [
+        ("リザードンex SAR SV2a 201/165 未鑑定", False),
+        ("ピカチュウ SAR PSA10級 sv8 132/106", False),
+        ("ピカチュウ SAR sv8 132/106 psa10狙い", False),
+        ("ピカチュウ SAR sv8 132/106 鑑定前", False),
+        ("ピカチュウ SAR sv8 132/106 PSA10", True),
+        ("ピカチュウ SAR sv8 132/106 鑑定品", True),
+    ],
+)
+def test_raw_cards_sold_as_worth_a_grade_are_not_graded(title: str, graded: bool) -> None:
+    assert identify(title, Game.POKEMON).graded is graded
+
+
+def test_a_non_parallel_is_the_regular_print() -> None:
+    assert identify("ルフィ OP05-119 ノンパラ", Game.ONE_PIECE).parallel is False
+    assert identify("ルフィ OP05-119 パラ", Game.ONE_PIECE).parallel is True
+
+
+def test_a_card_pulled_from_a_pack_is_no_pack() -> None:
+    rule = MatchRule()
+    assert match_title("リザードンex SAR SV2a 201/165 パック産", rule).matched
+    assert not match_title("バラ 1パック メガカイリューex MUR", rule).matched

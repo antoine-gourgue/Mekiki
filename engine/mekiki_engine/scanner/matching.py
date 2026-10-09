@@ -26,16 +26,23 @@ _NUMBER_OVER_TOTAL = re.compile(r"(?<!\d)(\d{1,3})\s*/\s*(\d{1,3})(?!\d)")
 # One Piece and other code-based numbering: "OP05-119", "ST10-005", "EB01-061", "P-001".
 _CODE_NUMBER = re.compile(r"(?<![a-z0-9])([a-z]{1,4}\d{0,2})-(\d{1,3})(?!\d)")
 
-# Whole words only: "ars" (a Japanese grader) also hides inside "cards".
-_GRADED = re.compile(r"(?<![a-z])(?:psa|bgs|cgc|ars)(?![a-z])|鑑定")
+# Whole words only: "ars" (a Japanese grader) also hides inside "cards". A raw card in the
+# best condition is sold as "PSA10級", "psa10狙い" (worth a 10) or "未鑑定" (never graded).
+GRADED = re.compile(
+    r"(?<![a-z])(?:psa|bgs|cgc|ars)(?![a-z])"
+    r"(?!\s?\d{0,2}(?:\.\d)?\s?(?:級|狙|候補|相当|向け|レベル|クラス))"
+    r"|(?<!未)鑑定(?!前|用|なし|無し)"
+)
 # Listings kept for one buyer ("〇〇様専用", "お取り置き", "売約済み") or whose seller refuses a
 # purchase without a message first ("即購入不可"): a proxy's order would be cancelled.
 _RESERVED = re.compile(r"専用|取り?置き?|売約|予約済|購入不可|購入禁止")
 # Booster packs name the cards they may hold ("バラ 1パック メガカイリューex MUR"): read as a
 # card, a 300 ¥ pack would look like a bargain. "拡張パック" and "ハイクラスパック" belong to set
 # names and never come after a count; "ブースター" alone is Flareon. \u00d7: the "times" sign.
+# A count, not a card number: "165パック産" (pulled from a pack) ends a card's "201/165".
 _SEALED = re.compile(
-    r"\d+パック|パック[\u00d7x*]\d|バラパック|未開封パック|ブースター(?:パック|ボックス)|シュリンク"
+    r"(?<![\d/])\d{1,2}パック(?!産|から|より)|パック[\u00d7x*]\d|バラパック|未開封パック"
+    r"|ブースター(?:パック|ボックス)|シュリンク"
 )
 
 
@@ -122,7 +129,7 @@ def match_title(title: str, rule: MatchRule) -> MatchResult:
         wanted = normalize(rule.grading).replace(" ", "")
         if wanted not in compact:
             return MatchResult(False, f"gradation absente : {rule.grading}")
-    elif _GRADED.search(text):
+    elif GRADED.search(text):
         return MatchResult(False, "carte gradée")
 
     if rule.card_number is not None and not rule.card_number.found_in(text):

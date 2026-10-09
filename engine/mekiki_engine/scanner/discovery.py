@@ -336,7 +336,7 @@ class CardFilter:
             not self.name or self.name in compact(title),
             self.min_market_cents is None or market_cents >= self.min_market_cents,
             self.max_market_cents is None or market_cents <= self.max_market_cents,
-            not (self.exclude_mirrors and identity.mirror),
+            not (self.exclude_mirrors and resolution.mirror),
             not (self.confident_only and resolution.confidence != "high"),
         )
         return all(checks)
@@ -361,7 +361,9 @@ def narrowed(request: DiscoveryRequest) -> bool:
 
 def card_rarities(identity: CardIdentity, resolution: Resolution) -> set[str]:
     """The catalog's rarity ids a recognised card answers to."""
-    found = {resolution.rarity or identity.rarity or ""}
+    # The title's own rarity counts too: the index files sword & shield hyper rares as "UR",
+    # while titles call them "HR".
+    found = {resolution.rarity or "", identity.rarity or ""}
     if identity.game is Game.ONE_PIECE:
         found |= {"parallel"} if identity.parallel else set()
         found |= {"manga"} if identity.manga else set()

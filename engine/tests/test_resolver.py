@@ -122,3 +122,29 @@ def test_a_card_linked_to_a_chinese_printing_is_not_priced_by_it(client: TestCli
     catalog.session.commit()
 
     assert label(catalog, "ジバコイル 053/076 ストームエメラルダ") is None
+
+
+def test_the_trainer_card_named_after_a_ball_is_no_mirror(client: TestClient) -> None:
+    catalog = resolver(client)
+    session = catalog.session
+    session.add(
+        CardmarketProduct(id_product=90, game="pokemon", name="Master Ball", avg30_cents=900)
+    )
+    session.add(
+        CardIndexEntry(
+            game="pokemon",
+            set_code="sv4a",
+            set_name="シャイニートレジャーex",
+            number=349,
+            id_product=90,
+            set_total=190,
+            rarity="UR",
+            name="マスターボール",
+        )
+    )
+    session.commit()
+
+    resolution = catalog.resolve(identify("マスターボール UR sv4a 349/190", Game.POKEMON))
+
+    assert resolution is not None
+    assert (resolution.label, resolution.mirror) == ("SV4a 349/190 · UR", None)
