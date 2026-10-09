@@ -170,6 +170,19 @@ def list_tasks(
             )
         )
 
+    for lot in portfolio.lots_awaiting_vat(session, user_id):
+        tasks.append(
+            TaskOut(
+                id=f"vat:{lot.id}",
+                key=f"vat:{lot.id}",
+                title=f"TVA à saisir : lot « {lot.label} »",
+                detail="Coût de revient encore estimé : saisissez la TVA d'import de la facture "
+                "du transporteur, la marge des cartes vendues sera corrigée",
+                to=f"/lots/{lot.id}",
+                tone="warning",
+            )
+        )
+
     if to_list:
         tasks.append(
             TaskOut(

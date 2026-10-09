@@ -537,6 +537,22 @@ def lots_on_their_way(session: Session, user_id: int) -> list[Lot]:
     return list(session.scalars(statement))
 
 
+def lots_awaiting_vat(session: Session, user_id: int) -> list[Lot]:
+    """Lots received whose carrier invoice is not entered: their costs still hold an
+    estimated import VAT, oldest first."""
+    statement = (
+        select(Lot)
+        .where(
+            Lot.user_id == user_id,
+            Lot.status == LotStatus.RECEIVED.value,
+            Lot.import_vat_cents.is_(None),
+            Lot.items.any(),
+        )
+        .order_by(Lot.id)
+    )
+    return list(session.scalars(statement))
+
+
 def _load_lots(session: Session, user_id: int) -> list[Lot]:
     statement = (
         select(Lot)

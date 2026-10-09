@@ -97,6 +97,26 @@ def test_shipped_lots_wait_to_be_received(client: TestClient) -> None:
     assert not any(task["id"].startswith("declaration") for task in found)
 
 
+def test_a_received_lot_waits_for_its_import_vat(client: TestClient) -> None:
+    lot = set_up_business(client)
+    on_its_way = create_reference_lot(client)
+    client.patch(f"/lots/{on_its_way['id']}", json={"status": "shipped"})
+
+    found = {task["id"]: task for task in client.get("/tasks").json()}
+    vat = found[f"vat:{lot['id']}"]
+    client.patch(f"/lots/{lot['id']}", json={"import_vat_cents": 9500})
+    after = {task["id"] for task in client.get("/tasks").json()}
+
+    assert (vat["title"], vat["to"], vat["tone"]) == (
+        "TVA à saisir : lot « Colis 1 »",
+        f"/lots/{lot['id']}",
+        "warning",
+    )
+    # Not received yet: its invoice cannot have come.
+    assert f"vat:{on_its_way['id']}" not in found
+    assert f"vat:{lot['id']}" not in after
+
+
 def test_a_failed_backup_comes_first(client: TestClient) -> None:
     found = tasks_on(client, date(2026, 4, 10), backup_error="disque plein")
 
