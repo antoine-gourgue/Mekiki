@@ -104,10 +104,13 @@ cd desktop && npm run lint && npm run format:check && npm run typecheck && npm r
 - Yahoo! JAPAN bloque l'Europe (403) : ne pas tenter de contourner le blocage.
 - Vendeurs bloqués (`sellers.py`, table `blocked_sellers` commune aux comptes) : Neokyo refuse
   d'acheter chez certains vendeurs, et sa liste est derrière Cloudflare (jamais contournée).
-  Mekiki les écarte par l'identifiant du vendeur (`sellerId` des résultats Mercari) ; la
-  vérification d'une annonce du colis lit la description (refus d'intermédiaire : « 代行 »,
-  « 転送 », « 業者お断り », mais pas « 海外発送不可 ») et les évaluations, et bloque le vendeur.
-  L'utilisateur bloque les autres d'un clic (« Vendeur bloqué sur Neokyo »).
+  Mekiki les écarte par l'identifiant du vendeur (`sellerId` des résultats Mercari ; pour
+  Rakuma, dont les résultats ne nomment pas le vendeur, l'identifiant de sa boutique lu sur la
+  page de l'annonce) ; la vérification d'une annonce du colis lit la description et, sur
+  Rakuma, le profil (refus d'intermédiaire : « 代行 », « 転送 », « 業者お断り », mais pas
+  « 海外発送不可 ») et les évaluations (soleil, nuage, pluie sur Rakuma), et bloque le vendeur
+  ou le reconnaît déjà bloqué. L'utilisateur bloque les autres d'un clic (« Vendeur bloqué sur
+  Neokyo », Mercari et Rakuma).
 - Les tests n'accèdent jamais au réseau : `create_app(..., http_transport=..., source_factory=...)`
   et `background_jobs=False` (voir `engine/tests/conftest.py`).
 - Rester poli avec les sites : pas de requêtes en parallèle vers un même site, intervalles de

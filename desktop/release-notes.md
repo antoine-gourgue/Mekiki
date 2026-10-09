@@ -1,8 +1,10 @@
 ## Changements
 
-- Ventes réussies eBay : Mekiki ne va plus les lire tout seul à l'ouverture d'une fiche. Le
-  bouton « Lire les ventes réussies » les lit quand vous le demandez, et les ventes déjà lues
-  dans les six dernières heures s'affichent directement.
-- Le bouton reste désactivé tant que la fenêtre Chrome de Mekiki n'est pas connectée à eBay :
-  « Se connecter à eBay » ouvre la page de connexion, « Vérifier la connexion » confirme
-  qu'elle a réussi. Avec l'API eBay des ventes réussies, aucune connexion n'est nécessaire.
+- Vendeurs Rakuma bloqués par Neokyo : Mekiki lit maintenant le vendeur sur la page de
+  l'annonce Rakuma. Les cartes du colis proposé dont le vendeur refuse les intermédiaires,
+  est mal noté ou a déjà été bloqué sont remplacées, et rangées avec les vendeurs bloqués.
+- Le bouton « Vendeur bloqué sur Neokyo » marche aussi sur les annonces Rakuma : quand Neokyo
+  refuse un achat, un clic suffit pour ne plus jamais revoir ce vendeur.
+- Ventes réussies eBay : elles ne sont plus lues toutes seules à l'ouverture d'une fiche. Le
+  bouton « Lire les ventes réussies » les lit quand vous le demandez, et reste désactivé tant
+  que la fenêtre Chrome de Mekiki n'est pas connectée à eBay (« Vérifier la connexion »).
