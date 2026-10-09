@@ -109,8 +109,10 @@ cd desktop && npm run lint && npm run format:check && npm run typecheck && npm r
   page de l'annonce) ; la vérification d'une annonce du colis lit la description et, sur
   Rakuma, le profil (refus d'intermédiaire : « 代行 », « 転送 », « 業者お断り », mais pas
   « 海外発送不可 ») et les évaluations (soleil, nuage, pluie sur Rakuma), et bloque le vendeur
-  ou le reconnaît déjà bloqué. L'utilisateur bloque les autres d'un clic (« Vendeur bloqué sur
-  Neokyo », Mercari et Rakuma).
+  ou le reconnaît déjà bloqué. Les évaluations ne bloquent qu'à 20 % de négatives sur au
+  moins 10 : Neokyo achète chez des vendeurs à 1 négative sur 24, que `seller_note` montre
+  seulement (un seuil à 3 % bloquait à tort, m0012 les a débloqués). L'utilisateur bloque les
+  autres d'un clic (« Bloquer ce vendeur (refusé par Neokyo) », Mercari et Rakuma).
 - Les tests n'accèdent jamais au réseau : `create_app(..., http_transport=..., source_factory=...)`
   et `background_jobs=False` (voir `engine/tests/conftest.py`).
 - Rester poli avec les sites : pas de requêtes en parallèle vers un même site, intervalles de
