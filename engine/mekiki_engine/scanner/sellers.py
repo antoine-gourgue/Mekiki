@@ -20,13 +20,18 @@ from sqlalchemy.orm import Session
 from mekiki_engine.models import BlockedSeller
 
 _REFUSED = r"(?:不可|お断り|禁止|ご遠慮|NG|できません)"
+# The words between a proxy and its refusal stay in one clause and never accept it:
+# "代行OK、値下げ不可" accepts proxies and refuses discounts. Full-width commas and marks
+# end a clause too.
+_CLAUSE_ENDS = r"、,。.!?\s" + chr(0xFF0C) + chr(0xFF01) + chr(0xFF1F)
+_GAP = rf"(?:(?!OK|ok|Ok|歓迎|大丈夫|可能|いただけ)[^{_CLAUSE_ENDS}]){{0,12}}?"
 # Refusals of proxies in a description. "海外発送不可" (no shipping abroad) is no refusal:
 # Neokyo buys and receives in Japan. Nor is "配送業者の指定はできません" (no choice of carrier).
 PROXY_REFUSALS = (
-    re.compile(rf"代行[^。\n]{{0,12}}?{_REFUSED}"),
-    re.compile(rf"転送(?:業者|サービス)?[^。\n]{{0,10}}?{_REFUSED}"),
+    re.compile(rf"代行{_GAP}{_REFUSED}"),
+    re.compile(rf"転送(?:業者|サービス)?{_GAP}{_REFUSED}"),
     re.compile(rf"業者(?:様|さん)?(?:の|は|から|も|ご)*(?:購入|入札)?(?:は|も)?{_REFUSED}"),
-    re.compile(rf"海外(?:から|の方|在住)[^。\n]{{0,12}}?{_REFUSED}"),
+    re.compile(rf"海外(?:から|の方|在住){_GAP}{_REFUSED}"),
 )
 # Neokyo refuses sellers with "too many bad ratings" without saying how many. A bad rating
 # out of 24 is no such seller (Neokyo bought from several): only a share this bad, on this

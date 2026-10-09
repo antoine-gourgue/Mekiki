@@ -21,6 +21,7 @@ from mekiki_engine.migrations import (
     m0010_blocked_sellers,
     m0011_sales_import,
     m0012_lenient_ratings,
+    m0013_accepted_proxies,
 )
 
 MIGRATIONS: tuple[tuple[int, str], ...] = (
@@ -36,6 +37,7 @@ MIGRATIONS: tuple[tuple[int, str], ...] = (
     (10, m0010_blocked_sellers.SQL),
     (11, m0011_sales_import.SQL),
     (12, m0012_lenient_ratings.SQL),
+    (13, m0013_accepted_proxies.SQL),
 )
 
 

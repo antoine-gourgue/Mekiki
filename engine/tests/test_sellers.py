@@ -30,7 +30,17 @@ def test_sellers_refusing_proxies_are_seen(description: str) -> None:
 
 @pytest.mark.parametrize(
     "description",
-    ["海外発送不可です", "配送業者の指定はできません", "即購入OK、プレイ用でお願いします"],
+    [
+        "海外発送不可です",
+        "配送業者の指定はできません",
+        "即購入OK、プレイ用でお願いします",
+        # Proxies accepted, something else refused.
+        "代行OK、値下げ不可",
+        "購入代行OK！値引き不可",
+        "代行業者様の購入OK 返品不可",
+        "転送OK 返品返金不可",
+        "代行業者様のご購入も歓迎です。返品は不可",
+    ],
 )
 def test_other_restrictions_are_no_refusal(description: str) -> None:
     assert seller_problem({"description": description, "seller": GOOD_SELLER}) is None
@@ -200,5 +210,27 @@ def test_sellers_blocked_for_a_few_bad_ratings_are_unblocked() -> None:
     )
 
     db.executescript(m0012_lenient_ratings.SQL)
+
+    assert db.execute("SELECT seller_id FROM blocked_sellers").fetchall() == [("2",)]
+
+
+def test_sellers_blocked_for_an_accepted_proxy_are_unblocked() -> None:
+    import sqlite3
+
+    from mekiki_engine.migrations import m0013_accepted_proxies
+
+    db = sqlite3.connect(":memory:")
+    db.execute(
+        "CREATE TABLE blocked_sellers (source TEXT, seller_id TEXT, reason TEXT, blocked_at TEXT)"
+    )
+    db.executemany(
+        "INSERT INTO blocked_sellers VALUES ('mercari', ?, ?, '2026-10-09')",
+        [
+            ("1", "refuse les achats par un intermédiaire (« 代行OK、値下げ不可 »)"),
+            ("2", "refuse les achats par un intermédiaire (« 代行業者様のご購入はお断り »)"),
+        ],
+    )
+
+    db.executescript(m0013_accepted_proxies.SQL)
 
     assert db.execute("SELECT seller_id FROM blocked_sellers").fetchall() == [("2",)]
