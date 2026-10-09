@@ -15,6 +15,7 @@ from mekiki_engine.scanner import (
     catalog,
     favorites,
     names,
+    sellers,
     service,
     tracking,
 )
@@ -223,10 +224,17 @@ def search(
 
 @router.get("/listings/{source}/{external_id}/availability")
 def listing_availability(
-    source: SourcePlatform, external_id: str, request: Request, _user: UserDep
+    source: SourcePlatform, external_id: str, request: Request, session: SessionDep, _user: UserDep
 ) -> ListingAvailability:
-    """Asks the marketplace whether the listing is still for sale, and in what condition."""
-    return availability.check_listing(_client(request), source, external_id)
+    """Asks the marketplace whether the listing is still for sale, and in what condition.
+
+    A seller already blocked is named as such: Rakuma's results never said who sold it.
+    """
+    checked = availability.check_listing(_client(request), source, external_id)
+    known = sellers.blocked(session).get((source.value, checked.seller_id or ""))
+    if known:
+        checked.seller_warning = f"est déjà dans vos vendeurs bloqués ({known})"
+    return checked
 
 
 @router.get("/discovery")

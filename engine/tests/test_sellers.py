@@ -157,3 +157,17 @@ def test_a_blocked_rakuma_seller_is_found_on_the_parcel_check(
     assert [pick["external_id"] for pick in run["picks"]] == ["f" * 32]
     [blocked] = run["blocked"]
     assert (blocked["external_id"], blocked["blocked_reason"]) == (RAKUMA_ITEM, "bloqué par Neokyo")
+
+
+def test_opening_a_listing_of_a_blocked_seller_says_so(
+    client: TestClient, marketplace: FakeMarketplace
+) -> None:
+    marketplace.rakuma_sellers[RAKUMA_ITEM] = (RAKUMA_SHOP, 12, 0, 0)
+    client.post(
+        "/sellers/blocked",
+        json={"source": "rakuma", "external_id": RAKUMA_ITEM, "reason": "bloqué par Neokyo"},
+    )
+
+    checked = client.get(f"/listings/rakuma/{RAKUMA_ITEM}/availability").json()
+
+    assert checked["seller_warning"] == "est déjà dans vos vendeurs bloqués (bloqué par Neokyo)"
