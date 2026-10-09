@@ -23,14 +23,25 @@ def fresh_cache() -> None:
 class FakeTranslators:
     """MyMemory and DeepL: each text comes back as "FR(…)"."""
 
-    def __init__(self, *, quota_left: bool = True, deepl_key: str = "good-key:fx") -> None:
+    def __init__(
+        self,
+        *,
+        quota_left: bool = True,
+        free_requests: int | None = None,
+        deepl_key: str = "good-key:fx",
+    ) -> None:
         self.quota_left = quota_left
+        # Free translations left before the quota is spent; None for no limit.
+        self.free_requests = free_requests
         self.deepl_key = deepl_key
         self.requests: list[httpx.Request] = []
 
     def __call__(self, request: httpx.Request) -> httpx.Response:
         self.requests.append(request)
         if request.url.host == "api.mymemory.translated.net":
+            if self.free_requests is not None:
+                self.quota_left = self.free_requests > 0
+                self.free_requests -= 1
             if not self.quota_left:
                 return httpx.Response(200, json={"quotaFinished": True, "responseStatus": 429})
             text = parse_qs(urlsplit(str(request.url)).query)["q"][0]
@@ -59,9 +70,9 @@ def test_long_texts_are_cut_between_sentences_within_the_byte_limit() -> None:
     assert all(len(piece.encode()) <= 480 for piece in pieces)
     assert all(piece.endswith("。") for piece in pieces)
     assert "".join(pieces) == sentence * 40
-    # Short lines travel together, blank ones are dropped.
+    # Short lines travel together, with the blank line between paragraphs.
     assert chunks(DESCRIPTION, 480) == [
-        "美品です。\nスリーブに入れて保管していました。\n即購入OKです！"
+        "美品です。\nスリーブに入れて保管していました。\n\n即購入OKです！"
     ]
 
 
@@ -85,6 +96,45 @@ def test_a_spent_free_quota_says_how_to_go_on(client: TestClient) -> None:
 
     assert response.status_code == 502
     assert "ajoutez une clé DeepL" in response.json()["detail"]
+
+
+# Two paragraphs too long to travel in one request.
+LONG = "あ" * 100 + "。\n\n" + "い" * 100 + "。"
+
+
+def test_paragraphs_stay_apart_once_translated(client: TestClient) -> None:
+    use(client, FakeTranslators())
+
+    short = client.post("/translate", json={"text": DESCRIPTION}).json()
+    long = client.post("/translate", json={"text": LONG}).json()
+
+    assert "していました。\n\n即購入OK" in short["text"]
+    assert long["text"] == f"FR({'あ' * 100}。)\n\nFR({'い' * 100}。)"
+
+
+def test_a_quota_spent_midway_keeps_what_was_translated(client: TestClient) -> None:
+    fake = FakeTranslators(free_requests=1)
+    use(client, fake)
+
+    first = client.post("/translate", json={"text": LONG})
+    fake.free_requests = None
+    fake.quota_left = True
+    again = client.post("/translate", json={"text": LONG}).json()
+
+    assert first.status_code == 200
+    assert first.json()["text"].startswith(f"FR({'あ' * 100}。)\n\n(Traduction interrompue")
+    assert "Ajoutez une clé DeepL" in first.json()["text"]
+    # The partial translation was not kept: the whole text is translated once the quota allows.
+    assert again["text"].endswith(f"FR({'い' * 100}。)")
+
+
+def test_a_page_in_place_of_a_translation_is_a_translation_error(client: TestClient) -> None:
+    use(client, lambda _request: httpx.Response(200, text="<html>Maintenance</html>"))  # type: ignore[arg-type]
+
+    response = client.post("/translate", json={"text": DESCRIPTION})
+
+    assert response.status_code == 502
+    assert "MyMemory a renvoyé une réponse illisible" in response.json()["detail"]
 
 
 def test_a_deepl_key_is_checked_kept_secret_and_used(client: TestClient) -> None:

@@ -3,7 +3,7 @@
 DeepL translates best: each account may save its own key (a free DeepL API account), checked
 before it is kept. Without one, MyMemory's free API translates a few descriptions a day (about
 5 000 characters, 500 bytes per request). A text is never sent twice: translations are kept
-while the engine runs.
+while the engine runs, except one the free quota cut short, translated in full once it allows.
 """
 
 from __future__ import annotations
@@ -11,7 +11,9 @@ from __future__ import annotations
 import threading
 from collections import OrderedDict
 from dataclasses import dataclass
-from typing import Literal
+from typing import Any, Literal
+
+import httpx
 
 from mekiki_engine.scanner.sources.base import PoliteClient, SourceError
 
@@ -25,6 +27,12 @@ MAX_CHARACTERS = 2000
 CACHE_SIZE = 300
 # Where a sentence ends: "。", "!", "?" and their full-width forms.
 SENTENCE_ENDS = "。!?" + chr(0xFF01) + chr(0xFF1F)
+QUOTA_SPENT = "traductions gratuites du jour épuisées : ajoutez une clé DeepL dans Paramètres"
+# Ends a description the free quota cut short: what was translated is still worth reading.
+QUOTA_NOTE = (
+    "(Traduction interrompue : traductions gratuites du jour épuisées. Ajoutez une clé DeepL "
+    "dans Paramètres pour traduire la suite.)"
+)
 
 Provider = Literal["deepl", "mymemory"]
 
@@ -37,6 +45,8 @@ class TranslationError(SourceError):
 class Translation:
     text: str
     provider: Provider
+    # Cut short by the free quota: not kept, for a later request to translate it all.
+    partial: bool = False
 
 
 _cache: OrderedDict[tuple[str, str], Translation] = OrderedDict()
@@ -53,8 +63,13 @@ def translate(client: PoliteClient, text: str, *, deepl_key: str | None = None) 
             return _cache[key]
     if not text:
         return Translation("", provider)
-    translated = _deepl(client, deepl_key, text) if deepl_key else _mymemory(client, text)
-    result = Translation(translated, provider)
+    if deepl_key:
+        result = Translation(_deepl(client, deepl_key, text), provider)
+    else:
+        translated, partial = _mymemory(client, text)
+        result = Translation(translated, provider, partial=partial)
+    if result.partial:
+        return result
     with _cache_lock:
         _cache[key] = result
         while len(_cache) > CACHE_SIZE:
@@ -83,7 +98,7 @@ def _deepl(client: PoliteClient, key: str, text: str) -> str:
         raise TranslationError("quota DeepL du mois atteint")
     if response.status_code in (401, 403):
         raise TranslationError("DeepL refuse la clé enregistrée dans Paramètres")
-    translations = response.json().get("translations") or []
+    translations = _json(response, "DeepL").get("translations") or []
     if not translations:
         raise TranslationError("DeepL n'a rien renvoyé")
     return str(translations[0].get("text") or "")
@@ -98,40 +113,62 @@ def _deepl_headers(key: str) -> dict[str, str]:
     return {"Authorization": f"DeepL-Auth-Key {key}"}
 
 
-def _mymemory(client: PoliteClient, text: str) -> str:
-    parts = []
-    for chunk in chunks(text, MYMEMORY_MAX_BYTES):
+def _mymemory(client: PoliteClient, text: str) -> tuple[str, bool]:
+    """The translation, and whether the free quota cut it short."""
+    parts: list[str] = []
+    for separator, chunk in _pieces(text, MYMEMORY_MAX_BYTES):
         response = client.request(
             "GET", MYMEMORY_URL, params={"q": chunk, "langpair": "ja|fr"}, accept=(429,)
         )
-        data = response.json() if response.status_code != 429 else {}
+        data = _json(response, "MyMemory") if response.status_code != 429 else {}
         if response.status_code == 429 or data.get("quotaFinished"):
-            raise TranslationError(
-                "traductions gratuites du jour épuisées : ajoutez une clé DeepL dans Paramètres"
-            )
-        if int(data.get("responseStatus") or 200) != 200:
+            if not parts:
+                raise TranslationError(QUOTA_SPENT)
+            return "".join(parts) + f"\n\n{QUOTA_NOTE}", True
+        if str(data.get("responseStatus") or 200) != "200":
             raise TranslationError(str(data.get("responseDetails") or "MyMemory a refusé"))
-        parts.append(str((data.get("responseData") or {}).get("translatedText") or ""))
-    return "\n".join(parts)
+        part = str((data.get("responseData") or {}).get("translatedText") or "")
+        parts.append(f"{separator if parts else ''}{part}")
+    return "".join(parts), False
+
+
+def _json(response: httpx.Response, service: str) -> dict[str, Any]:
+    try:
+        data = response.json()
+    except ValueError as error:
+        raise TranslationError(f"{service} a renvoyé une réponse illisible") from error
+    if not isinstance(data, dict):
+        raise TranslationError(f"{service} a renvoyé une réponse illisible")
+    return data
 
 
 def chunks(text: str, max_bytes: int) -> list[str]:
-    """``text`` in pieces of at most ``max_bytes`` in UTF-8, cut between lines or sentences."""
-    pieces: list[str] = []
+    """``text`` in pieces of at most ``max_bytes`` in UTF-8, cut between lines or sentences;
+    a blank line between paragraphs is kept."""
+    return [piece for _separator, piece in _pieces(text, max_bytes)]
+
+
+def _pieces(text: str, max_bytes: int) -> list[tuple[str, str]]:
+    """``chunks``, each with what joins it to the previous one once translated: a line
+    break, a blank line between paragraphs, or a space within a line cut in two."""
+    lines: list[tuple[str, str]] = []
+    separator = "\n"
     for line in text.splitlines():
         if not line.strip():
+            separator = "\n\n"
             continue
         while len(line.encode()) > max_bytes:
             cut = _cut(line, max_bytes)
-            pieces.append(line[:cut])
-            line = line[cut:]
-        pieces.append(line)
-    grouped: list[str] = []
-    for piece in pieces:
-        if grouped and len(f"{grouped[-1]}\n{piece}".encode()) <= max_bytes:
-            grouped[-1] = f"{grouped[-1]}\n{piece}"
+            lines.append((separator, line[:cut]))
+            line, separator = line[cut:], " "
+        lines.append((separator, line))
+        separator = "\n"
+    grouped: list[tuple[str, str]] = []
+    for separator, line in lines:
+        if grouped and len(f"{grouped[-1][1]}{separator}{line}".encode()) <= max_bytes:
+            grouped[-1] = (grouped[-1][0], f"{grouped[-1][1]}{separator}{line}")
         else:
-            grouped.append(piece)
+            grouped.append((separator, line))
     return grouped
 
 
