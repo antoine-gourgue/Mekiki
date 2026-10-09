@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Permissions of the main window: core APIs, opening links in the browser, and installing updates.",
+  "description": "Permissions of the main window: core APIs, opening links in the browser, installing updates and notifying.",
   "windows": ["main"],
-  "permissions": ["core:default", "opener:default", "updater:default", "process:allow-restart"]
+  "permissions": ["core:default", "opener:default", "updater:default", "process:allow-restart", "notification:default"]
 }

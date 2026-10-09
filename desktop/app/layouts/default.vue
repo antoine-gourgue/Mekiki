@@ -6,8 +6,10 @@ const engine = useEngine()
 const favorites = useFavorites()
 const auth = useAuth()
 
-// Good deals not looked at yet and what Chrome is doing, refreshed every 30 seconds.
+// Good deals not looked at yet, what Chrome is doing and the tasks, refreshed every 30
+// seconds; new tasks worth it become Windows notifications.
 const unseenDeals = ref(0)
+const { tasks, refresh: refreshTasks } = useTasks()
 const chrome = ref<BrowserActivity | null>(null)
 let statusTimer: ReturnType<typeof setInterval> | undefined
 async function refreshSidebar() {
@@ -15,11 +17,26 @@ async function refreshSidebar() {
   // A failure keeps the last value: the engine status dot already says when it is down.
   if (scan.status === 'fulfilled') unseenDeals.value = scan.value.unseen_deals
   if (activity.status === 'fulfilled') chrome.value = activity.value
+  await refreshTasks()
 }
 
 const links = computed<NavigationMenuItem[][]>(() => [
   [
     { label: 'Tableau de bord', icon: 'i-lucide-layout-dashboard', to: '/' },
+    {
+      label: 'À faire',
+      icon: 'i-lucide-list-checks',
+      to: '/a-faire',
+      badge: tasks.value.length
+        ? {
+            label: String(tasks.value.length),
+            color: tasks.value.some((task) => task.tone === 'warning' || task.tone === 'error')
+              ? 'warning'
+              : 'neutral',
+            variant: 'soft',
+          }
+        : undefined,
+    },
     { label: 'Acheter au Japon', type: 'label' },
     { label: 'Trouver des cartes', icon: 'i-lucide-wand-sparkles', to: '/decouverte' },
     {

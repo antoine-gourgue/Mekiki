@@ -1059,6 +1059,22 @@ class PublishJobOut(BaseModel):
     error: str | None
 
 
+class TaskOut(BaseModel):
+    """Something the account has to do now, and the page where it is done."""
+
+    id: str
+    # Changes when something new comes in: the app notifies once per key.
+    key: str
+    title: str
+    detail: str
+    # The app's route: "/ventes", "/lots/12".
+    to: str
+    tone: Literal["primary", "warning", "info", "error"]
+    count: int | None = None
+    # Worth a Windows notification when its key is new.
+    notify: bool = False
+
+
 class BackupOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

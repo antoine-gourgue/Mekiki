@@ -857,6 +857,21 @@ export interface LogLine {
 
 /** What Mekiki's Chrome window is doing, for the live preview. */
 
+/** Something to do now, and the page where it is done. */
+export interface Task {
+  id: string
+  /** Changes when something new comes in: the app notifies once per key. */
+  key: string
+  title: string
+  detail: string
+  /** The app's route: "/ventes", "/lots/12". */
+  to: string
+  tone: 'primary' | 'warning' | 'info' | 'error'
+  count: number | null
+  /** Worth a Windows notification when its key is new. */
+  notify: boolean
+}
+
 export interface Backup {
   /** "mekiki-20261009-021500-000.sqlite3" */
   name: string

@@ -145,6 +145,9 @@ const TONE_CLASSES: Record<Todo['tone'], string> = {
   neutral: 'bg-accented text-highlighted',
   error: 'bg-error/15 text-error',
 }
+
+// The same list as the sidebar's badge, kept fresh by the layout.
+const { tasks } = useTasks()
 </script>
 
 <template>
@@ -200,6 +203,31 @@ const TONE_CLASSES: Record<Todo['tone'], string> = {
             hint="marge rapportée au coût de revient"
           />
         </div>
+
+        <UCard v-if="tasks.length" :ui="{ body: 'space-y-2 sm:p-5' }">
+          <div class="flex items-baseline justify-between gap-3">
+            <h2 class="font-semibold text-highlighted">À faire</h2>
+            <ULink to="/a-faire" class="text-sm text-primary">Tout voir ({{ tasks.length }})</ULink>
+          </div>
+          <NuxtLink
+            v-for="task in tasks.slice(0, 4)"
+            :key="task.id"
+            :to="task.to"
+            class="group flex items-center gap-3 rounded-md px-2 py-1.5 text-sm transition-colors hover:bg-elevated"
+          >
+            <span
+              class="size-2 shrink-0 rounded-full"
+              :class="{
+                'bg-error': task.tone === 'error',
+                'bg-warning': task.tone === 'warning',
+                'bg-primary': task.tone === 'primary',
+                'bg-(--ui-text-dimmed)': task.tone === 'info',
+              }"
+            />
+            <span class="flex-1 text-highlighted group-hover:underline">{{ task.title }}</span>
+            <span class="hidden truncate text-xs text-dimmed sm:block">{{ task.detail }}</span>
+          </NuxtLink>
+        </UCard>
 
         <div class="grid gap-3.5 sm:grid-cols-3">
           <StatTile

@@ -41,6 +41,7 @@ import type {
   LotUpdate,
   MarketPrice,
   PricePoint,
+  Task,
   PublishJob,
   PublishRequest,
   RegisterRequest,
@@ -196,6 +197,8 @@ export function useEngine() {
     /** A book as CSV for Excel: the book of receipts or the register of purchases. */
     booksCsv: (book: 'receipts' | 'purchases', year: number) =>
       request<string>(`/books/${book}.csv`, { query: { year }, responseType: 'text' }),
+    /** What to do now, most pressing first. */
+    tasks: () => request<Task[]>('/tasks'),
     backups: () => request<Backups>('/backups'),
     createBackup: () => request<Backup>('/backups', { method: 'POST', timeout: 60_000 }),
     /** Puts a copy back; returns the copy of the database taken just before. */

@@ -219,6 +219,11 @@ def _euros(cents: int) -> str:
     return f"{cents / 100:.2f}".replace(".", ",")
 
 
+def euros(cents: int) -> str:
+    """12345 → "123,45 €", for sentences."""
+    return f"{cents / 100:,.2f}".replace(",", " ").replace(".", ",") + " €"
+
+
 def _csv(header: tuple[str, ...], rows: list[tuple[object, ...]]) -> str:
     buffer = io.StringIO()
     # Semicolons: Excel in French splits columns on them, not on commas.

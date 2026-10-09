@@ -466,6 +466,16 @@ def max_price_jpy_for_roi(
     return low
 
 
+def lots_on_their_way(session: Session, user_id: int) -> list[Lot]:
+    """Lots shipped from Japan and not received yet, oldest first."""
+    statement = (
+        select(Lot)
+        .where(Lot.user_id == user_id, Lot.status == LotStatus.SHIPPED.value)
+        .order_by(Lot.id)
+    )
+    return list(session.scalars(statement))
+
+
 def _load_lots(session: Session, user_id: int) -> list[Lot]:
     statement = (
         select(Lot)

@@ -30,6 +30,7 @@ from mekiki_engine.routes import (
     scanner,
     settings,
     system,
+    tasks,
 )
 from mekiki_engine.scanner.discovery import DiscoveryJobs
 from mekiki_engine.scanner.runner import ScannerWorker, SourceFactory
@@ -108,6 +109,7 @@ def create_app(
         browser,
         backups,
         books,
+        tasks,
     ):
         app.include_router(module.router)
 
