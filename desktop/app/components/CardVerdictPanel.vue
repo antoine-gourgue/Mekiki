@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import type {
   BrowserPrices,
-  BrowserSite,
   CardVerdict,
   Verdict,
   VerdictQuery,
@@ -10,7 +9,8 @@ import type {
 
 /**
  * "Faut-il l'acheter ?": the verdict on a card, its resale on each outlet with the most to
- * pay in Japan, warning signals, then what sells on Vinted and eBay, read in Chrome.
+ * pay in Japan, warning signals, then its eBay sales (read in Chrome when the card opens) and
+ * its live eBay listings.
  */
 const props = defineProps<{ query: VerdictQuery }>()
 
@@ -31,7 +31,6 @@ async function load() {
     loading.value = false
   }
 }
-watch(() => JSON.stringify(props.query), load, { immediate: true })
 
 const LOOKS: Record<Verdict, { box: string; icon: string; iconClass: string }> = {
   good: {
@@ -69,17 +68,72 @@ const SIGNAL_LOOKS: Record<VerdictSignal['tone'], { icon: string; class: string 
   neutral: { icon: 'i-lucide-info', class: 'text-muted' },
 }
 
-// Vinted listings and eBay sold listings, read in Mekiki's Chrome window on demand.
-const SITE_LABELS: Record<BrowserSite, string> = {
-  vinted: 'Annonces Vinted',
-  ebay: 'Ventes réussies eBay',
-}
-const market = ref<BrowserPrices[]>([])
-const reading = ref(false)
-const SITE_NAMES: Record<BrowserSite, string> = { vinted: 'Vinted', ebay: 'eBay' }
 // A few listings at first, all of them on demand.
 const SHOWN_LISTINGS = 6
-const expanded = reactive<Partial<Record<BrowserSite, boolean>>>({})
+
+// eBay's sold listings, read in Mekiki's Chrome window when the card opens. The engine keeps
+// them six hours: opening the card again loads nothing.
+const sold = ref<BrowserPrices | null>(null)
+const soldFailure = ref<string | null>(null)
+const readingSold = ref(false)
+const soldExpanded = ref(false)
+const shownSold = computed(() => {
+  const relevant = sold.value?.listings.filter((listing) => listing.relevant) ?? []
+  return soldExpanded.value ? relevant : relevant.slice(0, SHOWN_LISTINGS)
+})
+
+// Another card may open while the previous one is still read: its results are dropped.
+let opened = 0
+
+const soldError = computed(() => soldFailure.value ?? sold.value?.error ?? null)
+// eBay shows its sold listings to signed-in visitors only.
+const needsSignIn = computed(() => /connectez-vous/i.test(soldError.value ?? ''))
+
+async function signInToEbay() {
+  try {
+    await engine.openSite('ebay')
+  } catch (error) {
+    soldFailure.value = engineErrorMessage(error)
+  }
+}
+
+async function readSold() {
+  const current = result.value
+  const query = current?.market_queries.ebay
+  if (!current?.card_number || !query) return
+  const card = opened
+  readingSold.value = true
+  soldFailure.value = null
+  try {
+    const read = await engine.ebaySold({
+      query,
+      card_number: current.card_number,
+      names: current.card_names,
+    })
+    if (card !== opened) return
+    sold.value = read
+    // The verdict now counts these sales.
+    if (!read.error) result.value = await engine.verdict(props.query)
+  } catch (error) {
+    if (card === opened) soldFailure.value = engineErrorMessage(error)
+  } finally {
+    if (card === opened) readingSold.value = false
+  }
+}
+
+watch(
+  () => JSON.stringify(props.query),
+  async () => {
+    opened += 1
+    sold.value = null
+    soldFailure.value = null
+    soldExpanded.value = false
+    readingSold.value = false
+    await load()
+    void readSold()
+  },
+  { immediate: true },
+)
 
 // eBay's own listings, read with the account's eBay keys when it has some.
 const ebayLive = computed(() =>
@@ -90,37 +144,6 @@ const shownEbay = computed(() => {
   const listings = ebayLive.value?.listings ?? []
   return ebayExpanded.value ? listings : listings.slice(0, SHOWN_LISTINGS)
 })
-
-function shownListings(read: BrowserPrices) {
-  const relevant = read.listings.filter((listing) => listing.relevant)
-  return expanded[read.site] ? relevant : relevant.slice(0, SHOWN_LISTINGS)
-}
-
-async function readMarket() {
-  const current = result.value
-  if (!current) return
-  reading.value = true
-  market.value = []
-  try {
-    for (const site of ['vinted', 'ebay'] as const) {
-      const query = current.market_queries[site]
-      if (!query) continue
-      market.value = [
-        ...market.value,
-        await engine.sitePrices(site, {
-          query,
-          card_number: current.card_number,
-          names: current.card_names,
-        }),
-      ]
-    }
-    await load()
-  } catch (error) {
-    failure.value = engineErrorMessage(error)
-  } finally {
-    reading.value = false
-  }
-}
 
 /** The highest price worth paying in Japan, on the outlet that allows the most. */
 const bestMaxBuy = computed(() => {
@@ -238,120 +261,97 @@ const costLine = computed(() => {
         </li>
       </ul>
 
-      <section class="space-y-3 rounded-xl border border-default p-4">
-        <div class="flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <p class="font-semibold text-highlighted">Ce qui se vend vraiment</p>
-            <p class="text-xs text-dimmed">
-              Lu dans la fenêtre Chrome de Mekiki, connectée à vos comptes.
-            </p>
-          </div>
+      <section class="space-y-2.5 rounded-xl border border-default p-4">
+        <div class="flex flex-wrap items-baseline justify-between gap-2">
+          <p class="font-semibold text-highlighted">Ventes réussies sur eBay</p>
+          <p v-if="sold?.relevant_count" class="text-xs text-muted">
+            médiane
+            <span class="font-semibold text-highlighted tabular-nums">
+              {{ formatCents(sold.median_cents) }}
+            </span>
+            · {{ sold.relevant_count }} vente{{ sold.relevant_count > 1 ? 's' : '' }} ·
+            <span class="tabular-nums">
+              {{ formatCents(sold.min_cents) }} à {{ formatCents(sold.max_cents) }}
+            </span>
+          </p>
+        </div>
+        <p class="text-xs text-dimmed">
+          Ce que la carte s’est vraiment vendue, lu dans la fenêtre Chrome de Mekiki.
+        </p>
+        <p v-if="!result.card_number" class="text-sm text-muted">
+          Numéro de carte inconnu : impossible de trier les ventes eBay de cette carte parmi les
+          autres. Choisissez l’impression japonaise, ou indiquez le numéro sur la carte.
+        </p>
+        <BrowserLog v-else-if="readingSold" active />
+        <div v-else-if="soldError" class="flex flex-wrap items-center gap-2">
+          <p class="flex-1 text-sm" :class="needsSignIn ? 'text-muted' : 'text-error'">
+            {{
+              needsSignIn
+                ? 'Connectez-vous à eBay dans la fenêtre Chrome de Mekiki pour voir les ventes réussies.'
+                : soldError
+            }}
+          </p>
           <UButton
-            v-if="result.card_number"
-            icon="i-lucide-scan-search"
-            :label="market.length ? 'Relire' : 'Lire Vinted et eBay'"
+            v-if="needsSignIn"
             size="sm"
-            variant="soft"
-            :loading="reading"
-            @click="readMarket"
+            icon="i-lucide-log-in"
+            label="Se connecter à eBay"
+            @click="signInToEbay"
+          />
+          <UButton
+            size="sm"
+            color="neutral"
+            variant="outline"
+            icon="i-lucide-rotate-cw"
+            label="Réessayer"
+            @click="readSold"
           />
         </div>
-        <BrowserLog :active="reading" />
-        <p v-if="!result.card_number" class="text-xs text-error">
-          Numéro de carte inconnu : impossible de trier les annonces Vinted et eBay de cette carte
-          parmi les autres. Choisissez l’impression japonaise, ou indiquez le numéro sur la carte.
-        </p>
-
-        <div v-for="read in market" :key="read.site" class="space-y-2">
-          <div class="flex flex-wrap items-baseline justify-between gap-2">
-            <p class="text-xs font-semibold tracking-[0.12em] text-dimmed uppercase">
-              {{ SITE_LABELS[read.site] }}
-            </p>
-            <p v-if="read.error" class="text-xs text-error">{{ read.error }}</p>
-            <p v-else-if="read.relevant_count" class="text-xs text-muted">
-              médiane
-              <span class="font-semibold text-highlighted tabular-nums">
-                {{ formatCents(read.median_cents) }}
-              </span>
-              · {{ read.relevant_count }} annonce{{ read.relevant_count > 1 ? 's' : '' }} ·
-              <span class="tabular-nums">
-                {{ formatCents(read.min_cents) }} à {{ formatCents(read.max_cents) }}
-              </span>
-            </p>
-            <p v-else class="text-xs text-muted">aucune annonce de cette carte</p>
-          </div>
+        <template v-else-if="sold">
+          <p v-if="!sold.relevant_count" class="text-sm text-muted">
+            Aucune vente de cette carte trouvée sur eBay.
+          </p>
           <p
-            v-if="read.sales_30_days != null && read.relevant_count"
+            v-if="sold.sales_30_days != null && sold.relevant_count"
             class="flex items-center gap-1.5 text-xs text-muted"
           >
             <UIcon name="i-lucide-activity" class="size-3.5" />
             Fréquence de vente :
             <span class="font-semibold text-highlighted tabular-nums">
-              {{ read.sales_30_days }}
+              {{ sold.sales_30_days }}
             </span>
             sur 30 jours ·
             <span class="font-semibold text-highlighted tabular-nums">
-              {{ read.sales_90_days }}
+              {{ sold.sales_90_days }}
             </span>
             sur 90 jours
           </p>
           <ul class="space-y-1.5">
-            <li v-for="listing in shownListings(read)" :key="listing.external_id">
-              <button
-                type="button"
-                class="group flex w-full items-center gap-3 rounded-lg bg-elevated p-2 text-left text-sm transition-colors hover:bg-accented"
-                :title="`Ouvrir l’annonce sur ${SITE_NAMES[read.site]}`"
-                @click="openExternal(listing.url)"
-              >
-                <span
-                  class="flex h-13 w-10 shrink-0 items-center justify-center overflow-hidden rounded-md bg-accented"
-                >
-                  <img
-                    v-if="listing.image_url"
-                    :src="listing.image_url"
-                    alt=""
-                    loading="lazy"
-                    referrerpolicy="no-referrer"
-                    class="size-full object-cover"
-                  />
-                  <UIcon v-else name="i-lucide-image-off" class="size-4 text-dimmed" />
-                </span>
-                <span class="min-w-0 flex-1">
-                  <span class="line-clamp-1 text-highlighted" :title="listing.title">
-                    {{ listing.title }}
-                  </span>
-                  <span class="block text-xs text-dimmed">
-                    {{ listing.detail }}
-                    <template v-if="listing.shipping_cents">
-                      · + {{ formatCents(listing.shipping_cents) }} de port
-                    </template>
-                  </span>
-                </span>
-                <span class="shrink-0 font-semibold tabular-nums">
-                  {{ formatCents(listing.price_cents) }}{{ listing.best_offer ? '*' : '' }}
-                </span>
-                <UIcon
-                  name="i-lucide-arrow-up-right"
-                  class="size-4 shrink-0 text-dimmed group-hover:text-highlighted"
-                />
-              </button>
+            <li v-for="listing in shownSold" :key="listing.external_id">
+              <ListingRow
+                :url="listing.url"
+                :title="listing.title"
+                :image-url="listing.image_url"
+                :detail="listing.detail"
+                :price-cents="listing.price_cents"
+                :shipping-cents="listing.shipping_cents"
+                :best-offer="listing.best_offer"
+                site="eBay"
+              />
             </li>
           </ul>
           <UButton
-            v-if="read.relevant_count > SHOWN_LISTINGS"
+            v-if="sold.relevant_count > SHOWN_LISTINGS"
             size="sm"
             color="neutral"
             variant="ghost"
-            :label="expanded[read.site] ? 'Voir moins' : `Voir les ${read.relevant_count} annonces`"
-            @click="expanded[read.site] = !expanded[read.site]"
+            :label="soldExpanded ? 'Voir moins' : `Voir les ${sold.relevant_count} ventes`"
+            @click="soldExpanded = !soldExpanded"
           />
-        </div>
-        <p
-          v-if="market.some((r) => r.listings.some((l) => l.best_offer))"
-          class="text-xs text-dimmed"
-        >
-          * Offre acceptée : le prix réel était plus bas.
-        </p>
+          <p v-if="shownSold.some((listing) => listing.best_offer)" class="text-xs text-dimmed">
+            * Offre acceptée : le prix réel était plus bas.
+          </p>
+        </template>
       </section>
 
       <section v-if="ebayLive" class="space-y-2.5 rounded-xl border border-default p-4">
@@ -379,44 +379,15 @@ const costLine = computed(() => {
         </p>
         <ul class="space-y-1.5">
           <li v-for="listing in shownEbay" :key="listing.item_id">
-            <button
-              type="button"
-              class="group flex w-full items-center gap-3 rounded-lg bg-elevated p-2 text-left text-sm transition-colors hover:bg-accented"
-              title="Ouvrir l’annonce sur eBay"
-              @click="openExternal(listing.url)"
-            >
-              <span
-                class="flex h-13 w-10 shrink-0 items-center justify-center overflow-hidden rounded-md bg-accented"
-              >
-                <img
-                  v-if="listing.image_url"
-                  :src="listing.image_url"
-                  alt=""
-                  loading="lazy"
-                  referrerpolicy="no-referrer"
-                  class="size-full object-cover"
-                />
-                <UIcon v-else name="i-lucide-image-off" class="size-4 text-dimmed" />
-              </span>
-              <span class="min-w-0 flex-1">
-                <span class="line-clamp-1 text-highlighted" :title="listing.title">
-                  {{ listing.title }}
-                </span>
-                <span class="block text-xs text-dimmed">
-                  {{ [listing.condition, listing.country].filter(Boolean).join(' · ') }}
-                  <template v-if="listing.shipping_cents">
-                    · + {{ formatCents(listing.shipping_cents) }} de port
-                  </template>
-                </span>
-              </span>
-              <span class="shrink-0 font-semibold tabular-nums">
-                {{ formatCents(listing.price_cents) }}
-              </span>
-              <UIcon
-                name="i-lucide-arrow-up-right"
-                class="size-4 shrink-0 text-dimmed group-hover:text-highlighted"
-              />
-            </button>
+            <ListingRow
+              :url="listing.url"
+              :title="listing.title"
+              :image-url="listing.image_url"
+              :detail="[listing.condition, listing.country].filter(Boolean).join(' · ')"
+              :price-cents="listing.price_cents"
+              :shipping-cents="listing.shipping_cents"
+              site="eBay"
+            />
           </li>
         </ul>
         <UButton

@@ -191,8 +191,9 @@ export function useEngine() {
       request<BrowserStatus>(`/browser/${site}/open`, { method: 'POST', timeout: 60_000 }),
     checkSite: (site: BrowserSite) =>
       request<SiteConnection>(`/browser/${site}/check`, { method: 'POST', timeout: 60_000 }),
-    sitePrices: (site: BrowserSite, body: BrowserPricesRequest) =>
-      request<BrowserPrices>(`/browser/${site}/prices`, { method: 'POST', body, timeout: 90_000 }),
+    /** A card's sales on eBay, read in Mekiki's Chrome window (kept six hours). */
+    ebaySold: (body: BrowserPricesRequest) =>
+      request<BrowserPrices>('/browser/ebay/sold', { method: 'POST', body, timeout: 90_000 }),
     publishListing: (site: BrowserSite, itemId: number, body: PublishRequest) =>
       request<PublishJob>(`/browser/${site}/publish/${itemId}`, { method: 'POST', body }),
     publishStatus: (site: BrowserSite, itemId: number) =>

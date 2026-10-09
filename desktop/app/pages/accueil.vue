@@ -69,8 +69,8 @@ const publishSteps = [
         </h1>
         <p class="max-w-xl text-lg/relaxed text-muted">
           Mekiki lit des milliers d’annonces Mercari et Rakuma, reconnaît chaque carte japonaise, la
-          compare à ce qui se vend vraiment sur Cardmarket, Vinted et eBay, et vous dit combien
-          payer au plus.
+          compare à ce qui se vend vraiment sur Cardmarket et eBay, et vous dit combien payer au
+          plus.
         </p>
         <div class="flex flex-wrap gap-3">
           <UButton
@@ -115,18 +115,13 @@ const publishSteps = [
           <div class="flex gap-3 rounded-xl border border-success/35 bg-success/10 p-4">
             <UIcon name="i-lucide-check" class="mt-0.5 size-5 shrink-0 text-success" />
             <div>
-              <p class="font-semibold text-success">Bonne affaire sur Vinted</p>
+              <p class="font-semibold text-success">Bonne affaire sur eBay</p>
               <p class="mt-1 text-sm text-muted">
-                Revente comparée à 19 annonces · objectif ROI 30 %
+                Revente comparée à 19 ventes réussies · objectif ROI 30 %
               </p>
             </div>
           </div>
           <div class="grid grid-cols-3 gap-2.5">
-            <div class="rounded-lg bg-elevated p-3">
-              <p class="text-xs text-muted">Vinted</p>
-              <p class="mt-1 text-lg font-semibold tabular-nums">414 €</p>
-              <p class="text-[11px] text-dimmed">médiane</p>
-            </div>
             <div class="rounded-lg bg-elevated p-3">
               <p class="text-xs text-muted">Cardmarket</p>
               <p class="mt-1 text-lg font-semibold tabular-nums">358 €</p>
@@ -135,6 +130,11 @@ const publishSteps = [
             <div class="rounded-lg bg-elevated p-3">
               <p class="text-xs text-muted">eBay vendus</p>
               <p class="mt-1 text-lg font-semibold tabular-nums">355 €</p>
+              <p class="text-[11px] text-dimmed">médiane</p>
+            </div>
+            <div class="rounded-lg bg-elevated p-3">
+              <p class="text-xs text-muted">eBay en vente</p>
+              <p class="mt-1 text-lg font-semibold tabular-nums">389 €</p>
               <p class="text-[11px] text-dimmed">médiane</p>
             </div>
           </div>

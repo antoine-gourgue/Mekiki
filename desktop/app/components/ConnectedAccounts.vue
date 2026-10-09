@@ -2,8 +2,8 @@
 import type { BrowserSite, BrowserStatus } from '~/types/engine'
 
 /**
- * Vinted and eBay accounts, signed in inside Mekiki's own Chrome window: Mekiki reads prices
- * and publishes listings there, and never sees a password.
+ * Vinted and eBay accounts, signed in inside Mekiki's own Chrome window: Mekiki reads eBay's
+ * sales and publishes listings there, and never sees a password.
  */
 const engine = useEngine()
 const showError = useErrorToast()
@@ -57,8 +57,8 @@ async function check(site: BrowserSite) {
     <template #header>
       <h2 class="font-medium text-highlighted">Comptes Vinted et eBay</h2>
       <p class="text-sm text-muted">
-        Mekiki ouvre sa propre fenêtre Chrome : connectez-vous-y une fois, il y lit les prix et y
-        publie vos annonces. Votre mot de passe reste entre vous et le site.
+        Mekiki ouvre sa propre fenêtre Chrome : connectez-vous-y une fois, il y lit les ventes eBay
+        et y publie vos annonces. Votre mot de passe reste entre vous et le site.
       </p>
     </template>
 
@@ -68,7 +68,7 @@ async function check(site: BrowserSite) {
       variant="subtle"
       icon="i-lucide-triangle-alert"
       title="Google Chrome n’est pas installé"
-      description="Installez Chrome pour lire les prix et publier sur Vinted et eBay depuis Mekiki."
+      description="Installez Chrome pour lire les ventes eBay et publier sur Vinted et eBay depuis Mekiki."
     />
 
     <UAlert
