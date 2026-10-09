@@ -611,6 +611,60 @@ def test_a_page_chrome_cannot_load_is_an_error(monkeypatch: pytest.MonkeyPatch) 
         tab.navigate("https://www.ebay.fr/sch/i.html?_nkw=Pikachu")
 
 
+class ClosingDevTools(FakeDevTools):
+    """Chrome closed between two requests, or answering a request with nothing usable."""
+
+    def __init__(self, broken: str) -> None:
+        super().__init__()
+        self.broken = broken
+
+    def __call__(self, request: httpx.Request) -> httpx.Response:
+        if request.url.path == self.broken:
+            if self.broken == "/json/list":
+                raise httpx.ConnectError("connexion refusée", request=request)
+            return httpx.Response(200, json={})
+        return super().__call__(request)
+
+
+@pytest.mark.parametrize("broken", ["/json/list", "/json/new"])
+def test_a_chrome_closed_meanwhile_is_a_chrome_error(
+    monkeypatch: pytest.MonkeyPatch, client: TestClient, tmp_path: Path, broken: str
+) -> None:
+    # Set up before the app, the fake socket also serves its shutdown, which closes Chrome.
+    monkeypatch.setattr(
+        chrome_module.websocket, "create_connection", lambda *_a, **_k: FakeSocket()
+    )
+    devtools = ClosingDevTools(broken)
+    if broken == "/json/new":
+        devtools.pages = []
+    client.app.state.browsers = Browsers(  # type: ignore[attr-defined]
+        tmp_path, session_factory=lambda profile: devtools_session(profile, devtools)
+    )
+
+    read = client.post("/browser/ebay/sold", json=SOLD)
+    checked = client.post("/browser/ebay/check")
+    opened = client.post("/browser/ebay/open")
+
+    assert read.status_code == 200
+    assert read.json()["error"].startswith("Chrome")
+    assert (checked.status_code, opened.status_code) == (503, 503)
+
+
+def test_chrome_that_cannot_be_launched_is_a_chrome_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def refused(*_args: object, **_kwargs: object) -> None:
+        raise PermissionError("accès refusé")
+
+    monkeypatch.setattr(chrome_module.subprocess, "Popen", refused)
+    executable = tmp_path / "chrome.exe"
+    executable.write_bytes(b"")
+    session = chrome_module.ChromeSession(tmp_path / "profile", chrome_path=executable)
+
+    with pytest.raises(ChromeError, match="accès refusé"):
+        session.start()
+
+
 @pytest.mark.parametrize(
     ("caption", "expected"),
     [

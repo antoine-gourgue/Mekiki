@@ -237,27 +237,30 @@ class ChromeSession:
         chrome = self.chrome_path or find_chrome()
         if chrome is None:
             raise ChromeError("Google Chrome n'est pas installé sur cet ordinateur")
-        self.profile_dir.mkdir(parents=True, exist_ok=True)
-        (self.profile_dir / ACTIVE_PORT_FILE).unlink(missing_ok=True)
-        # Port 0: Chrome picks a free port and writes it in the profile, where a later run
-        # of the engine finds it to take the window over.
-        self.process = subprocess.Popen(
-            [
-                str(chrome),
-                f"--user-data-dir={self.profile_dir}",
-                "--remote-debugging-port=0",
-                "--remote-allow-origins=*",
-                "--no-first-run",
-                "--no-default-browser-check",
-                f"--window-position={OFFSCREEN['left']},{OFFSCREEN['top']}",
-                f"--window-size={OFFSCREEN['width']},{OFFSCREEN['height']}",
-                # Off-screen, Chrome would otherwise pause the page's rendering and timers.
-                "--disable-backgrounding-occluded-windows",
-                "--disable-renderer-backgrounding",
-                "--disable-background-timer-throttling",
-                "about:blank",
-            ]
-        )
+        try:
+            self.profile_dir.mkdir(parents=True, exist_ok=True)
+            (self.profile_dir / ACTIVE_PORT_FILE).unlink(missing_ok=True)
+            # Port 0: Chrome picks a free port and writes it in the profile, where a later run
+            # of the engine finds it to take the window over.
+            self.process = subprocess.Popen(
+                [
+                    str(chrome),
+                    f"--user-data-dir={self.profile_dir}",
+                    "--remote-debugging-port=0",
+                    "--remote-allow-origins=*",
+                    "--no-first-run",
+                    "--no-default-browser-check",
+                    f"--window-position={OFFSCREEN['left']},{OFFSCREEN['top']}",
+                    f"--window-size={OFFSCREEN['width']},{OFFSCREEN['height']}",
+                    # Off-screen, Chrome would otherwise pause the page's rendering and timers.
+                    "--disable-backgrounding-occluded-windows",
+                    "--disable-renderer-backgrounding",
+                    "--disable-background-timer-throttling",
+                    "about:blank",
+                ]
+            )
+        except OSError as error:
+            raise ChromeError(f"Chrome n'a pas pu être lancé : {error}") from error
         self.visible = False
         deadline = time.monotonic() + START_TIMEOUT_S
         while True:
@@ -296,13 +299,13 @@ class ChromeSession:
         ``close_tab`` when done, or leaves it open for the user to finish by hand."""
         with self.lock:
             self.start()
-            target = self._http.put(f"http://127.0.0.1:{self.port}/json/new?{url}").json()
-            self.current_target = str(target["id"])
-            tab = Tab(str(target["webSocketDebuggerUrl"]))
+            target_id, address = _target(self._devtools(f"/json/new?{url}", method="PUT"))
+            self.current_target = target_id
+            tab = Tab(address)
             try:
                 tab.call("Page.enable")
                 tab.call("Page.bringToFront")
-                yield tab, str(target["id"])
+                yield tab, target_id
             finally:
                 tab.close()
 
@@ -347,8 +350,20 @@ class ChromeSession:
             self.visible = visible
 
     def _browser(self) -> Tab:
-        version = self._http.get(f"http://127.0.0.1:{self.port}/json/version").json()
+        version = self._devtools("/json/version")
+        if not isinstance(version, dict) or "webSocketDebuggerUrl" not in version:
+            raise ChromeError("Chrome ne donne pas l'adresse de sa fenêtre")
         return Tab(str(version["webSocketDebuggerUrl"]))
+
+    def _devtools(self, path: str, *, method: str = "GET") -> Any:
+        """Chrome's answer on its DevTools address (``/json/...``); a Chrome closed meanwhile
+        raises ``ChromeError``, as every failure of the window does."""
+        try:
+            response = self._http.request(method, f"http://127.0.0.1:{self.port}{path}")
+            response.raise_for_status()
+            return response.json()
+        except (httpx.HTTPError, ValueError) as error:
+            raise ChromeError(f"Chrome ne répond plus : {error}") from error
 
     def _profile_port(self) -> int | None:
         try:
@@ -359,11 +374,16 @@ class ChromeSession:
 
     def _pages(self) -> dict[str, str]:
         """The window's tabs: target id → websocket address."""
-        targets = self._http.get(f"http://127.0.0.1:{self.port}/json/list").json()
+        targets = self._devtools("/json/list")
+        if not isinstance(targets, list):
+            raise ChromeError("Chrome ne donne pas la liste de ses onglets")
         return {
             str(target["id"]): str(target["webSocketDebuggerUrl"])
             for target in targets
-            if target.get("type") == "page" and target.get("webSocketDebuggerUrl")
+            if isinstance(target, dict)
+            and target.get("type") == "page"
+            and target.get("id")
+            and target.get("webSocketDebuggerUrl")
         }
 
     def _reading_tab(self) -> tuple[str, str]:
@@ -373,15 +393,17 @@ class ChromeSession:
         if known is not None and known in pages:
             self.reading_target = known
             return known, pages[known]
-        created = self._http.put(f"http://127.0.0.1:{self.port}/json/new?about:blank").json()
-        self._remember_reading_tab(str(created["id"]))
-        return str(created["id"]), str(created["webSocketDebuggerUrl"])
+        target_id, address = _target(self._devtools("/json/new?about:blank", method="PUT"))
+        self._remember_reading_tab(target_id)
+        return target_id, address
 
     def _adopt_first_tab(self) -> None:
-        """Takes the blank tab Chrome opened with as Mekiki's own."""
-        pages = self._pages()
-        if len(pages) == 1:
-            self._remember_reading_tab(next(iter(pages)))
+        """Takes the blank tab Chrome opened with as Mekiki's own; without it, Mekiki's tab
+        is opened when first needed."""
+        with suppress(ChromeError):
+            pages = self._pages()
+            if len(pages) == 1:
+                self._remember_reading_tab(next(iter(pages)))
 
     def _remember_reading_tab(self, target_id: str) -> None:
         self.reading_target = target_id
@@ -402,3 +424,10 @@ class ChromeSession:
             return self._http.get(f"http://127.0.0.1:{port}/json/version").is_success
         except httpx.HTTPError:
             return False
+
+
+def _target(answer: Any) -> tuple[str, str]:
+    """(target id, websocket address) of a tab Chrome opened."""
+    if not (isinstance(answer, dict) and answer.get("id") and answer.get("webSocketDebuggerUrl")):
+        raise ChromeError("Chrome n'a pas ouvert d'onglet")
+    return str(answer["id"]), str(answer["webSocketDebuggerUrl"])
