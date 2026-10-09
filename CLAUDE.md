@@ -41,7 +41,12 @@ cd desktop && npm run lint && npm run format:check && npm run typecheck && npm r
   facture de TVA saisie après une vente corrige sa marge. Les frais de plateforme,
   l'emballage et le taux de cotisation sont en revanche figés au moment de la vente.
 - Le schéma SQLite évolue par migrations avant seulement (`engine/mekiki_engine/migrations/`,
-  `mNNNN_*.py`), jamais en modifiant une migration existante.
+  `mNNNN_*.py`), jamais en modifiant une migration existante. Les transactions sont ouvertes
+  explicitement (`db.py` : `isolation_level=None` et `BEGIN`), sinon pysqlite validerait chaque
+  CREATE ou ALTER à part et une migration ratée à moitié bloquerait le moteur pour de bon.
+- Une vente garde ses deux taux figés (`contribution_rate` = URSSAF + versement libératoire,
+  `income_tax_rate` = la part VL) : la compta (`books.summary`) compte chaque vente à ses taux,
+  jamais aux paramètres du jour.
 - `desktop/app/types/engine.ts` reflète `engine/mekiki_engine/schemas.py` : les modifier
   ensemble.
 
@@ -75,6 +80,15 @@ cd desktop && npm run lint && npm run format:check && npm run typecheck && npm r
 - Un colis trop court porte trop de frais fixes : `fill_parcel` le complète avec des annonces
   sous l'objectif qui relèvent son ROI ; sous l'objectif, `short_of_target` explique pourquoi.
   Chaque étape va dans `DiscoveryRun.log` (`note()`), affiché par `ActivityLog.vue`.
+- Une enchère (`ends_at`) n'entre jamais dans un colis : son prix ne fait que monter. Les pages
+  par site sont plafonnées par profondeur (`MAX_PAGES`, 15 / 40 / 120), filtres compris. Un
+  scan laisse de côté pour toutes les cartes suivantes un site qui l'a bloqué (`SiteBlocked`).
+  Une page de résultats qui ne se lit plus est une erreur (`SourceError`), pas « aucun résultat ».
+- Titres : « PSA10級 », « psa10狙い », « 未鑑定 » sont des cartes brutes (`GRADED`) ;
+  « 165パック産 » n'est pas un booster ; « ノンパラ » est la version normale ; la carte Dresseur
+  « マスターボール » n'est pas son propre miroir (`mirror_of`). Une version One Piece se choisit
+  parmi toutes les versions, et une version sans cote ne chiffre rien (jamais au prix de sa
+  voisine).
 - Filtres de la découverte (`DiscoveryRequest` : nom, époques, extensions, raretés, cote,
   prix, ancienneté, miroirs, cartes sûres) : `catalog.py` donne au formulaire les époques (par
   le code d'extension : « sv2a » est Écarlate et Violet), les extensions et les raretés ;
@@ -96,7 +110,9 @@ cd desktop && npm run lint && npm run format:check && npm run typecheck && npm r
   la page de celles qui entrent dans le colis (`CONDITION_ON_PAGE`).
 - `availability.py` demande au site si une annonce est encore en vente (Mercari, Rakuma) :
   à l'ouverture de sa fiche, et pour chaque carte du colis proposé par la découverte, une
-  vendue cédant sa place à la suivante. Une requête par annonce, jamais en masse. Elle rend
+  vendue (ou dont le prix a monté) cédant sa place à la suivante. Une requête par annonce,
+  jamais en masse. Un statut ou une page inconnus donnent « non vérifiable », jamais
+  « vendue » : un changement du site ne doit pas vider le colis. Elle rend
   aussi la description du vendeur, que `services/translation.py` traduit en français : DeepL
   avec la clé du compte (réglage `deepl:{user_id}`, vérifiée, jamais renvoyée), sinon l'API
   gratuite MyMemory (environ 5 000 caractères par jour, 500 octets par requête). Un texte
@@ -108,7 +124,9 @@ cd desktop && npm run lint && npm run format:check && npm run typecheck && npm r
   Rakuma, dont les résultats ne nomment pas le vendeur, l'identifiant de sa boutique lu sur la
   page de l'annonce) ; la vérification d'une annonce du colis lit la description et, sur
   Rakuma, le profil (refus d'intermédiaire : « 代行 », « 転送 », « 業者お断り », mais pas
-  « 海外発送不可 ») et les évaluations (soleil, nuage, pluie sur Rakuma), et bloque le vendeur
+  « 海外発送不可 », et jamais au-delà d'une virgule ni après un « OK » : « 代行OK、値下げ不可 »
+  accepte les intermédiaires, m0013 a débloqué ces vendeurs) et les évaluations (soleil,
+  nuage, pluie sur Rakuma), et bloque le vendeur
   ou le reconnaît déjà bloqué. Les évaluations ne bloquent qu'à 20 % de négatives sur au
   moins 10 : Neokyo achète chez des vendeurs à 1 négative sur 24, que `seller_note` montre
   seulement (un seuil à 3 % bloquait à tort, m0012 les a débloqués). L'utilisateur bloque les
@@ -124,8 +142,15 @@ cd desktop && npm run lint && npm run format:check && npm run typecheck && npm r
 ## Gestion (`engine/mekiki_engine/services/`)
 
 - `backups.py` : copie quotidienne de la base (API de sauvegarde SQLite, à chaud) par la
-  boucle du `ScannerWorker`, 30 gardées dans `backups/` ; une restauration copie d'abord l'état
-  actuel et repasse les migrations. Restauration seulement si le moteur écoute en local.
+  boucle du `ScannerWorker`, dans `backups/`. Chaque sorte de copie a son quota (30 quotidiennes,
+  10 manuelles, 5 « avant restauration ») et la copie restaurée n'est jamais supprimée ; une
+  copie illisible ou vide est refusée avant de toucher la base. Une restauration copie d'abord
+  l'état actuel et repasse les migrations ; seulement en local, par le premier compte créé et
+  avec son mot de passe, puisqu'elle remet tous les comptes en arrière.
+- `ScannerWorker.tick()` protège chaque étape (scans, cotes et index, sauvegarde) : une erreur
+  est journalisée sans tuer le fil. Un scan en erreur attend 30 min ; Cardmarket, l'index
+  TCGdex et PokéAPI attendent aussi après un échec (`failed_at`), et l'index n'est jamais
+  remplacé par un index vide ou deux fois plus petit (`MIN_SHARE_KEPT`).
 - `books.py` : livre des recettes et registre des achats (CSV pour Excel : `;`, virgule
   décimale, BOM), chiffre d'affaires et cotisations par mois ou trimestre, échéances URSSAF
   (dernier jour du mois suivant), seuils réglables dans `AppSettings.business`. Mekiki ne
@@ -187,6 +212,10 @@ cd desktop && npm run lint && npm run format:check && npm run typecheck && npm r
   `taskkill` si besoin, jusqu'à ce que le fichier soit libre), puis installe ; l'installateur
   NSIS tue aussi le moteur (`src-tauri/windows/hooks.nsh`) ; `start_engine` le relance si
   l'installation échoue.
+- Le moteur est supervisé (`src-tauri/src/engine.rs`) : un échec de lancement n'empêche pas
+  l'app de s'ouvrir, un moteur qui s'arrête seul est relancé (1, 2, 5, 10, 30 s, puis abandon),
+  et sa sortie va dans `%LOCALAPPDATA%\io.github.antoine-gourgue.mekiki\logs\engine.log`
+  (5 Mo, puis `engine.log.1`) : c'est là qu'il faut regarder quand l'installé se comporte mal.
 
 ## Pièges connus (Windows, octobre 2026)
 
