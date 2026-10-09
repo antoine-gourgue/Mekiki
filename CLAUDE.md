@@ -83,6 +83,12 @@ cd desktop && npm run lint && npm run format:check && npm run typecheck && npm r
   à l'ouverture de sa fiche, et pour chaque carte du colis proposé par la découverte, une
   vendue cédant sa place à la suivante. Une requête par annonce, jamais en masse.
 - Yahoo! JAPAN bloque l'Europe (403) : ne pas tenter de contourner le blocage.
+- Vendeurs bloqués (`sellers.py`, table `blocked_sellers` commune aux comptes) : Neokyo refuse
+  d'acheter chez certains vendeurs, et sa liste est derrière Cloudflare (jamais contournée).
+  Mekiki les écarte par l'identifiant du vendeur (`sellerId` des résultats Mercari) ; la
+  vérification d'une annonce du colis lit la description (refus d'intermédiaire : « 代行 »,
+  « 転送 », « 業者お断り », mais pas « 海外発送不可 ») et les évaluations, et bloque le vendeur.
+  L'utilisateur bloque les autres d'un clic (« Vendeur bloqué sur Neokyo »).
 - Les tests n'accèdent jamais au réseau : `create_app(..., http_transport=..., source_factory=...)`
   et `background_jobs=False` (voir `engine/tests/conftest.py`).
 - Rester poli avec les sites : pas de requêtes en parallèle vers un même site, intervalles de
@@ -90,6 +96,19 @@ cd desktop && npm run lint && npm run format:check && npm run typecheck && npm r
 - Cartes suivies (`tracking.py`) : liée à un produit Cardmarket japonais, une carte ne garde que
   les annonces de son impression exacte ; `names.py` traduit les noms français et anglais en
   japonais (PokéAPI pour les Pokémon, liste des personnages pour One Piece).
+
+## Gestion (`engine/mekiki_engine/services/`)
+
+- `backups.py` : copie quotidienne de la base (API de sauvegarde SQLite, à chaud) par la
+  boucle du `ScannerWorker`, 30 gardées dans `backups/` ; une restauration copie d'abord l'état
+  actuel et repasse les migrations. Restauration seulement si le moteur écoute en local.
+- `books.py` : livre des recettes et registre des achats (CSV pour Excel : `;`, virgule
+  décimale, BOM), chiffre d'affaires et cotisations par mois ou trimestre, échéances URSSAF
+  (dernier jour du mois suivant), seuils réglables dans `AppSettings.business`. Mekiki ne
+  déclare rien lui-même.
+- `tasks.py` : la liste « À faire » (déclaration, ventes à expédier, lots en route, cartes à
+  mettre en vente, bonnes affaires, stock qui dort, sauvegarde en échec). `key` change à chaque
+  nouveauté : l'app n'envoie qu'une notification Windows par clé (plugin notification de Tauri).
 
 ## Revente (`engine/mekiki_engine/resale/`, `browser/`)
 
