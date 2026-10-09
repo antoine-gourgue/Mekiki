@@ -8,6 +8,8 @@ import type {
   BlockSellerRequest,
   BlockedSeller,
   BooksSummary,
+  ImportReport,
+  PendingSale,
   BrowserActivity,
   BrowserPrices,
   BrowserPricesRequest,
@@ -226,6 +228,19 @@ export function useEngine() {
       request<PublishJob | null>(`/browser/${site}/publish/${itemId}`),
     search: (body: SearchRequest) =>
       request<SearchResponse>('/search', { method: 'POST', body, timeout: 120_000 }),
+    /** Reads eBay's orders report (the CSV file's text) into sales. */
+    importEbayReport: (content: string) =>
+      request<ImportReport>('/sales/import/ebay', {
+        method: 'POST',
+        body: { content },
+        timeout: 60_000,
+      }),
+    pendingSales: () => request<PendingSale[]>('/sales/pending'),
+    matchPendingSale: (id: number, itemId: number) =>
+      request<Item>(`/sales/pending/${id}/match`, { method: 'POST', body: { item_id: itemId } }),
+    ignorePendingSale: async (id: number): Promise<void> => {
+      await request(`/sales/pending/${id}`, { method: 'DELETE' })
+    },
     blockedSellers: () => request<BlockedSeller[]>('/sellers/blocked'),
     blockSeller: (body: BlockSellerRequest) =>
       request<BlockedSeller>('/sellers/blocked', { method: 'POST', body, timeout: 30_000 }),

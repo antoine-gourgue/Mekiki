@@ -27,6 +27,7 @@ from mekiki_engine.routes import (
     lots,
     reports,
     resale,
+    sales_import,
     scanner,
     sellers,
     settings,
@@ -112,6 +113,7 @@ def create_app(
         books,
         tasks,
         sellers,
+        sales_import,
     ):
         app.include_router(module.router)
 

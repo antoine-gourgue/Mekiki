@@ -19,7 +19,7 @@ from mekiki_engine.schemas import (
     PublishRequest,
     SiteConnection,
 )
-from mekiki_engine.services import photos
+from mekiki_engine.services import photos, sales_import
 from mekiki_engine.services.portfolio import get_item
 
 router = APIRouter(prefix="/browser", tags=["browser"])
@@ -115,12 +115,15 @@ def publish_item(
     )
     factory = request.app.state.session_factory
 
-    def mark_listed(_url: str) -> None:
-        # The card shows as for sale on this site, at this price.
+    def mark_listed(url: str) -> None:
+        # The card shows as for sale on this site, at this price; its eBay item number will
+        # match the line of its sale in eBay's orders report.
         with factory() as listed:
             card = get_item(listed, user.id, item_id)
             card.listing_platform = SalePlatform(site).value
             card.listing_price_cents = payload.price_cents
+            card.listing_url = url
+            card.listing_ref = sales_import.listing_ref(url)
             listed.commit()
 
     job = _browsers(request).publish(user.id, item_id, site, listing, mark_listed)

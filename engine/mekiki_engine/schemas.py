@@ -1080,6 +1080,49 @@ class BlockedSellerOut(BaseModel):
     blocked_at: str
 
 
+class SalesReportUpload(BaseModel):
+    """The text of a platform's sales report (CSV), as read from the file by the app."""
+
+    content: Annotated[str, Field(min_length=1, max_length=5_000_000)]
+
+
+class ImportReport(BaseModel):
+    lines: int = 0
+    # Recorded on the card whose listing Mekiki published.
+    imported: int = 0
+    # Already imported: only its shipping or tracking changed.
+    updated: int = 0
+    # Waiting for the user to name their card.
+    pending: int = 0
+    errors: list[str] = []
+    # When the report could not be read: its headers, and the columns not found.
+    headers: list[str] = []
+    missing_columns: list[str] = []
+
+
+class SuggestedItem(BaseModel):
+    item_id: int
+    label: str
+
+
+class PendingSaleOut(BaseModel):
+    id: int
+    platform: SalePlatform
+    title: str
+    buyer: str | None
+    quantity: int
+    sold_on: str
+    price_cents: int
+    shipping_cents: int
+    shipped_on: str | None
+    # The cards it most likely sold, likeliest first.
+    suggestions: list[SuggestedItem]
+
+
+class MatchPendingSale(BaseModel):
+    item_id: int
+
+
 class TaskOut(BaseModel):
     """Something the account has to do now, and the page where it is done."""
 

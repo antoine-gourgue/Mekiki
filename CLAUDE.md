@@ -129,6 +129,12 @@ cd desktop && npm run lint && npm run format:check && npm run typecheck && npm r
   Les clés de `engine/.env` servent aux comptes sans clés. Aucun secret dans le dépôt.
 - Vinted bloque l'adresse qui lit ses recherches (« Ta session a été bloquée ») : Mekiki ne les
   lit plus du tout. Ne pas y revenir, ni chercher à contourner le blocage.
+- Ventes eBay : importées du rapport des commandes (CSV du Seller Hub, `services/ebay_report.py`,
+  en-têtes anglais ou français, montants hors euros refusés), pas d'une connexion OAuth au compte
+  vendeur. Une ligne rejoint la carte dont Mekiki a publié l'annonce (`items.listing_ref`, numéro
+  d'objet eBay) ; `sales.external_ref` (« ebay:commande:objet ») évite les doublons et un rapport
+  plus récent ne complète que l'expédition et le suivi ; les autres lignes attendent dans
+  `pending_sales` (rapprochées à la main, ou écartées sans revenir à l'import suivant).
 
 ## Releases
 

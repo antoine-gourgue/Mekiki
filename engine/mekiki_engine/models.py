@@ -70,6 +70,9 @@ class Item(Base):
     cardmarket_product_id: Mapped[int | None]
     listing_platform: Mapped[str | None]
     listing_price_cents: Mapped[int | None]
+    # The listing Mekiki published, and its number on the platform (eBay's item number).
+    listing_url: Mapped[str | None]
+    listing_ref: Mapped[str | None]
     notes: Mapped[str | None]
     created_at: Mapped[str] = mapped_column(server_default=FetchedValue())
 
@@ -117,6 +120,8 @@ class Sale(Base):
     tracking_number: Mapped[str | None]
     # Null while the card is still to ship.
     shipped_on: Mapped[str | None]
+    # The platform report line the sale was imported from: "ebay:<order>:<item>".
+    external_ref: Mapped[str | None]
     created_at: Mapped[str] = mapped_column(server_default=FetchedValue())
 
     item: Mapped[Item] = relationship(back_populates="sale")
@@ -211,6 +216,28 @@ class Listing(Base):
     last_seen_at: Mapped[str]
 
     tracked_card: Mapped[TrackedCard] = relationship(back_populates="listings")
+
+
+class PendingSale(Base):
+    """A line of a platform's sales report that no card was found for yet."""
+
+    __tablename__ = "pending_sales"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    platform: Mapped[str]
+    external_ref: Mapped[str]
+    listing_ref: Mapped[str | None]
+    title: Mapped[str]
+    buyer: Mapped[str | None]
+    quantity: Mapped[int] = mapped_column(default=1)
+    sold_on: Mapped[str]
+    price_cents: Mapped[int]
+    shipping_cents: Mapped[int] = mapped_column(default=0)
+    shipped_on: Mapped[str | None]
+    tracking_number: Mapped[str | None]
+    ignored: Mapped[bool] = mapped_column(default=False)
+    created_at: Mapped[str]
 
 
 class BlockedSeller(Base):

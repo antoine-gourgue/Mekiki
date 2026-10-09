@@ -891,6 +891,41 @@ export interface Task {
   notify: boolean
 }
 
+/** What an import of a platform's sales report did. */
+export interface ImportReport {
+  lines: number
+  /** Recorded on the card whose listing Mekiki published. */
+  imported: number
+  /** Already imported: only its shipping or tracking changed. */
+  updated: number
+  /** Waiting for the user to name their card. */
+  pending: number
+  errors: string[]
+  /** When the report could not be read: its headers and the columns not found. */
+  headers: string[]
+  missing_columns: string[]
+}
+
+export interface SuggestedItem {
+  item_id: number
+  label: string
+}
+
+/** A line of a sales report that no card was found for yet. */
+export interface PendingSale {
+  id: number
+  platform: SalePlatform
+  title: string
+  buyer: string | null
+  quantity: number
+  sold_on: string
+  price_cents: number
+  shipping_cents: number
+  shipped_on: string | null
+  /** The cards it most likely sold, likeliest first. */
+  suggestions: SuggestedItem[]
+}
+
 export interface Backup {
   /** "mekiki-20261009-021500-000.sqlite3" */
   name: string

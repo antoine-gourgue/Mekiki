@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 from mekiki_engine.domain import ItemStatus, ListingTriage
 from mekiki_engine.scanner import service as scanner
 from mekiki_engine.schemas import AppSettings, TaskOut
-from mekiki_engine.services import books, portfolio
+from mekiki_engine.services import books, portfolio, sales_import
 
 # A declaration this close to its deadline is worth a notification.
 DECLARATION_WARNING_DAYS = 7
@@ -60,6 +60,21 @@ def list_tasks(
                 to="/affaires",
                 tone="primary",
                 count=len(deals),
+                notify=True,
+            )
+        )
+
+    pending, newest = sales_import.count_pending(session, user_id)
+    if pending:
+        tasks.append(
+            TaskOut(
+                id="pending-sales",
+                key=f"pending-sales:{newest}",
+                title=_count(pending, "vente eBay à rapprocher", "ventes eBay à rapprocher"),
+                detail="Importées du rapport eBay : choisissez la carte vendue",
+                to="/ventes",
+                tone="warning",
+                count=pending,
                 notify=True,
             )
         )

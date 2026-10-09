@@ -85,6 +85,48 @@ const columns: TableColumn<SoldItem>[] = [
   { id: 'margin', header: 'Marge', meta: RIGHT },
   { id: 'actions', header: '' },
 ]
+
+// eBay's orders report (Seller Hub, CSV): its sales recorded, the others left to match.
+const toast = useToast()
+const picker = ref<HTMLInputElement | null>(null)
+const pendingCard = ref<{ load: () => Promise<void> } | null>(null)
+const importing = ref(false)
+
+async function importReport(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (!file) return
+  importing.value = true
+  try {
+    const report = await engine.importEbayReport(await file.text())
+    if (report.missing_columns.length) {
+      toast.add({
+        title: 'Ce fichier n’est pas un rapport de commandes eBay',
+        description: `Colonnes trouvées : ${report.headers.join(', ') || 'aucune'}.`,
+        color: 'error',
+      })
+      return
+    }
+    toast.add({
+      title: `${report.lines} vente${report.lines > 1 ? 's' : ''} lue${report.lines > 1 ? 's' : ''} dans le rapport`,
+      description: [
+        `${report.imported} enregistrée${report.imported > 1 ? 's' : ''}`,
+        report.updated ? `${report.updated} mise${report.updated > 1 ? 's' : ''} à jour` : null,
+        report.pending ? `${report.pending} à rapprocher` : null,
+        report.errors.length ? `${report.errors.length} ligne(s) ignorée(s)` : null,
+      ]
+        .filter(Boolean)
+        .join(' · '),
+      color: report.errors.length ? 'warning' : 'success',
+    })
+    await Promise.all([refresh(), pendingCard.value?.load()])
+  } catch (failure) {
+    showError(failure)
+  } finally {
+    importing.value = false
+  }
+}
 </script>
 
 <template>
@@ -93,7 +135,28 @@ const columns: TableColumn<SoldItem>[] = [
       <PageNavbar
         title="Ventes"
         description="Frais et cotisations sont figés à la vente ; le coût de revient suit les factures."
-      />
+      >
+        <template #right>
+          <UTooltip
+            text="Rapport des commandes eBay (CSV) : Seller Hub › Commandes › Télécharger le rapport"
+          >
+            <UButton
+              icon="i-lucide-file-up"
+              label="Importer les ventes eBay"
+              variant="soft"
+              :loading="importing"
+              @click="picker?.click()"
+            />
+          </UTooltip>
+          <input
+            ref="picker"
+            type="file"
+            accept=".csv,text/csv"
+            class="hidden"
+            @change="importReport"
+          />
+        </template>
+      </PageNavbar>
     </template>
 
     <template #body>
@@ -107,6 +170,8 @@ const columns: TableColumn<SoldItem>[] = [
       />
 
       <template v-else>
+        <PendingSalesCard ref="pendingCard" @matched="refresh()" />
+
         <div class="grid gap-3.5 sm:grid-cols-2 xl:grid-cols-4">
           <StatTile
             label="Chiffre d’affaires"
