@@ -3,5 +3,11 @@
   "identifier": "default",
   "description": "Permissions of the main window: core APIs, opening links in the browser, installing updates and notifying.",
   "windows": ["main"],
-  "permissions": ["core:default", "opener:default", "updater:default", "process:allow-restart", "notification:default"]
+  "permissions": [
+    "core:default",
+    "opener:default",
+    "updater:default",
+    "process:allow-restart",
+    "notification:default"
+  ]
 }
