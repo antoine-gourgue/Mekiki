@@ -75,6 +75,16 @@ cd desktop && npm run lint && npm run format:check && npm run typecheck && npm r
 - Un colis trop court porte trop de frais fixes : `fill_parcel` le complète avec des annonces
   sous l'objectif qui relèvent son ROI ; sous l'objectif, `short_of_target` explique pourquoi.
   Chaque étape va dans `DiscoveryRun.log` (`note()`), affiché par `ActivityLog.vue`.
+- Filtres de la découverte (`DiscoveryRequest` : nom, époques, extensions, raretés, cote,
+  prix, ancienneté, miroirs, cartes sûres) : `catalog.py` donne au formulaire les époques (par
+  le code d'extension : « sv2a » est Écarlate et Violet), les extensions et les raretés ;
+  `search_plan` cherche le nom (traduit en japonais), les extensions (code et nom japonais) ou
+  les raretés au lieu des recherches larges, et `CardFilter` revérifie chaque carte reconnue.
+  Sans filtre, le plan reste celui d'avant. Une annonce rentable d'un vendeur bloqué part dans
+  `DiscoveryRun.blocked` avec la raison, jamais dans le colis.
+- TCGdex relie parfois des cartes japonaises à une impression chinoise de Cardmarket (M6a,
+  « 30th Celebration Simplified Chinese ») : `OTHER_ASIAN_EXPANSION` (`resolver.py`) empêche
+  qu'un tel produit chiffre une annonce japonaise.
 - Une annonce à moins de 20 % de la cote est presque toujours une reproduction ou un
   accessoire : elle est signalée et n'entre jamais dans un colis proposé.
 - Une annonce réservée (« 様専用 », « 取り置き », « 即購入不可 »…) est écartée par `matching.py` :
@@ -86,7 +96,11 @@ cd desktop && npm run lint && npm run format:check && npm run typecheck && npm r
   la page de celles qui entrent dans le colis (`CONDITION_ON_PAGE`).
 - `availability.py` demande au site si une annonce est encore en vente (Mercari, Rakuma) :
   à l'ouverture de sa fiche, et pour chaque carte du colis proposé par la découverte, une
-  vendue cédant sa place à la suivante. Une requête par annonce, jamais en masse.
+  vendue cédant sa place à la suivante. Une requête par annonce, jamais en masse. Elle rend
+  aussi la description du vendeur, que `services/translation.py` traduit en français : DeepL
+  avec la clé du compte (réglage `deepl:{user_id}`, vérifiée, jamais renvoyée), sinon l'API
+  gratuite MyMemory (environ 5 000 caractères par jour, 500 octets par requête). Un texte
+  n'est jamais envoyé deux fois tant que le moteur tourne.
 - Yahoo! JAPAN bloque l'Europe (403) : ne pas tenter de contourner le blocage.
 - Vendeurs bloqués (`sellers.py`, table `blocked_sellers` commune aux comptes) : Neokyo refuse
   d'acheter chez certains vendeurs, et sa liste est derrière Cloudflare (jamais contournée).
