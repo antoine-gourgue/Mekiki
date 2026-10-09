@@ -56,6 +56,20 @@ def test_a_declaration_asks_to_match_the_period_s_ebay_sales_first(client: TestC
     )
 
 
+def test_no_declaration_is_asked_for_before_the_business_started(client: TestClient) -> None:
+    settings = client.get("/settings").json()
+    settings["business"].update(started_on="2026-10-01", declaration="monthly")
+    client.put("/settings", json=settings)
+
+    found = tasks_on(client, date(2026, 10, 9))
+    later = tasks_on(client, date(2026, 11, 9))
+
+    assert not any(task["id"].startswith("declaration") for task in found)
+    assert [task["title"] for task in later if task["id"].startswith("declaration")] == [
+        "Déclarer le chiffre d'affaires : Octobre 2026"
+    ]
+
+
 def test_a_close_deadline_is_worth_a_notification(client: TestClient) -> None:
     set_up_business(client)
 

@@ -127,28 +127,39 @@ def summary(
     settings of today would rewrite contributions already declared. Sales read from a report
     and still waiting for their card are counted apart: they must be matched before the
     period is declared.
+
+    Nothing is to declare before the business started: the periods begin with the one it
+    started in, which also counts the sales dated earlier, and a year before has none.
     """
     business = settings.business
+    count = 12 if business.declaration == "monthly" else 4
+    first = 0
+    started = business.started_on
+    if started is not None and started.year >= year:
+        first = count if started.year > year else _period_index(started, business.declaration)
+
+    def index_of(day: date) -> int:
+        return max(_period_index(day, business.declaration), first)
+
     # Turnover of each period, by (contribution, income tax) rates.
     by_rates: dict[int, dict[tuple[Decimal, Decimal], int]] = {}
     for item, _landed in portfolio.costed_items(session, user_id, settings):
         sale = item.sale
         if sale is None or date.fromisoformat(sale.sold_on).year != year:
             continue
-        index = _period_index(date.fromisoformat(sale.sold_on), business.declaration)
         rates = frozen_rates(sale, settings)
-        period = by_rates.setdefault(index, {})
+        period = by_rates.setdefault(index_of(date.fromisoformat(sale.sold_on)), {})
         period[rates] = period.get(rates, 0) + sale.sale_price_cents + sale.shipping_charged_cents
     waiting: dict[int, list[int]] = {}
     for line in sales_import.unmatched(session, user_id):
         if line.sold_on.year == year:
-            index = _period_index(line.sold_on, business.declaration)
-            waiting.setdefault(index, []).append(line.cents)
+            waiting.setdefault(index_of(line.sold_on), []).append(line.cents)
 
     periods = []
-    count = 12 if business.declaration == "monthly" else 4
-    for index in range(count):
+    for index in range(first, count):
         start, end = _period_bounds(year, index, business.declaration)
+        if started is not None and start < started:
+            start = started
         due = _due_date(end)
         groups = by_rates.get(index, {})
         turnover = sum(groups.values())
@@ -166,14 +177,16 @@ def summary(
                 unmatched_cents=sum(waiting.get(index, [])),
             )
         )
-    turnover = sum(period.turnover_cents for period in periods)
+    # Over every sale of the year, a year before the business started included: its sales
+    # are not to declare, but they do not vanish from the books.
+    groups = [(rates, cents) for period in by_rates.values() for rates, cents in period.items()]
     return BooksSummary(
         year=year,
         declaration=business.declaration,
         periods=periods,
-        turnover_cents=turnover,
-        contributions_cents=sum(period.contributions_cents for period in periods),
-        income_tax_cents=sum(period.income_tax_cents for period in periods),
+        turnover_cents=sum(cents for _rates, cents in groups),
+        contributions_cents=sum(_share(cents, rate) for (rate, _), cents in groups),
+        income_tax_cents=sum(_share(cents, rate) for (_, rate), cents in groups),
         turnover_limit_cents=business.turnover_limit_cents,
         vat_franchise_limit_cents=business.vat_franchise_limit_cents,
         next_declaration=next((p for p in periods if p.state == "due"), None),

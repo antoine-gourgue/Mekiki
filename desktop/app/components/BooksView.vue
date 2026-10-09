@@ -134,6 +134,11 @@ async function download(book: 'receipts' | 'purchases') {
           </tr>
         </thead>
         <tbody>
+          <tr v-if="!summary.periods.length" class="border-t border-muted">
+            <td colspan="5" class="px-4 py-2.5 text-muted">
+              Rien à déclarer : votre activité a commencé après {{ summary.year }}.
+            </td>
+          </tr>
           <tr v-for="period in summary.periods" :key="period.start" class="border-t border-muted">
             <td class="px-4 py-2.5 font-medium text-highlighted">{{ period.label }}</td>
             <td class="px-2 py-2.5 text-right tabular-nums">

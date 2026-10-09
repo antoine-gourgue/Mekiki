@@ -122,6 +122,48 @@ def test_each_sale_counts_at_the_rates_frozen_on_it(client: TestClient) -> None:
     assert q1["income_tax_cents"] == 100
 
 
+def start_business(client: TestClient, started_on: str, declaration: str) -> None:
+    settings = client.get("/settings").json()
+    settings["business"].update(started_on=started_on, declaration=declaration)
+    assert client.put("/settings", json=settings).status_code == 200
+
+
+def test_nothing_to_declare_before_the_business_started(client: TestClient) -> None:
+    start_business(client, "2026-10-01", "monthly")
+
+    summary = summary_on(client, date(2026, 10, 9))
+
+    # September is over and not declared, but the business did not exist yet.
+    assert summary["periods"][0]["label"] == "Octobre 2026"  # type: ignore[index]
+    assert len(summary["periods"]) == 3  # type: ignore[arg-type]
+    assert summary["next_declaration"] is None
+    user_id = client.get("/auth/me").json()["id"]
+    with client.app.state.session_factory() as session:  # type: ignore[attr-defined]
+        settings = load_settings(session, user_id)
+        before = books.summary(session, user_id, settings, 2025, today=date(2026, 10, 9))
+    assert (before.periods, before.next_declaration) == ([], None)
+
+
+def test_the_first_period_starts_with_the_business(client: TestClient) -> None:
+    start_business(client, "2026-05-15", "quarterly")
+    lot = create_reference_lot(client)
+    # Recorded before the official start: counted in the first period, not lost.
+    sell(client, lot["items"][0]["id"], "2026-03-20", 9000)
+    sell(client, lot["items"][1]["id"], "2026-05-20", 5000)
+
+    summary = summary_on(client, date(2026, 7, 10))
+
+    first = summary["periods"][0]  # type: ignore[index]
+    assert (first["label"], first["start"], first["end"]) == (
+        "2e trimestre 2026",
+        "2026-05-15",
+        "2026-06-30",
+    )
+    assert (first["turnover_cents"], first["state"]) == (14000, "due")
+    assert summary["next_declaration"]["start"] == "2026-05-15"  # type: ignore[index]
+    assert summary["turnover_cents"] == 14000
+
+
 def test_sales_still_to_match_are_counted_apart(client: TestClient) -> None:
     set_ebay_rule(client, 0, 0)
     lot = create_reference_lot(client)
