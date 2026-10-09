@@ -1,3 +1,4 @@
+from dataclasses import replace
 from pathlib import Path
 
 import httpx
@@ -90,6 +91,29 @@ def test_register_login_and_logout(anonymous: TestClient) -> None:
     headers = {"Authorization": f"Bearer {token}"}
     assert anonymous.post("/auth/logout", headers=headers).status_code == 204
     assert anonymous.get("/auth/me", headers=headers).status_code == 401
+
+
+@pytest.mark.parametrize(("open_registration", "second"), [(False, 403), (True, 201)])
+def test_a_server_closes_registration_after_its_first_account(
+    tmp_path: Path, marketplace: FakeMarketplace, open_registration: bool, second: int
+) -> None:
+    config = replace(
+        load_config(data_dir=str(tmp_path), host="0.0.0.0", background_jobs=False),
+        open_registration=open_registration,
+    )
+    app = create_app(
+        config,
+        http_transport=httpx.MockTransport(cardmarket_handler),
+        source_factory=marketplace.factory(),
+    )
+    with TestClient(app, base_url="http://127.0.0.1:18421") as client:
+        sign_in(client, "ash@example.com")
+        misty = {"email": "misty@example.com", "password": PASSWORD, "display_name": "Misty"}
+        response = client.post("/auth/register", json=misty)
+
+    assert response.status_code == second
+    if second == 403:
+        assert response.json()["detail"].startswith("les inscriptions sont fermées")
 
 
 def test_register_validates_its_input(anonymous: TestClient) -> None:

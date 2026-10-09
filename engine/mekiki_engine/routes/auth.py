@@ -42,9 +42,17 @@ def auth_status(session: SessionDep) -> AuthStatus:
 
 
 @router.post("/register", status_code=status.HTTP_201_CREATED)
-def register(payload: RegisterRequest, session: SessionDep) -> AuthResponse:
+def register(payload: RegisterRequest, request: Request, session: SessionDep) -> AuthResponse:
+    """Open on this computer; on the network, only to the first account (see config)."""
     email = auth.normalize_email(payload.email)
     first_account = auth.no_account_yet(session)
+    config = request.app.state.config
+    if not first_account and not config.loopback and not config.open_registration:
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            detail="les inscriptions sont fermées sur ce serveur : demandez à son responsable "
+            "d'ouvrir un compte pour vous",
+        )
     user = User(
         email=email,
         password_hash=auth.hash_password(payload.password),

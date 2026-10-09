@@ -8,6 +8,7 @@ DEFAULT_PORT = 18421
 # Loopback by default: on a desktop the engine trusts whoever can reach it, so it never
 # listens on the network unless deployed as a server on purpose.
 DEFAULT_HOST = "127.0.0.1"
+LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
 DEFAULT_ALLOWED_HOSTS = ("127.0.0.1", "localhost")
 DEFAULT_EBAY_MARKETPLACE = "EBAY_FR"
 
@@ -36,10 +37,18 @@ class EngineConfig:
     ebay_client_id: str | None = None
     ebay_client_secret: str | None = None
     ebay_marketplace: str = DEFAULT_EBAY_MARKETPLACE
+    # Off the loopback, anyone who reaches the engine could create an account: registration
+    # then closes once one exists, unless the server's owner opens it on purpose.
+    open_registration: bool = False
 
     @property
     def database_url(self) -> str:
         return f"sqlite:///{self.data_dir / 'mekiki.sqlite3'}"
+
+    @property
+    def loopback(self) -> bool:
+        """Only this computer can reach the engine."""
+        return self.host in LOOPBACK_HOSTS
 
 
 def load_config(
@@ -62,6 +71,7 @@ def load_config(
         ebay_client_id=os.environ.get("MEKIKI_EBAY_CLIENT_ID") or None,
         ebay_client_secret=os.environ.get("MEKIKI_EBAY_CLIENT_SECRET") or None,
         ebay_marketplace=os.environ.get("MEKIKI_EBAY_MARKETPLACE") or DEFAULT_EBAY_MARKETPLACE,
+        open_registration=os.environ.get("MEKIKI_OPEN_REGISTRATION") == "1",
     )
 
 
