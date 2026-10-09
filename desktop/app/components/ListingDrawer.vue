@@ -205,7 +205,7 @@ const verdictQuery = computed(() => ({
 
     <div class="flex flex-wrap gap-2.5 border-t border-default px-4 py-4 sm:px-6">
       <UButton
-        v-if="listing.source === 'mercari'"
+        v-if="listing.source === 'mercari' || listing.source === 'rakuma'"
         icon="i-lucide-ban"
         label="Vendeur bloqué sur Neokyo"
         color="neutral"

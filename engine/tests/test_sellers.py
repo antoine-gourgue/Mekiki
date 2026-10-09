@@ -101,3 +101,59 @@ def test_a_seller_is_blocked_from_its_listing_and_unblocked(
     assert blocked.json()["reason"] == "bloqué par Neokyo"
     assert unknown.status_code == 422
     assert client.get("/sellers/blocked").json() == []
+
+
+RAKUMA_ITEM = "0123456789abcdef0123456789abcdef"
+RAKUMA_SHOP = "5507d4dd830da1c486defe12789d8bf4"
+
+
+def test_rakuma_listings_name_their_seller_and_their_ratings(
+    client: TestClient, marketplace: FakeMarketplace
+) -> None:
+    marketplace.rakuma_sellers[RAKUMA_ITEM] = (RAKUMA_SHOP, 90, 5, 6)
+
+    checked = client.get(f"/listings/rakuma/{RAKUMA_ITEM}/availability").json()
+
+    assert checked["seller_id"] == RAKUMA_SHOP
+    assert checked["seller_warning"] == "trop d'évaluations négatives (6 sur 101)"
+
+
+def test_a_rakuma_seller_is_blocked_from_their_listing(
+    client: TestClient, marketplace: FakeMarketplace
+) -> None:
+    marketplace.rakuma_sellers[RAKUMA_ITEM] = (RAKUMA_SHOP, 12, 0, 0)
+
+    blocked = client.post(
+        "/sellers/blocked",
+        json={"source": "rakuma", "external_id": RAKUMA_ITEM, "reason": "bloqué par Neokyo"},
+    )
+
+    assert blocked.status_code == 201
+    assert blocked.json()["seller_id"] == RAKUMA_SHOP
+
+
+def test_a_blocked_rakuma_seller_is_found_on_the_parcel_check(
+    client: TestClient, marketplace: FakeMarketplace
+) -> None:
+    index_pokemon_cards(client)
+    # Rakuma's results do not name the seller: the parcel's check reads it on the page.
+    marketplace.listings[SourcePlatform.RAKUMA] = [
+        replace(LISTINGS[0], source=SourcePlatform.RAKUMA, external_id=RAKUMA_ITEM),
+        replace(LISTINGS[1], source=SourcePlatform.RAKUMA, external_id="f" * 32),
+    ]
+    marketplace.rakuma_sellers[RAKUMA_ITEM] = (RAKUMA_SHOP, 12, 0, 0)
+    client.post(
+        "/sellers/blocked",
+        json={
+            "source": "rakuma",
+            "external_id": RAKUMA_ITEM,
+            "seller_id": RAKUMA_SHOP,
+            "reason": "bloqué par Neokyo",
+        },
+    )
+
+    run = discover(client, budget_cents=15000, card_count=2, min_roi_percent=10, sources=["rakuma"])
+
+    assert [pick["external_id"] for pick in run["picks"]] == ["f" * 32]
+    [blocked] = run["blocked"]
+    assert (blocked["external_id"], blocked["blocked_reason"]) == (RAKUMA_ITEM, "bloqué par Neokyo")

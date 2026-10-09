@@ -32,7 +32,7 @@ def block_seller(
     if seller_id is None:
         raise HTTPException(
             status.HTTP_422_UNPROCESSABLE_CONTENT,
-            "vendeur introuvable : seules les annonces Mercari le donnent",
+            "vendeur introuvable : seules les annonces Mercari et Rakuma le donnent",
         )
     row = sellers.block(session, payload.source.value, seller_id, payload.reason)
     return BlockedSellerOut.model_validate(row)

@@ -35,16 +35,26 @@ MAX_BAD_SHARE = 0.03
 
 def seller_problem(item: dict[str, Any]) -> str | None:
     """Why Neokyo would refuse a Mercari listing, from its details; None when nothing shows."""
-    description = unicodedata.normalize("NFKC", str(item.get("description") or ""))
-    for pattern in PROXY_REFUSALS:
-        if match := pattern.search(description):
-            return f"refuse les achats par un intermédiaire (« {match[0]} »)"
     seller = item.get("seller") or {}
     if seller.get("is_blocked") or seller.get("is_inactive"):
         return "compte du vendeur suspendu ou inactif"
     ratings = seller.get("ratings") or {}
-    bad = int(ratings.get("bad") or 0)
-    total = int(seller.get("num_ratings") or 0)
+    return refusal_in(str(item.get("description") or "")) or ratings_problem(
+        int(ratings.get("bad") or 0), int(seller.get("num_ratings") or 0)
+    )
+
+
+def refusal_in(*texts: str) -> str | None:
+    """A refusal of proxies in a description or a seller's profile."""
+    for text in texts:
+        plain = unicodedata.normalize("NFKC", text)
+        for pattern in PROXY_REFUSALS:
+            if match := pattern.search(plain):
+                return f"refuse les achats par un intermédiaire (« {match[0]} »)"
+    return None
+
+
+def ratings_problem(bad: int, total: int) -> str | None:
     if total >= MIN_RATINGS and bad / total > MAX_BAD_SHARE:
         return f"trop d'évaluations négatives ({bad} sur {total})"
     return None

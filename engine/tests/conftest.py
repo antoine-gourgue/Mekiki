@@ -319,6 +319,8 @@ class FakeMarketplace:
         self.checked: list[str] = []
         # Rakuma listings' condition, as their page writes it ("未使用に近い").
         self.rakuma_conditions: dict[str, str] = {}
+        # Rakuma listings' seller: shop id, and the sun, cloud and rain ratings.
+        self.rakuma_sellers: dict[str, tuple[str, int, int, int]] = {}
         self.tcgcsv_down = False
         # Extra fields of Mercari items, as their API gives them: seller, description.
         self.item_details: dict[str, dict[str, object]] = {}
@@ -346,6 +348,15 @@ class FakeMarketplace:
                 '<meta property="product:availability" content="in stock">'
                 f"<table><tr><th>商品の状態</th><td>{condition}</td></tr></table>"
             )
+            if item_id in self.rakuma_sellers:
+                shop, sun, cloud, rain = self.rakuma_sellers[item_id]
+                page += (
+                    '<a class="shopinfo-wrap shop_link clearfix"\n'
+                    f' href="https://fril.jp/shop/{shop}"></a>'
+                    f'<i class="icon-sun icon_review_sun"></i><span>{sun}</span>'
+                    f'<i class="icon-cloud icon_review_cloud"></i><span>{cloud}</span>'
+                    f'<i class="icon-rain icon_review_rain"></i><span>{rain}</span>'
+                )
             return httpx.Response(200, text=page)
         return cardmarket_handler(request)
 

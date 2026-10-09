@@ -155,7 +155,7 @@ function menu(pick: DiscoveryPick): DropdownMenuItem[] {
             },
           ]
         : []
-      : pick.source === 'mercari'
+      : pick.source === 'mercari' || pick.source === 'rakuma'
         ? [
             {
               label: 'Vendeur bloqué sur Neokyo',

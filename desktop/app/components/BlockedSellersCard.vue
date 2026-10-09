@@ -25,8 +25,11 @@ async function unblock(seller: BlockedSeller) {
 }
 
 function profileUrl(seller: BlockedSeller) {
-  return seller.source === 'mercari'
-    ? `https://jp.mercari.com/user/profile/${encodeURIComponent(seller.seller_id)}`
+  if (seller.source === 'mercari') {
+    return `https://jp.mercari.com/user/profile/${encodeURIComponent(seller.seller_id)}`
+  }
+  return seller.source === 'rakuma'
+    ? `https://fril.jp/shop/${encodeURIComponent(seller.seller_id)}`
     : null
 }
 </script>

@@ -151,7 +151,7 @@ function menu(deal: Deal): DropdownMenuItem[] {
           icon: 'i-lucide-eye-off',
           onSelect: () => setTriage(deal, 'dismissed'),
         },
-    ...(deal.source === 'mercari'
+    ...(deal.source === 'mercari' || deal.source === 'rakuma'
       ? [
           {
             label: 'Vendeur bloqué sur Neokyo',

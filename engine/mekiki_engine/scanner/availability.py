@@ -38,6 +38,16 @@ _RAKUMA_DESCRIPTION = re.compile(
     r'class="item__description only__pc">.*?class="item__description__line-limited">(.*?)</div>',
     re.DOTALL,
 )
+_RAKUMA_PROFILE = re.compile(r'class="shop__profile__line-limited"[^>]*>(.*?)</div>', re.DOTALL)
+# The seller's shop, whose id stays the same across their listings.
+_RAKUMA_SHOP = re.compile(
+    r'class="shopinfo-wrap shop_link[^"]*"\s+href="https://fril\.jp/shop/([0-9a-f]+)"'
+)
+# Rakuma's ratings: sun (good), cloud (fair) and rain (bad).
+_RAKUMA_RATINGS = {
+    kind: re.compile(rf'icon_review_{kind}"></i>\s*<span>(\d+)</span>')
+    for kind in ("sun", "cloud", "rain")
+}
 _LINE_BREAK = re.compile(r"<br\s*/?>", re.IGNORECASE)
 _TAG = re.compile(r"<[^>]+>")
 
@@ -109,17 +119,29 @@ def _rakuma(client: PoliteClient, item_id: str) -> ListingAvailability:
     available = availability[1].strip().lower() == "in stock"
     condition = _RAKUMA_CONDITION.search(page)
     price = _RAKUMA_PRICE.search(page)
-    description = _RAKUMA_DESCRIPTION.search(page)
+    text = _page_text(_RAKUMA_DESCRIPTION.search(page))
+    profile = _page_text(_RAKUMA_PROFILE.search(page))
+    shop = _RAKUMA_SHOP.search(page)
+    ratings = {
+        kind: int(found[1]) if (found := pattern.search(page)) else 0
+        for kind, pattern in _RAKUMA_RATINGS.items()
+    }
     return ListingAvailability(
         available=available,
         status="en vente" if available else "vendue",
         condition=JAPANESE_CONDITIONS.get(html.unescape(condition[1])) if condition else None,
         price_jpy=int(price[1]) if price else None,
         checked_at=_now(),
-        description=_clean(_TAG.sub("", _LINE_BREAK.sub("\n", description[1])))
-        if description
-        else None,
+        seller_id=shop[1] if shop else None,
+        seller_warning=sellers.refusal_in(text or "", profile or "")
+        or sellers.ratings_problem(ratings["rain"], sum(ratings.values())),
+        description=text,
     )
+
+
+def _page_text(found: re.Match[str] | None) -> str | None:
+    """The text of an HTML fragment of the page, with its line breaks."""
+    return _clean(_TAG.sub("", _LINE_BREAK.sub("\n", found[1]))) if found else None
 
 
 def _clean(text: str) -> str | None:

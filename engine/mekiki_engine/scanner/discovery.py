@@ -883,6 +883,8 @@ def compose_available_parcel(
     its place once that page shows a condition good enough, and gives it up otherwise.
     """
     minimum = request.min_condition
+    # Rakuma results do not name their seller: only the listing's page does.
+    avoided = sellers.blocked(session)
     gone: set[int] = set()
     checked: set[int] = set()
     while True:
@@ -912,17 +914,19 @@ def compose_available_parcel(
                 gone.add(id(candidate))
                 run.listings_gone += 1
                 note(run, f"{label} ({site}) : déjà vendue, remplacée par la suivante.")
-            elif result.seller_warning and result.seller_id:
+            elif result.seller_id and (
+                refusal := avoided.get((listing.source.value, result.seller_id))
+                or result.seller_warning
+            ):
                 # Neokyo would turn the purchase down: the seller is avoided from now on.
                 gone.add(id(candidate))
-                sellers.block(
-                    session, listing.source.value, result.seller_id, result.seller_warning
-                )
+                sellers.block(session, listing.source.value, result.seller_id, refusal)
+                avoided[(listing.source.value, result.seller_id)] = refusal
                 if blocked is not None:
-                    candidate.blocked = result.seller_warning
+                    candidate.blocked = refusal
                     candidate.listing = replace(listing, seller_id=result.seller_id)
                     blocked.append(candidate)
-                note(run, f"{label} ({site}) : vendeur à éviter, {result.seller_warning}.")
+                note(run, f"{label} ({site}) : vendeur à éviter, {refusal}.")
             elif minimum and not (condition and condition.at_least(minimum)):
                 gone.add(id(candidate))
                 state = (
