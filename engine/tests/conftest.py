@@ -7,6 +7,7 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
+from mekiki_engine import auth
 from mekiki_engine.app import create_app
 from mekiki_engine.config import load_config
 from mekiki_engine.domain import Game, SourcePlatform
@@ -371,6 +372,12 @@ class FakeMarketplace:
 
     def factory(self) -> Callable[[SourcePlatform, PoliteClient, Game], FakeSource]:
         return lambda platform, _client, _game: FakeSource(self, platform)
+
+
+@pytest.fixture(autouse=True)
+def quick_password_hashes(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The real parameters take a fraction of a second per hash, and almost every test signs in.
+    monkeypatch.setattr(auth, "SCRYPT_PARAMS", (2**10, 8, 1))
 
 
 @pytest.fixture

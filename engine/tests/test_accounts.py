@@ -4,14 +4,17 @@ import httpx
 import pytest
 from conftest import FakeMarketplace, cardmarket_handler, sign_in
 from fastapi.testclient import TestClient
-from sqlalchemy import update
+from sqlalchemy import select, update
 
+from mekiki_engine import auth
 from mekiki_engine.app import create_app
 from mekiki_engine.auth import hash_password, verify_password
 from mekiki_engine.config import load_config
-from mekiki_engine.models import AuthSession, Lot, SettingRow
+from mekiki_engine.models import AuthSession, Lot, SettingRow, User
 
 PASSWORD = "pikachu-2026"
+# Read before conftest lowers them for speed.
+STRONG_SCRYPT = auth.SCRYPT_PARAMS
 
 
 @pytest.fixture
@@ -33,6 +36,30 @@ def test_password_hashes_are_salted_and_verifiable() -> None:
     assert verify_password("secret-1234", first)
     assert not verify_password("secret-1235", first)
     assert not verify_password("secret-1234", "garbage")
+
+
+def test_new_hashes_use_strong_parameters(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(auth, "SCRYPT_PARAMS", STRONG_SCRYPT)
+
+    stored = hash_password("secret-1234")
+
+    assert stored.split("$")[1:4] == ["131072", "8", "1"]
+    assert verify_password("secret-1234", stored)
+    assert not auth.needs_rehash(stored)
+
+
+def test_an_older_hash_is_replaced_at_sign_in(
+    anonymous: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sign_in(anonymous, "ash@example.com")
+    monkeypatch.setattr(auth, "SCRYPT_PARAMS", (2**11, 8, 1))
+    login = {"email": "ash@example.com", "password": PASSWORD}
+
+    assert anonymous.post("/auth/login", json=login).status_code == 200
+    with anonymous.app.state.session_factory() as session:  # type: ignore[attr-defined]
+        stored = session.scalars(select(User.password_hash)).one()
+    assert stored.split("$")[1] == "2048"
+    assert anonymous.post("/auth/login", json=login).status_code == 200
 
 
 def test_data_routes_require_a_session(anonymous: TestClient) -> None:

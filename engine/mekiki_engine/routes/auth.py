@@ -74,6 +74,10 @@ def login(payload: LoginRequest, request: Request, session: SessionDep) -> AuthR
         throttle.failed(email)
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail=INVALID_CREDENTIALS)
     throttle.succeeded(email)
+    if auth.needs_rehash(user.password_hash):
+        # Only now is the password at hand to hash it again with today's parameters.
+        user.password_hash = auth.hash_password(payload.password)
+        session.commit()
     token = auth.create_session(session, user)
     return AuthResponse(token=token, user=UserOut.model_validate(user))
 

@@ -22,7 +22,12 @@ from sqlalchemy.orm import Session
 from mekiki_engine.models import AuthSession, Favorite, Lot, SettingRow, TrackedCard, User
 
 SESSION_LIFETIME = timedelta(days=30)
-_SCRYPT = {"n": 2**14, "r": 8, "p": 1}
+# (N, r, p), OWASP's recommendation: 128 MiB and a fraction of a second per hash, so that
+# passwords are slow to guess from a stolen database. Each hash carries its own parameters:
+# older ones still verify, and are replaced at the next sign-in.
+SCRYPT_PARAMS = (2**17, 8, 1)
+# hashlib refuses scrypt above 32 MiB unless told otherwise; N=2^17 with r=8 needs 128 MiB.
+_SCRYPT_MAXMEM = 256 * 1024 * 1024
 _TIMESTAMP = "%Y-%m-%dT%H:%M:%SZ"
 
 
@@ -35,27 +40,36 @@ class TooManyAttempts(Exception):
 
 
 def hash_password(password: str) -> str:
+    n, r, p = SCRYPT_PARAMS
     salt = secrets.token_bytes(16)
-    digest = hashlib.scrypt(password.encode(), salt=salt, dklen=32, **_SCRYPT)
+    digest = _scrypt(password, salt, n, r, p, 32)
     encoded = (base64.b64encode(part).decode() for part in (salt, digest))
-    return "scrypt${}${}${}${}${}".format(_SCRYPT["n"], _SCRYPT["r"], _SCRYPT["p"], *encoded)
+    return "scrypt${}${}${}${}${}".format(n, r, p, *encoded)
 
 
 def verify_password(password: str, stored: str) -> bool:
     try:
         _scheme, n, r, p, salt, digest = stored.split("$")
         expected = base64.b64decode(digest)
-        actual = hashlib.scrypt(
-            password.encode(),
-            salt=base64.b64decode(salt),
-            dklen=len(expected),
-            n=int(n),
-            r=int(r),
-            p=int(p),
-        )
+        actual = _scrypt(password, base64.b64decode(salt), int(n), int(r), int(p), len(expected))
     except (ValueError, TypeError):
         return False
     return hmac.compare_digest(actual, expected)
+
+
+def needs_rehash(stored: str) -> bool:
+    """Whether the hash was made with other parameters than today's."""
+    try:
+        _scheme, n, r, p, _salt, _digest = stored.split("$")
+        return (int(n), int(r), int(p)) != SCRYPT_PARAMS
+    except ValueError:
+        return True
+
+
+def _scrypt(password: str, salt: bytes, n: int, r: int, p: int, length: int) -> bytes:
+    return hashlib.scrypt(
+        password.encode(), salt=salt, n=n, r=r, p=p, dklen=length, maxmem=_SCRYPT_MAXMEM
+    )
 
 
 def normalize_email(email: str) -> str:
