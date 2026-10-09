@@ -19,9 +19,10 @@ from decimal import ROUND_HALF_UP, Decimal
 
 from sqlalchemy.orm import Session
 
+from mekiki_engine.costing.landed_cost import ItemLandedCost
 from mekiki_engine.costing.money import percent_to_fraction
 from mekiki_engine.domain import SalePlatform
-from mekiki_engine.models import Sale
+from mekiki_engine.models import Item, Sale
 from mekiki_engine.schemas import AppSettings, BooksPeriod, BooksSummary
 from mekiki_engine.services import portfolio, sales_import
 
@@ -72,6 +73,9 @@ class Purchase:
     description: str
     amount_cents: int
     payment: str
+    # The import VAT in the amount is Mekiki's estimate until the carrier invoice is entered,
+    # and the amount will change with it.
+    vat_estimated: bool = False
 
 
 def receipts(session: Session, user_id: int, settings: AppSettings, year: int) -> list[Receipt]:
@@ -96,25 +100,59 @@ def receipts(session: Session, user_id: int, settings: AppSettings, year: int) -
 
 
 def purchases(session: Session, user_id: int, settings: AppSettings, year: int) -> list[Purchase]:
-    """The register of purchases of ``year``: each card at its full cost (proxy, shipping,
-    import taxes), dated the day its parcel was ordered."""
-    found = []
+    """The register of purchases of ``year``, each cost on the day it was paid.
+
+    A card (its price, Japanese shipping and proxy fees) is paid the day its parcel was
+    ordered; the parcel's international shipping when it left Japan, its import taxes when it
+    arrived. Until those days are known, the order day stands for them. Together the lines
+    add up to the cards' full landed costs.
+    """
+    by_lot: dict[int, list[tuple[Item, ItemLandedCost]]] = {}
     for item, landed in portfolio.costed_items(session, user_id, settings):
-        lot = item.lot
-        bought = date.fromisoformat(lot.ordered_on or lot.created_at[:10])
-        if bought.year != year:
-            continue
-        source = SOURCE_NAMES.get(item.source_platform, item.source_platform.capitalize())
+        by_lot.setdefault(item.lot_id, []).append((item, landed))
+    found = []
+    for rows in by_lot.values():
+        lot = rows[0][0].lot
+        reference = f"Lot {lot.label}"
+        ordered = date.fromisoformat(lot.ordered_on or lot.created_at[:10])
+        received = date.fromisoformat(lot.received_on) if lot.received_on else ordered
+        shipped = date.fromisoformat(lot.shipped_on) if lot.shipped_on else received
+        for item, landed in rows:
+            source = SOURCE_NAMES.get(item.source_platform, item.source_platform.capitalize())
+            found.append(
+                Purchase(
+                    on=ordered,
+                    reference=reference,
+                    supplier=f"Neokyo ({source})",
+                    description=_card(item),
+                    amount_cents=landed.purchase_cents + landed.proxy_fees_cents,
+                    payment="Paiement Neokyo",
+                )
+            )
+        cards = "1 carte" if len(rows) == 1 else f"{len(rows)} cartes"
         found.append(
             Purchase(
-                on=bought,
-                reference=f"Lot {lot.label}",
-                supplier=f"Neokyo ({source})",
-                description=_card(item),
-                amount_cents=landed.total_cents,
+                on=shipped,
+                reference=reference,
+                supplier="Neokyo",
+                description=f"Envoi international ({cards})",
+                amount_cents=sum(landed.shipping_cents for _item, landed in rows),
                 payment="Paiement Neokyo",
             )
         )
+        carrier = f"Transporteur ({lot.shipping_method})" if lot.shipping_method else "Transporteur"
+        found.append(
+            Purchase(
+                on=received,
+                reference=reference,
+                supplier=carrier,
+                description=f"TVA et frais d'import ({cards})",
+                amount_cents=sum(landed.import_taxes_cents for _item, landed in rows),
+                payment="Paiement au transporteur",
+                vat_estimated=lot.import_vat_cents is None,
+            )
+        )
+    found = [p for p in found if p.on.year == year and p.amount_cents]
     return sorted(found, key=lambda purchase: (purchase.on, purchase.reference))
 
 
@@ -222,9 +260,25 @@ def receipts_csv(rows: list[Receipt]) -> str:
 
 def purchases_csv(rows: list[Purchase]) -> str:
     return _csv(
-        ("Date", "Pièce", "Fournisseur", "Nature", "Montant (€)", "Mode de règlement"),
+        (
+            "Date",
+            "Pièce",
+            "Fournisseur",
+            "Nature",
+            "Montant (€)",
+            "Mode de règlement",
+            "TVA estimée",
+        ),
         [
-            (p.on, p.reference, p.supplier, p.description, _euros(p.amount_cents), p.payment)
+            (
+                p.on,
+                p.reference,
+                p.supplier,
+                p.description,
+                _euros(p.amount_cents),
+                p.payment,
+                "oui" if p.vat_estimated else "",
+            )
             for p in rows
         ],
     )

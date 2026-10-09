@@ -168,8 +168,9 @@ async function download(book: 'receipts' | 'purchases') {
         <h2 class="font-semibold text-highlighted">Registres obligatoires</h2>
         <p class="mt-1 text-sm text-dimmed">
           Le livre des recettes et le registre des achats de {{ summary.year }}, pour Excel. La date
-          de vente sert de date d’encaissement ; les achats comptent chaque carte à son coût de
-          revient complet (proxy, envoi, taxes d’import).
+          de vente sert de date d’encaissement. Les achats datent chaque carte du jour de sa
+          commande, l’envoi international et les taxes d’import de chaque lot du jour où ils sont
+          payés ; une TVA d’import encore estimée y est signalée.
         </p>
       </div>
       <div class="flex flex-wrap gap-2">

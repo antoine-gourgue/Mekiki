@@ -90,14 +90,45 @@ def test_register_of_purchases_for_excel(client: TestClient) -> None:
 
     lines = client.get("/books/purchases.csv", params={"year": 2026}).content.decode().splitlines()
 
-    assert lines[0].endswith("Date;Pièce;Fournisseur;Nature;Montant (€);Mode de règlement")
-    # The reference case: each card of the parcel costs 62,67 € all included.
-    assert (
-        lines[1]
-        == "10/02/2026;Lot Colis 1;Neokyo (Mercari);Carte Pikachu ex SAR;62,67;Paiement Neokyo"
+    assert lines[0].endswith(
+        "Date;Pièce;Fournisseur;Nature;Montant (€);Mode de règlement;TVA estimée"
     )
-    assert len(lines) == 11
+    # The reference case: a card costs 47,06 € plus 2,36 € of proxy fees when ordered...
+    assert lines[1] == (
+        "10/02/2026;Lot Colis 1;Neokyo (Mercari);Carte Pikachu ex SAR;49,42;Paiement Neokyo;"
+    )
+    # ...then the parcel's shipping and import taxes, dated the order day until known; the
+    # VAT is still Mekiki's estimate.
+    assert lines[11:] == [
+        "10/02/2026;Lot Colis 1;Neokyo;Envoi international (10 cartes);23,53;Paiement Neokyo;",
+        "10/02/2026;Lot Colis 1;Transporteur;TVA et frais d'import (10 cartes);108,82;"
+        "Paiement au transporteur;oui",
+    ]
+    # All together, the cards' full landed costs: 62,67 € each, cents shared.
+    amounts = [int(line.split(";")[4].replace(",", "")) for line in lines[1:]]
+    assert sum(amounts) == client.get("/lots").json()[0]["landed_total_cents"]
     assert client.get("/books/purchases.csv", params={"year": 2025}).text.count("\n") == 1
+
+
+def test_import_costs_are_dated_the_day_they_were_paid(client: TestClient) -> None:
+    lot = create_reference_lot(client)
+    dates = {"ordered_on": "2026-12-20", "shipped_on": "2026-12-28", "received_on": "2027-01-05"}
+    client.patch(
+        f"/lots/{lot['id']}",
+        json={**dates, "status": "received", "shipping_method": "DHL", "import_vat_cents": 9500},
+    )
+
+    def register(year: int) -> list[str]:
+        csv = client.get("/books/purchases.csv", params={"year": year}).content.decode()
+        return csv.splitlines()[1:]
+
+    assert len(register(2026)) == 11
+    assert register(2026)[-1].startswith("28/12/2026;Lot Colis 1;Neokyo;Envoi international")
+    # The carrier's invoice is entered: the VAT is no longer an estimate.
+    assert register(2027) == [
+        "05/01/2027;Lot Colis 1;Transporteur (DHL);TVA et frais d'import (10 cartes);105,00;"
+        "Paiement au transporteur;"
+    ]
 
 
 def set_rates(client: TestClient, contribution: float, income_tax: float) -> None:
