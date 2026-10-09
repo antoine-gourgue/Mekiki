@@ -3,7 +3,13 @@ name: Release
 # Every push to main that passes the checks becomes a version: the Windows installer is
 # built, the update signed and both published as a GitHub release. Installed apps then
 # offer the update, and the landing page's download link points at the new installer.
-# Actions are pinned to full commit SHAs, so a moved tag cannot change the code that runs.
+#
+# The update signing key reaches a single step, "Sign the update", which runs the Tauri
+# CLI's signer on the finished installer and nothing else. Installing the dependencies and
+# building the engine, the frontend and the app all happen before it, without the key: an
+# install script or a compromised package could otherwise read it and sign a malicious
+# update that every installed Mekiki would accept. For the same reason, actions are pinned
+# to full commit SHAs, so a moved tag cannot change the code that runs here.
 on:
   push:
     branches: [main]
@@ -31,16 +37,15 @@ jobs:
   windows:
     needs: checks
     runs-on: windows-latest
-    env:
-      # Signs the update so installed apps accept it (public key in tauri.conf.json).
-      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
     steps:
+      # Only whether the secret is set: the key itself is given to the signing step alone.
       - name: Check the update signing key
         id: key
         shell: pwsh
+        env:
+          HAS_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY != '' }}
         run: |
-          if ($env:TAURI_SIGNING_PRIVATE_KEY) {
+          if ($env:HAS_KEY -eq 'true') {
             "ready=true" >> $env:GITHUB_OUTPUT
           } else {
             "::warning::No TAURI_SIGNING_PRIVATE_KEY secret: no version is published. Add it in Settings > Secrets and variables > Actions."
@@ -107,6 +112,25 @@ jobs:
           uv sync --locked --group bundle
           uv run python scripts/build_sidecar.py
 
+      # Into .output/public, the frontendDist of tauri.conf.json.
+      - name: Build the frontend
+        if: steps.key.outputs.ready == 'true'
+        working-directory: desktop
+        run: npm run generate
+
+      # Compiles the app and makes the NSIS installer, without signing the update. The extra
+      # config empties beforeBuildCommand, so `tauri build` does not generate the frontend
+      # again; the publish step passes the same configs, so cargo finds the app up to date.
+      # The CLI is started with node: in PowerShell, `npm run tauri -- …` can lose its `--`,
+      # and `node_modules/.bin/tauri` resolves to the sh shim.
+      - name: Build the app and its installer, unsigned
+        if: steps.key.outputs.ready == 'true'
+        working-directory: desktop
+        shell: pwsh
+        run: |
+          '{ "build": { "beforeBuildCommand": "" } }' | Set-Content "$env:RUNNER_TEMP/tauri.prebuilt.json"
+          node node_modules/@tauri-apps/cli/tauri.js build --config src-tauri/tauri.bundle.json --config "$env:RUNNER_TEMP/tauri.prebuilt.json" --no-sign
+
       # The notes are written in French for the release page and the app's update dialog.
       - name: Read the release notes
         id: notes
@@ -118,14 +142,35 @@ jobs:
           $end = "NOTES_$([guid]::NewGuid().ToString('N'))"
           "body<<$end`n$notes`n$end" >> $env:GITHUB_OUTPUT
 
-      - name: Build the installer and publish the release
+      # The only step given the key, whose signature installed apps check against the public
+      # key in tauri.conf.json. It writes the installer's .sig, bound to the version as
+      # `tauri build` would do, and runs nothing but the Tauri CLI: no install, no build.
+      - name: Sign the update
+        if: steps.key.outputs.ready == 'true'
+        working-directory: desktop
+        shell: pwsh
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          VERSION: ${{ steps.version.outputs.number }}
+        run: |
+          $installer = @(Get-Item "src-tauri/target/release/bundle/nsis/Mekiki_$($env:VERSION)_*-setup.exe")
+          if ($installer.Count -ne 1) { throw "Expected one installer for $env:VERSION, found $($installer.Count)." }
+          node node_modules/@tauri-apps/cli/tauri.js signer sign --app-version $env:VERSION $installer[0].FullName
+
+      # Publishes what the steps above built and signed: the installer, its .sig and the
+      # latest.json the updater reads. `--no-bundle` stops the action's `tauri build` from
+      # bundling again, which would need the key; with the build step's CLI call and
+      # configs, cargo finds the app up to date.
+      - name: Publish the release
         if: steps.key.outputs.ready == 'true'
         uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0.6.2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           projectPath: desktop
-          args: --config src-tauri/tauri.bundle.json
+          tauriScript: node node_modules/@tauri-apps/cli/tauri.js
+          args: --config src-tauri/tauri.bundle.json --config ${{ runner.temp }}/tauri.prebuilt.json --no-bundle
           tagName: v${{ steps.version.outputs.number }}
           releaseName: Mekiki ${{ steps.version.outputs.number }}
           releaseCommitish: ${{ github.sha }}
