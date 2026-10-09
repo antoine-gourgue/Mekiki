@@ -23,7 +23,7 @@ from mekiki_engine.costing.money import percent_to_fraction
 from mekiki_engine.domain import SalePlatform
 from mekiki_engine.models import Sale
 from mekiki_engine.schemas import AppSettings, BooksPeriod, BooksSummary
-from mekiki_engine.services import portfolio
+from mekiki_engine.services import portfolio, sales_import
 
 PLATFORM_NAMES = {
     SalePlatform.CARDMARKET: "Cardmarket",
@@ -124,7 +124,9 @@ def summary(
     """Turnover and contributions of each period of ``year``, and the yearly thresholds.
 
     Each sale counts at the rates frozen when it was recorded, as its margin does: the
-    settings of today would rewrite contributions already declared.
+    settings of today would rewrite contributions already declared. Sales read from a report
+    and still waiting for their card are counted apart: they must be matched before the
+    period is declared.
     """
     business = settings.business
     # Turnover of each period, by (contribution, income tax) rates.
@@ -137,6 +139,11 @@ def summary(
         rates = frozen_rates(sale, settings)
         period = by_rates.setdefault(index, {})
         period[rates] = period.get(rates, 0) + sale.sale_price_cents + sale.shipping_charged_cents
+    waiting: dict[int, list[int]] = {}
+    for line in sales_import.unmatched(session, user_id):
+        if line.sold_on.year == year:
+            index = _period_index(line.sold_on, business.declaration)
+            waiting.setdefault(index, []).append(line.cents)
 
     periods = []
     count = 12 if business.declaration == "monthly" else 4
@@ -155,6 +162,8 @@ def summary(
                 contributions_cents=sum(_share(cents, rate) for (rate, _), cents in groups.items()),
                 income_tax_cents=sum(_share(cents, rate) for (_, rate), cents in groups.items()),
                 state="upcoming" if today <= end else ("due" if today <= due else "past"),
+                unmatched_count=len(waiting.get(index, [])),
+                unmatched_cents=sum(waiting.get(index, [])),
             )
         )
     turnover = sum(period.turnover_cents for period in periods)
@@ -168,6 +177,8 @@ def summary(
         turnover_limit_cents=business.turnover_limit_cents,
         vat_franchise_limit_cents=business.vat_franchise_limit_cents,
         next_declaration=next((p for p in periods if p.state == "due"), None),
+        unmatched_count=sum(len(cents) for cents in waiting.values()),
+        unmatched_cents=sum(sum(cents) for cents in waiting.values()),
     )
 
 

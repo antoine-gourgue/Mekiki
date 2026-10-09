@@ -421,6 +421,10 @@ class BooksPeriod(BaseModel):
     income_tax_cents: int
     # upcoming: not over yet. due: over, to declare by ``due_on``. past: its deadline passed.
     state: Literal["upcoming", "due", "past"]
+    # Sales read from a report and still waiting for their card (price and shipping): left
+    # out of the turnover until matched, so to match before declaring.
+    unmatched_count: int = 0
+    unmatched_cents: int = 0
 
 
 class BooksSummary(BaseModel):
@@ -434,6 +438,9 @@ class BooksSummary(BaseModel):
     vat_franchise_limit_cents: int
     # The period over and not declared yet, if any.
     next_declaration: BooksPeriod | None
+    # The year's sales still waiting for their card, as in each period.
+    unmatched_count: int = 0
+    unmatched_cents: int = 0
 
 
 class SimulationRequest(BaseModel):

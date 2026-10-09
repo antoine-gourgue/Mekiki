@@ -10,7 +10,8 @@ from __future__ import annotations
 
 import re
 from collections import defaultdict
-from datetime import UTC, datetime
+from dataclasses import dataclass
+from datetime import UTC, date, datetime
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -125,6 +126,34 @@ def list_pending(session: Session, user_id: int) -> list[PendingSaleOut]:
         )
         for row in rows
     ]
+
+
+@dataclass(frozen=True, slots=True)
+class Unmatched:
+    """A line still waiting for some of its cards, and what it sold that the books lack."""
+
+    sold_on: date
+    # Price and shipping of the copies without a card yet.
+    cents: int
+
+
+def unmatched(session: Session, user_id: int) -> list[Unmatched]:
+    """Sales read from a report but missing from the books until their card is named."""
+    rows = list(
+        session.scalars(
+            select(PendingSale).where(
+                PendingSale.user_id == user_id, PendingSale.ignored.is_(False)
+            )
+        )
+    )
+    recorded = _recorded_sales(session, user_id, [row.external_ref for row in rows])
+    found = []
+    for row in rows:
+        sales = recorded[row.external_ref]
+        price = row.price_cents - sum(sale.sale_price_cents for sale in sales)
+        shipping = row.shipping_cents - sum(sale.shipping_charged_cents for sale in sales)
+        found.append(Unmatched(date.fromisoformat(row.sold_on[:10]), max(price + shipping, 0)))
+    return found
 
 
 def match_pending(

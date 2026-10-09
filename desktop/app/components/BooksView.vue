@@ -24,6 +24,12 @@ const URSSAF_ACTIONS = [
   },
 ]
 
+const MATCH_ACTIONS = [{ label: 'Rapprocher les ventes', icon: 'i-lucide-link', to: '/ventes' }]
+
+function salesToMatch(count: number) {
+  return `${count} vente${count > 1 ? 's' : ''} eBay à rapprocher`
+}
+
 function share(part: number, whole: number) {
   return whole > 0 ? Math.min(part / whole, 1) : 0
 }
@@ -50,6 +56,16 @@ async function download(book: 'receipts' | 'purchases') {
 
 <template>
   <div class="space-y-4">
+    <UAlert
+      v-if="summary.unmatched_count"
+      color="error"
+      variant="subtle"
+      icon="i-lucide-triangle-alert"
+      :title="`${salesToMatch(summary.unmatched_count)} avant de déclarer`"
+      :description="`${formatCents(summary.unmatched_cents)} de ventes lues dans le rapport eBay n’ont pas encore leur carte : elles manquent au chiffre d’affaires ci-dessous tant qu’elles ne sont pas rapprochées.`"
+      :actions="MATCH_ACTIONS"
+    />
+
     <UAlert
       v-if="summary.next_declaration"
       color="warning"
@@ -122,6 +138,9 @@ async function download(book: 'receipts' | 'purchases') {
             <td class="px-4 py-2.5 font-medium text-highlighted">{{ period.label }}</td>
             <td class="px-2 py-2.5 text-right tabular-nums">
               {{ formatCents(period.turnover_cents) }}
+              <span v-if="period.unmatched_count" class="block text-xs text-error">
+                + {{ formatCents(period.unmatched_cents) }} à rapprocher
+              </span>
             </td>
             <td class="px-2 py-2.5 text-right tabular-nums">
               {{ formatCents(period.contributions_cents + period.income_tax_cents) }}

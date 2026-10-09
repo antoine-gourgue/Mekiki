@@ -99,15 +99,20 @@ def list_tasks(
             if period is None:
                 continue
             days_left = (date.fromisoformat(period.due_on) - today).days
+            detail = (
+                f"Avant le {_french_date(period.due_on)} · "
+                f"{books.euros(period.turnover_cents)} de chiffre d'affaires"
+            )
+            if period.unmatched_count:
+                detail += " · d'abord " + _count(
+                    period.unmatched_count, "vente eBay à rapprocher", "ventes eBay à rapprocher"
+                )
             tasks.append(
                 TaskOut(
                     id=f"declaration:{period.start}",
                     key=f"declaration:{period.start}",
                     title=f"Déclarer le chiffre d'affaires : {period.label}",
-                    detail=(
-                        f"Avant le {_french_date(period.due_on)} · "
-                        f"{books.euros(period.turnover_cents)} de chiffre d'affaires"
-                    ),
+                    detail=detail,
                     to="/compta",
                     tone="warning" if days_left <= DECLARATION_WARNING_DAYS else "info",
                     notify=days_left <= DECLARATION_WARNING_DAYS,

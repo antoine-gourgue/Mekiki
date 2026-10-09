@@ -2,6 +2,7 @@ from datetime import date
 
 from fastapi.testclient import TestClient
 from test_api import create_reference_lot
+from test_sales_import import ENGLISH_REPORT, TWO_COPIES_REPORT, set_ebay_rule
 
 from mekiki_engine.services import books
 from mekiki_engine.services.settings_service import load_settings
@@ -119,3 +120,24 @@ def test_each_sale_counts_at_the_rates_frozen_on_it(client: TestClient) -> None:
 
     assert (q1["turnover_cents"], q1["contributions_cents"]) == (20000, 1230 + 620)
     assert q1["income_tax_cents"] == 100
+
+
+def test_sales_still_to_match_are_counted_apart(client: TestClient) -> None:
+    set_ebay_rule(client, 0, 0)
+    lot = create_reference_lot(client)
+    # Two lines of October no card was found for, and two copies of one card.
+    client.post("/sales/import/ebay", json={"content": ENGLISH_REPORT})
+    client.post("/sales/import/ebay", json={"content": TWO_COPIES_REPORT})
+    lines = {line["title"]: line for line in client.get("/sales/pending").json()}
+    client.delete(f"/sales/pending/{lines['Charizard ex 201/165 SV2a Japanese']['id']}")
+    two_copies = lines["Pikachu ex SAR 132/106 x2"]["id"]
+    client.post(f"/sales/pending/{two_copies}/match", json={"item_id": lot["items"][0]["id"]})
+
+    summary = summary_on(client, date(2026, 11, 15))
+
+    q4 = summary["periods"][3]  # type: ignore[index]
+    # 90 € + 3,50 € of port, and the copy left of 90,01 € + 3,01 €; the ignored line is out.
+    assert (q4["unmatched_count"], q4["unmatched_cents"]) == (2, 9350 + 4650)
+    assert (summary["unmatched_count"], summary["unmatched_cents"]) == (2, 14000)
+    assert q4["turnover_cents"] == 4501 + 151
+    assert summary["periods"][2]["unmatched_count"] == 0  # type: ignore[index]

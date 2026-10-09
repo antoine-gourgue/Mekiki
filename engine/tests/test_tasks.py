@@ -2,6 +2,7 @@ from datetime import date
 
 from fastapi.testclient import TestClient
 from test_api import create_reference_lot
+from test_sales_import import ENGLISH_REPORT
 
 from mekiki_engine.services import tasks
 from mekiki_engine.services.settings_service import load_settings
@@ -42,6 +43,17 @@ def test_the_day_s_tasks(client: TestClient) -> None:
     assert (ship["title"], ship["notify"], ship["to"]) == ("1 vente à expédier", True, "/ventes")
     assert found["list"]["title"] == "9 cartes à mettre en vente"
     assert found["dormant"]["title"] == "9 cartes dorment en stock"
+
+
+def test_a_declaration_asks_to_match_the_period_s_ebay_sales_first(client: TestClient) -> None:
+    set_up_business(client)
+    client.post("/sales/import/ebay", json={"content": ENGLISH_REPORT})
+
+    found = {task["id"]: task for task in tasks_on(client, date(2027, 1, 10))}
+
+    assert found["declaration:2026-10-01"]["detail"] == (
+        "Avant le 31/01/2027 · 0,00 € de chiffre d'affaires · d'abord 2 ventes eBay à rapprocher"
+    )
 
 
 def test_a_close_deadline_is_worth_a_notification(client: TestClient) -> None:
