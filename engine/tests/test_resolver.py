@@ -112,3 +112,13 @@ def test_promos_are_numbered_over_their_promo_set(client: TestClient) -> None:
     assert (
         label(catalog, "ポケモンカード マリィ プロモ 086/S-P おまけポフィン") == "S-P 086 · Promo"
     )
+
+
+def test_a_card_linked_to_a_chinese_printing_is_not_priced_by_it(client: TestClient) -> None:
+    catalog = resolver(client)
+    product = catalog.session.get(CardmarketProduct, 3)
+    assert product is not None
+    product.expansion_name = "30th Celebration Simplified Chinese"
+    catalog.session.commit()
+
+    assert label(catalog, "ジバコイル 053/076 ストームエメラルダ") is None

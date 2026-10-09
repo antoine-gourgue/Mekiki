@@ -15,7 +15,11 @@ from sqlalchemy.orm import Session
 
 from mekiki_engine.domain import Game
 from mekiki_engine.models import CardIndexEntry, CardmarketProduct
-from mekiki_engine.scanner.resolver import JAPANESE_EXPANSION, printed_code
+from mekiki_engine.scanner.resolver import (
+    JAPANESE_EXPANSION,
+    OTHER_ASIAN_EXPANSION,
+    printed_code,
+)
 from mekiki_engine.schemas import DiscoveryCatalog, DiscoveryEra, DiscoveryRarity, DiscoverySet
 
 # Newest first; "older" gathers what the index holds from before Black & White.
@@ -137,7 +141,8 @@ def _pokemon_sets(session: Session) -> list[DiscoverySet]:
         )
     )
     for code, expansion in rows:
-        expansions.setdefault(code, Counter())[expansion] += 1
+        if not OTHER_ASIAN_EXPANSION.search(expansion):
+            expansions.setdefault(code, Counter())[expansion] += 1
     sets = [
         DiscoverySet(
             code=code,

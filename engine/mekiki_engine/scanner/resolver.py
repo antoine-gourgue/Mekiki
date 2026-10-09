@@ -19,6 +19,9 @@ from mekiki_engine.scanner.pricing import reference_price
 # Japanese One Piece printings sit in expansions named "… (Non-English)" or
 # "… (Asia Region Legal)"; the English ones are priced very differently.
 JAPANESE_EXPANSION = re.compile(r"non-english|asia", re.IGNORECASE)
+# TCGdex sometimes links Japanese cards to another Asian printing ("30th Celebration Simplified
+# Chinese" for M6a), priced differently: such a product never prices a Japanese listing.
+OTHER_ASIAN_EXPANSION = re.compile(r"chinese|korean|thai|indonesian", re.IGNORECASE)
 _CODE_IN_NAME = re.compile(r"\(\s*((?:OP|ST|EB|PRB)\d{2}|P)-(\d{3})\s*\)", re.IGNORECASE)
 # Rarities printed above the set's size: the index leaves many of them without a rarity.
 SECRET_RARITIES = frozenset({"sar", "sr", "ar", "ur", "hr", "mur", "chr", "csr", "ssr"})
@@ -199,6 +202,7 @@ class CatalogResolver:
             for product_id in ids
             if (product := self.session.get(CardmarketProduct, product_id)) is not None
             and reference_price(product) is not None
+            and not OTHER_ASIAN_EXPANSION.search(product.expansion_name or "")
         ]
         return sorted(products, key=_price)
 
