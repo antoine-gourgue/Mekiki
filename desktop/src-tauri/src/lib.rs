@@ -12,11 +12,12 @@ async fn stop_engine(app: tauri::AppHandle) {
     let _ = app;
 }
 
-/// Starts the engine again when an update could not be installed.
+/// Starts the engine again when an update could not be installed, or after it crashed too
+/// often to be restarted by itself.
 #[tauri::command]
 async fn start_engine(app: tauri::AppHandle) -> Result<(), String> {
     #[cfg(not(debug_assertions))]
-    engine::start(&app).map_err(|error| error.to_string())?;
+    engine::start(&app)?;
     #[cfg(debug_assertions)]
     let _ = app;
     Ok(())
@@ -35,8 +36,11 @@ pub fn run() {
             #[cfg(not(debug_assertions))]
             {
                 use tauri::Manager;
-                _app.manage(engine::Engine::default());
-                engine::start(_app.handle())?;
+                _app.manage(engine::Engine::new(_app.handle()));
+                // An engine that cannot start (quarantined by an antivirus, say) must not keep
+                // the app from opening: the interface shows it unreachable, engine.log says
+                // why, and further attempts are already scheduled.
+                let _ = engine::start(_app.handle());
             }
             Ok(())
         })
