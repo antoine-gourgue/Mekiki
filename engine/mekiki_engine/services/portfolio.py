@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import date
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from enum import StrEnum
 from typing import Any
@@ -33,7 +33,7 @@ from mekiki_engine.costing.sale import (
     roi,
 )
 from mekiki_engine.domain import Game, ItemStatus, LotStatus, SalePlatform
-from mekiki_engine.models import Item, Lot, Sale
+from mekiki_engine.models import Item, Lot, PendingSale, Sale
 from mekiki_engine.schemas import (
     AppSettings,
     Dashboard,
@@ -269,9 +269,38 @@ def record_sale(
 def cancel_sale(session: Session, user_id: int, settings: AppSettings, item_id: int) -> ItemOut:
     item = get_item(session, user_id, item_id)
     if item.sale is not None:
+        if item.sale.external_ref:
+            _remember_cancelled(session, user_id, item, item.sale)
         item.sale = None
         _commit(session)
     return item_detail(session, user_id, settings, item_id)
+
+
+def _remember_cancelled(session: Session, user_id: int, item: Item, sale: Sale) -> None:
+    """A sale imported from a platform's report, then cancelled (a return, a refund), is kept
+    as an ignored line of that report: importing the report again must not sell the card again.
+    """
+    exists = session.scalar(
+        select(PendingSale).where(
+            PendingSale.user_id == user_id, PendingSale.external_ref == sale.external_ref
+        )
+    )
+    if exists is not None:
+        exists.ignored = True
+        return
+    session.add(
+        PendingSale(
+            user_id=user_id,
+            platform=sale.platform,
+            external_ref=sale.external_ref,
+            title=item.name,
+            sold_on=sale.sold_on,
+            price_cents=sale.sale_price_cents,
+            shipping_cents=sale.shipping_charged_cents,
+            ignored=True,
+            created_at=datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        )
+    )
 
 
 def inventory(

@@ -145,3 +145,30 @@ def test_suggestions_and_ignored_lines(client: TestClient) -> None:
     client.post("/sales/import/ebay", json={"content": ENGLISH_REPORT})
     titles = [p["title"] for p in client.get("/sales/pending").json()]
     assert "Charizard ex 201/165 SV2a Japanese" not in titles
+
+
+def test_a_cancelled_sale_never_comes_back(client: TestClient) -> None:
+    lot = create_reference_lot(client)
+    item_id = lot["items"][0]["id"]
+    listed_on_ebay(client, item_id, "123456789012")
+    client.post("/sales/import/ebay", json={"content": ENGLISH_REPORT})
+
+    client.delete(f"/items/{item_id}/sale")
+    again = client.post("/sales/import/ebay", json={"content": ENGLISH_REPORT}).json()
+
+    # The card came back to stock (a return): the old report must not sell it again.
+    assert again["imported"] == 0
+    assert client.get(f"/items/{item_id}").json()["sale"] is None
+    titles = [p["title"] for p in client.get("/sales/pending").json()]
+    assert "Pikachu ex SAR 132/106 Japanese" not in titles
+
+
+def test_a_line_repeated_in_one_report_is_booked_once(client: TestClient) -> None:
+    lot = create_reference_lot(client)
+    listed_on_ebay(client, lot["items"][0]["id"], "123456789012")
+    first_line = ENGLISH_REPORT.splitlines()[2]
+    doubled = ENGLISH_REPORT.replace(first_line, f"{first_line}\n{first_line}")
+
+    result = client.post("/sales/import/ebay", json={"content": doubled}).json()
+
+    assert (result["imported"], result["pending"]) == (1, 1)

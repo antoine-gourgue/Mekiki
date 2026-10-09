@@ -10,7 +10,7 @@ from __future__ import annotations
 import re
 from datetime import UTC, datetime
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from mekiki_engine.domain import SalePlatform
@@ -70,6 +70,9 @@ def import_ebay_report(
         item = by_ref.get(line.item)
         if item is not None and item.sale is None and line.quantity == 1:
             _record(session, user_id, settings, item.id, line)
+            # The same line may come twice (overlapping reports joined): booked once.
+            assert item.sale is not None
+            sales[line.reference] = item.sale
             result.imported += 1
             continue
         row = PendingSale(
@@ -149,16 +152,15 @@ def ignore_pending(session: Session, user_id: int, pending_id: int) -> None:
     session.commit()
 
 
-def count_pending(session: Session, user_id: int) -> tuple[int, int]:
-    """How many lines wait, and the newest one's id (it changes when new ones come in)."""
-    ids = list(
-        session.scalars(
-            select(PendingSale.id).where(
-                PendingSale.user_id == user_id, PendingSale.ignored.is_(False)
-            )
+def count_pending(session: Session, user_id: int) -> tuple[int, str]:
+    """How many lines wait, and when the newest came in: ids are reused once a line is matched,
+    a moment is not, so a new line always makes a new notification."""
+    rows = session.execute(
+        select(func.count(), func.max(PendingSale.created_at)).where(
+            PendingSale.user_id == user_id, PendingSale.ignored.is_(False)
         )
-    )
-    return len(ids), max(ids, default=0)
+    ).one()
+    return rows[0], rows[1] or ""
 
 
 def _record(
