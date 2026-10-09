@@ -45,11 +45,16 @@ def ebay_status(request: Request, session: SessionDep, user: UserDep) -> EbaySta
     ebay, source = ebay_for(request.app.state, session, user.id)
     if ebay is None:
         return EbayStatus(configured=False)
+    try:
+        sold_api: bool | None = ebay.sold_allowed()
+    except SourceError:
+        sold_api = None
     return EbayStatus(
         configured=True,
         source=source,  # type: ignore[arg-type]
         client_id=ebay.credentials[0] if source == "account" else None,
         marketplace=ebay.marketplace,
+        sold_api=sold_api,
     )
 
 

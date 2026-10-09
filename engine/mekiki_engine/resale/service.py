@@ -5,11 +5,12 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from mekiki_engine.browser import markets
-from mekiki_engine.browser.service import Browsers
+from mekiki_engine.browser.markets import MarketListing
+from mekiki_engine.browser.service import Browsers, MarketPrices
 from mekiki_engine.domain import Game, SalePlatform
 from mekiki_engine.models import CardmarketProduct
 from mekiki_engine.resale import drafts, links
-from mekiki_engine.resale.ebay import EbayBrowse
+from mekiki_engine.resale.ebay import EbayBrowse, EbaySale
 from mekiki_engine.resale.verdict import card_verdict
 from mekiki_engine.scanner import names, tracking
 from mekiki_engine.scanner.sources.base import SourceError
@@ -52,6 +53,68 @@ def ebay_for(state: Any, session: Session, user_id: int) -> tuple[EbayBrowse | N
     if key not in state.ebay_clients:
         state.ebay_clients[key] = EbayBrowse(state.http, *key)
     return state.ebay_clients[key], "account"
+
+
+def ebay_sold(
+    state: Any,
+    session: Session,
+    user_id: int,
+    query: str,
+    card_number: str | None = None,
+    names: list[str] | None = None,
+) -> MarketPrices:
+    """A card's sales on eBay: through Marketplace Insights when the keys may read them,
+    else in Chrome; kept six hours either way."""
+    browsers: Browsers = state.browsers
+    if (cached := browsers.cached(user_id, query, log=True)) is not None:
+        return cached
+    ebay, _source = ebay_for(state, session, user_id)
+    if ebay is not None:
+        try:
+            listings = _api_sales(ebay, query, card_number, names)
+        except SourceError:
+            # eBay's API is out of reach for now: Chrome still reads the sales.
+            listings = None
+        if listings is not None:
+            prices = MarketPrices(
+                site="ebay",
+                query=query,
+                listings=listings,
+                median_cents=markets.median_cents(listings),
+                fetched_at=markets.utc_now(),
+                source="api",
+            )
+            browsers.remember(user_id, query, prices)
+            return prices
+    return browsers.sold_prices(user_id, query, card_number, names)
+
+
+def _api_sales(
+    ebay: EbayBrowse, query: str, card_number: str | None, names: list[str] | None
+) -> list[MarketListing] | None:
+    """The searches Chrome would make, through the API; None when the keys may not."""
+    found: dict[str, EbaySale] = {}
+    for each in markets.search_queries(query, card_number, names)[: markets.MAX_QUERIES]:
+        sales = ebay.sold(each)
+        if sales is None:
+            return None
+        for sale in sales:
+            found.setdefault(sale.item_id or sale.url, sale)
+    ordered = sorted(found.values(), key=lambda sale: sale.sold_on or "", reverse=True)
+    return [
+        MarketListing(
+            site="ebay",
+            external_id=sale.item_id or sale.url,
+            title=sale.title,
+            price_cents=sale.price_cents,
+            url=sale.url,
+            image_url=sale.image_url,
+            detail=markets.sold_caption(sale.sold_on),
+            sold_on=sale.sold_on,
+            relevant=markets.is_relevant(sale.title, card_number, names),
+        )
+        for sale in ordered
+    ]
 
 
 def resale_prices(

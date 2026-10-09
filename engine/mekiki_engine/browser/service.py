@@ -32,6 +32,8 @@ class MarketPrices:
     median_cents: int | None
     fetched_at: str
     error: str | None = None
+    # "api" when eBay's Marketplace Insights gave the sales, without Chrome.
+    source: Literal["chrome", "api"] = "chrome"
 
     @property
     def relevant(self) -> list[MarketListing]:
@@ -201,11 +203,19 @@ class Browsers:
             self._cache[key] = _Cached(time.monotonic(), prices)
         return prices
 
-    def cached(self, user_id: int, query: str) -> MarketPrices | None:
-        """eBay sales already read for ``query``; nothing is loaded."""
+    def remember(self, user_id: int, query: str, prices: MarketPrices) -> None:
+        """Keeps sales read elsewhere (eBay's API) as if Chrome had read them."""
+        with self._lock:
+            self._cache[(user_id, query.strip().lower())] = _Cached(time.monotonic(), prices)
+
+    def cached(self, user_id: int, query: str, *, log: bool = False) -> MarketPrices | None:
+        """eBay sales already read for ``query``; nothing is loaded. ``log`` notes the reuse
+        in the window's log, for a reading the user asked for."""
         with self._lock:
             entry = self._cache.get((user_id, query.strip().lower()))
         if entry and time.monotonic() - entry.at < CACHE_S:
+            if log:
+                self._note(user_id, "eBay : ventes déjà lues il y a moins de six heures")
             return entry.prices
         return None
 

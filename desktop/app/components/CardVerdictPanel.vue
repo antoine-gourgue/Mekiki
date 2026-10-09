@@ -276,7 +276,12 @@ const costLine = computed(() => {
           </p>
         </div>
         <p class="text-xs text-dimmed">
-          Ce que la carte s’est vraiment vendue, lu dans la fenêtre Chrome de Mekiki.
+          Ce que la carte s’est vraiment vendue,
+          {{
+            sold?.source === 'api'
+              ? 'lu par l’API d’eBay (90 derniers jours).'
+              : 'lu dans la fenêtre Chrome de Mekiki.'
+          }}
         </p>
         <p v-if="!result.card_number" class="text-sm text-muted">
           Numéro de carte inconnu : impossible de trier les ventes eBay de cette carte parmi les

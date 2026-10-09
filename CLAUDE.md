@@ -113,8 +113,10 @@ cd desktop && npm run lint && npm run format:check && npm run typecheck && npm r
 ## Revente (`engine/mekiki_engine/resale/`, `browser/`)
 
 - `verdict.py` juge une carte (produit, annonce japonaise, carte en stock) sur Cardmarket et
-  eBay : ventes réussies lues dans Chrome d'abord, sinon médiane des annonces en cours (API
-  Browse, clés du compte). Les ventes réussies, triées des plus récentes, donnent aussi la
+  eBay : ventes réussies d'abord, sinon médiane des annonces en cours (API Browse, clés du
+  compte). Les ventes réussies passent par l'API Marketplace Insights quand eBay en accorde la
+  portée aux clés (accès restreint, demandé une fois par jeu de clés : `sold_allowed`), sinon
+  par Chrome ; gardées 6 h dans les deux cas. Les ventes réussies, triées des plus récentes, donnent aussi la
   fréquence de vente (ventes sur 30 et 90 jours). Vinted reste un débouché (ventes, publication)
   mais ses prix ne sont plus lus.
 - `browser/` pilote une fenêtre Chrome hors écran (journal de ses étapes dans l'app), profil propre

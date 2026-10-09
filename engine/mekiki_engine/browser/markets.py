@@ -281,6 +281,17 @@ def sold_date(text: str) -> str | None:
         return None
 
 
+def sold_caption(day: str | None) -> str | None:
+    """ "2026-10-06" → "Vendu le 6 oct. 2026", as eBay.fr writes it."""
+    try:
+        sold = date.fromisoformat(day or "")
+    except ValueError:
+        return None
+    month = next(name for name, number in FRENCH_MONTHS.items() if number == sold.month)
+    dotted = month if month in ("mars", "mai", "juin", "août") else f"{month}."
+    return f"Vendu le {sold.day} {dotted} {sold.year}"
+
+
 def sales_within(listings: list[MarketListing], days: int, today: date | None = None) -> int:
     """Relevant sales dated within the last ``days`` days."""
     since = ((today or datetime.now(UTC).date()) - timedelta(days=days)).isoformat()

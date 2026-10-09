@@ -906,6 +906,9 @@ class EbayStatus(BaseModel):
     source: Literal["account", "server"] | None = None
     client_id: str | None = None
     marketplace: str | None = None
+    # Whether eBay lets these keys read sold listings (Marketplace Insights); None when eBay
+    # could not be asked.
+    sold_api: bool | None = None
 
 
 class ResalePrices(BaseModel):
@@ -1040,6 +1043,8 @@ class BrowserPricesOut(BaseModel):
     sales_90_days: int | None = None
     fetched_at: str
     error: str | None
+    # "api": read through eBay's Marketplace Insights, without Chrome.
+    source: Literal["chrome", "api"] = "chrome"
 
 
 class PublishRequest(BaseModel):

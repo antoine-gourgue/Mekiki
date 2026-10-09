@@ -7,6 +7,7 @@ from mekiki_engine.browser.chrome import ChromeError
 from mekiki_engine.browser.service import Browsers, MarketPrices
 from mekiki_engine.deps import DataDirDep, SessionDep, UserDep
 from mekiki_engine.domain import Game, SalePlatform
+from mekiki_engine.resale import service as resale_service
 from mekiki_engine.schemas import (
     BrowserActivity,
     BrowserPricesOut,
@@ -84,10 +85,12 @@ def check_site(site: BrowserSite, request: Request, user: UserDep) -> SiteConnec
 
 
 @router.post("/ebay/sold")
-def ebay_sold(payload: BrowserPricesRequest, request: Request, user: UserDep) -> BrowserPricesOut:
-    """Reads a card's sales on eBay's sold search, in Chrome."""
-    prices = _browsers(request).sold_prices(
-        user.id, payload.query, payload.card_number, payload.names
+def ebay_sold(
+    payload: BrowserPricesRequest, request: Request, session: SessionDep, user: UserDep
+) -> BrowserPricesOut:
+    """Reads a card's sales on eBay: through its API when the keys may, else in Chrome."""
+    prices = resale_service.ebay_sold(
+        request.app.state, session, user.id, payload.query, payload.card_number, payload.names
     )
     return prices_out(prices)
 
@@ -153,4 +156,5 @@ def prices_out(prices: MarketPrices) -> BrowserPricesOut:
         sales_90_days=markets.sales_within(prices.listings, 90) if ebay else None,
         fetched_at=prices.fetched_at,
         error=prices.error,
+        source=prices.source,
     )

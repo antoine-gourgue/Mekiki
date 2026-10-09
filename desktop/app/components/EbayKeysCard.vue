@@ -84,6 +84,19 @@ async function remove() {
       />
     </div>
 
+    <p v-if="status?.configured && status.sold_api != null" class="text-sm text-muted">
+      <template v-if="status.sold_api">
+        <UIcon name="i-lucide-circle-check" class="mr-1 size-4 align-text-bottom text-success" />
+        Ventes réussies lues par l’API d’eBay (Marketplace Insights) : plus besoin de Chrome pour
+        les voir.
+      </template>
+      <template v-else>
+        Ventes réussies lues dans Chrome : eBay réserve son API des ventes réussies (Marketplace
+        Insights) aux applications qu’il approuve. Si la vôtre l’obtient, Mekiki s’en servira tout
+        seul.
+      </template>
+    </p>
+
     <ol class="list-inside list-decimal space-y-1 text-sm text-muted">
       <li>
         Sur

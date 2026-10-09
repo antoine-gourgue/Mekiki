@@ -690,6 +690,11 @@ export interface EbayStatus {
   source: 'account' | 'server' | null
   client_id: string | null
   marketplace: string | null
+  /**
+   * Whether eBay lets these keys read sold listings (Marketplace Insights); `null` when eBay
+   * could not be asked.
+   */
+  sold_api: boolean | null
 }
 
 export interface EbayPrices {
@@ -848,6 +853,8 @@ export interface BrowserPrices {
   sales_90_days: number | null
   fetched_at: string
   error: string | null
+  /** "api": read through eBay's Marketplace Insights, without Chrome. */
+  source: 'chrome' | 'api'
 }
 
 export interface PublishRequest {

@@ -2,13 +2,21 @@ import json
 from urllib.parse import parse_qs, urlsplit
 
 import httpx
+import pytest
 from conftest import sign_in
 from fastapi.testclient import TestClient
 
+from mekiki_engine.browser.service import Browsers
 from mekiki_engine.domain import Game, SalePlatform
 from mekiki_engine.models import CardmarketProduct, Item
 from mekiki_engine.resale import drafts
-from mekiki_engine.resale.ebay import SEARCH_URL, TOKEN_URL, EbayBrowse
+from mekiki_engine.resale.ebay import (
+    INSIGHTS_SCOPE,
+    INSIGHTS_URL,
+    SEARCH_URL,
+    TOKEN_URL,
+    EbayBrowse,
+)
 from mekiki_engine.scanner.sources.base import PoliteClient
 
 
@@ -251,10 +259,12 @@ def test_each_account_saves_its_own_ebay_keys(client: TestClient) -> None:
         "source": "account",
         "client_id": "Antoine-Mekiki-PRD-1",
         "marketplace": "EBAY_FR",
+        "sold_api": True,
     }
     assert "s3cret" not in saved.text
     assert prices["ebay"]["configured"] is True
-    assert fake.token_calls == 2
+    # The keys checked, Marketplace Insights asked once, then the Browse API's token.
+    assert fake.token_calls == 3
 
     sign_in(client, "autre@exemple.fr")
     assert client.get("/settings/ebay").json()["configured"] is False
@@ -297,3 +307,104 @@ def test_saved_ebay_keys_keep_their_secret_and_can_be_removed(client: TestClient
 
     assert again.status_code == 200
     assert removed.json()["configured"] is False
+
+
+def ebay_sale(item_id: str, title: str, price: str, day: str) -> dict[str, object]:
+    return {
+        "itemId": item_id,
+        "title": title,
+        "lastSoldPrice": {"value": price, "currency": "EUR"},
+        "lastSoldDate": f"{day}T14:02:00.000Z",
+        "totalSoldQuantity": 1,
+        "itemWebUrl": f"https://www.ebay.fr/itm/{item_id}",
+        "image": {"imageUrl": f"https://i.ebayimg.com/{item_id}.jpg"},
+    }
+
+
+class FakeInsights(FakeEbay):
+    """eBay granting Marketplace Insights, or refusing its scope to the keys."""
+
+    def __init__(self, granted: bool) -> None:
+        super().__init__()
+        self.granted = granted
+        self.scopes: list[str] = []
+        self.sold_searches: list[str] = []
+
+    def __call__(self, request: httpx.Request) -> httpx.Response:
+        if str(request.url) == TOKEN_URL:
+            scope = parse_qs(request.content.decode())["scope"][0]
+            self.scopes.append(scope)
+            if scope == INSIGHTS_SCOPE and not self.granted:
+                return httpx.Response(400, json={"error": "invalid_scope"})
+        if str(request.url).startswith(INSIGHTS_URL):
+            self.sold_searches.append(request.url.params["q"])
+            sales = [
+                ebay_sale("1", "Pikachu 201/165 SAR japonaise", "40.00", "2026-10-02"),
+                ebay_sale("2", "Pikachu 201/165 SAR Japanese NM", "44.00", "2026-10-06"),
+                ebay_sale("3", "PSA 10 Pikachu 201/165", "250.00", "2026-09-20"),
+                ebay_sale("usd", "Pikachu 201/165", "30.00", "2026-10-01")
+                | {"lastSoldPrice": {"value": "30.00", "currency": "USD"}},
+            ]
+            return httpx.Response(200, json={"total": 4, "itemSales": sales})
+        return super().__call__(request)
+
+
+def test_sold_listings_need_the_marketplace_insights_scope() -> None:
+    refused, granted = FakeInsights(granted=False), FakeInsights(granted=True)
+    without = browse(refused)
+
+    assert without.sold("Pikachu 201/165") is None
+    assert without.sold("Pikachu 201/165") is None
+    sales = browse(granted).sold("Pikachu 201/165")
+
+    # eBay is asked once whether the keys may read sold listings.
+    assert refused.scopes == [INSIGHTS_SCOPE]
+    assert refused.sold_searches == []
+    assert sales is not None
+    assert [(sale.item_id, sale.price_cents, sale.sold_on) for sale in sales] == [
+        ("1", 4000, "2026-10-02"),
+        ("2", 4400, "2026-10-06"),
+        ("3", 25000, "2026-09-20"),
+    ]
+
+
+class NoChrome:
+    def __init__(self, _profile: object) -> None:
+        raise AssertionError("Chrome must not open when eBay's API gives the sales")
+
+
+def test_sales_come_from_the_api_without_chrome_when_ebay_allows_it(
+    client: TestClient, tmp_path
+) -> None:  # type: ignore[no-untyped-def]
+    fake = FakeInsights(granted=True)
+    use_fake_ebay(client, fake)
+    client.app.state.browsers = Browsers(tmp_path, session_factory=NoChrome)  # type: ignore[attr-defined]
+    client.put("/settings/ebay", json={"client_id": "A-PRD-1", "client_secret": "PRD-1"})
+    body = {"query": "Pikachu 201/165", "card_number": "201/165", "names": ["Pikachu"]}
+
+    sold = client.post("/browser/ebay/sold", json=body).json()
+    again = client.post("/browser/ebay/sold", json=body).json()
+
+    assert sold["source"] == "api"
+    assert sold["relevant_count"] == 2
+    assert sold["median_cents"] == 4200
+    assert sold["listings"][0]["detail"] == "Vendu le 6 oct. 2026"
+    assert again == sold
+    assert fake.sold_searches == ["Pikachu 201/165"]
+
+
+def test_keys_without_the_api_still_read_sales_in_chrome(client: TestClient, tmp_path) -> None:  # type: ignore[no-untyped-def]
+    use_fake_ebay(client, FakeInsights(granted=False))
+    status = client.put("/settings/ebay", json={"client_id": "A-PRD-1", "client_secret": "PRD-1"})
+    opened: list[object] = []
+
+    def no_window(profile: object) -> object:
+        opened.append(profile)
+        raise AssertionError("Chrome opened")
+
+    client.app.state.browsers = Browsers(tmp_path, session_factory=no_window)  # type: ignore[attr-defined]
+    with pytest.raises(AssertionError):
+        client.post("/browser/ebay/sold", json={"query": "Pikachu 201/165"})
+
+    assert status.json()["sold_api"] is False
+    assert len(opened) == 1

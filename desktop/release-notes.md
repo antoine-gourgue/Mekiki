@@ -7,6 +7,9 @@
 - Les autres ventes du rapport attendent dans « Ventes eBay à rapprocher » : choisissez la carte
   vendue (les plus probables sont proposées en premier) ou écartez la ligne. Importer un rapport
   plus récent ne crée pas de doublon : il complète seulement l'expédition et le suivi.
+- Ventes réussies eBay sans Chrome : si eBay ouvre à vos clés son API des ventes réussies
+  (Marketplace Insights, réservée aux applications qu'il approuve), Mekiki s'en sert tout seul.
+  Paramètres › Clés eBay indique si c'est le cas ; sinon, les ventes restent lues dans Chrome.
 - Vendeurs bloqués par Neokyo : Mekiki repère ceux qui refusent les intermédiaires ou sont mal
   notés quand il vérifie une annonce, et ne les propose plus. Pour les autres, le bouton
   « Vendeur bloqué sur Neokyo » d'une annonce les écarte d'un clic des recherches, de la
