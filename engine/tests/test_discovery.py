@@ -351,7 +351,7 @@ def test_discovery_logs_each_step(client: TestClient, marketplace: FakeMarketpla
     assert "Mercari : « toutes les cartes », page 1 : 6 annonces, 6 nouvelles." in log
     assert "Mercari : « SAR », page 1 : 6 annonces, 0 nouvelle." in log
     assert (
-        "Écartées : 2 annonces en lot, gradée ou avec un mot exclu, "
+        "Écartées : 2 annonces en lot, booster, gradée ou avec un mot exclu, "
         "1 annonce sans carte reconnue dans le titre." in log
     )
     assert any(line.startswith("Colis proposé : 2 cartes, coût ") for line in log)

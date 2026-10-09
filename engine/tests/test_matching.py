@@ -103,3 +103,32 @@ def test_reserved_listings_are_rejected(title: str) -> None:
 
     assert not result.matched
     assert result.reason and result.reason.startswith("annonce réservée")
+
+
+@pytest.mark.parametrize(
+    "title",
+    [
+        "MEGAドリーム ex バラ ×1パック♪ メガカイリューex MUR SAR",
+        "ポケカ ミラクルツイン 1パック",
+        "テラスタルフェスex 5パック リーフィアex SAR狙い",
+        "ブースターパック 未開封 ピカチュウex",
+        "スカーレット&バイオレット シュリンク付き BOX",
+    ],
+)
+def test_booster_packs_are_rejected(title: str) -> None:
+    result = match_title(title, rule())
+
+    assert not result.matched
+    assert result.reason and result.reason.startswith("booster ou produit scellé")
+
+
+@pytest.mark.parametrize(
+    "title",
+    [
+        "メガアブソルex SAR MEGA 拡張パック メガブレイブ キラ 089/063",
+        "リーフィアex SAR スカーレット&バイオレット ハイクラスパック テラスタルフェスex",
+        "ブースターV SR 強化拡張パック イーブイヒーローズ 072/069",
+    ],
+)
+def test_set_names_and_flareon_are_not_boosters(title: str) -> None:
+    assert match_title(title, rule(card_number=None)).matched

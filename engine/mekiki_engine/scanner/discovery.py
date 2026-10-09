@@ -479,7 +479,7 @@ def evaluate(
                 f"{counted(count, 'annonce')} {why}"
                 for count, why in (
                     (dropped["condition"], "par l'état (insuffisant ou non précisé)"),
-                    (dropped["noise"], "en lot, gradée ou avec un mot exclu"),
+                    (dropped["noise"], "en lot, booster, gradée ou avec un mot exclu"),
                     (dropped["unknown"], "sans carte reconnue dans le titre"),
                 )
                 if count

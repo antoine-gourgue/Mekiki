@@ -31,6 +31,12 @@ _GRADED = re.compile(r"(?<![a-z])(?:psa|bgs|cgc|ars)(?![a-z])|鑑定")
 # Listings kept for one buyer ("〇〇様専用", "お取り置き", "売約済み") or whose seller refuses a
 # purchase without a message first ("即購入不可"): a proxy's order would be cancelled.
 _RESERVED = re.compile(r"専用|取り?置き?|売約|予約済|購入不可|購入禁止")
+# Booster packs name the cards they may hold ("バラ 1パック メガカイリューex MUR"): read as a
+# card, a 300 ¥ pack would look like a bargain. "拡張パック" and "ハイクラスパック" belong to set
+# names and never come after a count; "ブースター" alone is Flareon. \u00d7: the "times" sign.
+_SEALED = re.compile(
+    r"\d+パック|パック[\u00d7x*]\d|バラパック|未開封パック|ブースター(?:パック|ボックス)|シュリンク"
+)
 
 
 def normalize(text: str) -> str:
@@ -103,6 +109,8 @@ def match_title(title: str, rule: MatchRule) -> MatchResult:
 
     if reserved := _RESERVED.search(compact):
         return MatchResult(False, f"annonce réservée ({reserved[0]})")
+    if sealed := _SEALED.search(compact):
+        return MatchResult(False, f"booster ou produit scellé ({sealed[0]})")
     for keyword in (*rule.excluded, *rule.global_excluded):
         if keyword in text or keyword.replace(" ", "") in compact:
             return MatchResult(False, f"mot exclu : {keyword}")
