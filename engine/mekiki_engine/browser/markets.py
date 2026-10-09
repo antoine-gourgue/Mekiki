@@ -1,7 +1,9 @@
-"""Reading prices on Vinted (listings) and eBay (sold listings) in the user's Chrome.
+"""Reading eBay's sold listings in the user's Chrome, signed in to eBay.
 
-The pages are read as the user sees them, once per click in the app. Only listings naming
-the card's number, ungraded and alone, count towards the median.
+eBay's API only knows the listings still for sale: what a card really sold for is read on
+the sold search page, as the user sees it, when the card's panel opens. Only listings naming
+the card's number, ungraded and alone, count towards the median. Vinted is only signed in
+to, for publishing: its search pages block an address that reads them.
 """
 
 from __future__ import annotations
@@ -16,7 +18,7 @@ from typing import Any, Literal
 from urllib.parse import urlencode
 
 from mekiki_engine.browser.chrome import ChromeError, Tab
-from mekiki_engine.resale.links import EBAY_CARDS_CATEGORY, VINTED_SINGLE_CARDS_CATALOG
+from mekiki_engine.resale.links import EBAY_CARDS_CATEGORY
 
 Site = Literal["vinted", "ebay"]
 
@@ -37,26 +39,6 @@ CONNECTED_CHECKS: dict[Site, str] = {
     "ebay": "(() => { const g = document.querySelector('#gh-ug, .gh-identity'); "
     "return !!g && !/connectez-vous/i.test(g.innerText); })()",
 }
-
-VINTED_ITEMS = r"""
-(() => {
-  const roots = [...document.querySelectorAll('[data-testid^="product-item-id-"]')]
-    .filter((e) => /^product-item-id-\d+$/.test(e.dataset.testid));
-  return roots.map((root) => {
-    const part = (suffix) => root.querySelector(`[data-testid="${root.dataset.testid}${suffix}"]`);
-    const link = part('--overlay-link');
-    return {
-      id: root.dataset.testid.replace('product-item-id-', ''),
-      // "Title, Marque: Pokémon, État: Très bon état, 65.00 €, 68.95 €"
-      summary: link ? link.title : '',
-      url: link ? link.href.split('?')[0] : null,
-      price: part('--price-text')?.innerText ?? '',
-      condition: part('--description-subtitle')?.innerText ?? null,
-      image: part('--image--img')?.src ?? null,
-    };
-  });
-})()
-"""
 
 EBAY_SOLD_ITEMS = r"""
 (() => [...document.querySelectorAll('li[data-listingid]')]
@@ -95,19 +77,6 @@ class BotChallenge(ChromeError):
     """A site wants the user to prove they are human before going on."""
 
 
-# Vinted's page for an address it has blocked after automated browsing, in French or English.
-BLOCKED_CHECK = (
-    "(() => /session a été bloquée|activité inhabituelle ou automatisée|"
-    "session has been blocked|unusual or automated activity/i"
-    ".test(document.body ? document.body.innerText.slice(0, 3000) : ''))()"
-)
-
-
-class SiteBlocked(ChromeError):
-    """The site has blocked this address for automated browsing: reading on would only make
-    it last longer."""
-
-
 _EUROS = re.compile(rf"(\d[\d{_SPACES}.]*,\d{{2}}|\d+)\s*(?:€|EUR)")
 _GRADED = re.compile(
     r"\b(psa|bgs|cgc|pca|ccc|sgc|beckett|collect\s?aura|grad(?:e|é|ée|ing)|gem mint)\b",
@@ -132,10 +101,9 @@ FRENCH_MONTHS = {
 
 # Latin letters, accented ones included, end before this code point.
 LATIN_END = 0x250
-# Pages read per search and searches per card: Vinted shows 96 listings a page, eBay 120 sold
-# ones. Vinted blocks an address that loads many searches in a row, so it gets the fewest.
-PAGES = {"vinted": 1, "ebay": 2}
-MAX_QUERIES = {"vinted": 2, "ebay": 3}
+# Sold searches per card, one page of the 120 latest sales each: that covers 90 days of sales
+# for most Japanese cards, and opening a card stays a matter of seconds.
+MAX_QUERIES = 3
 # Prices this many times away from the median are left out of it, from this many listings.
 OUTLIER_RATIO = 5
 OUTLIER_MIN_COUNT = 4
@@ -149,7 +117,7 @@ class MarketListing:
     price_cents: int
     url: str
     image_url: str | None
-    # Vinted: the item's condition. eBay: "Vendu le 6 oct. 2026".
+    # "Vendu le 6 oct. 2026".
     detail: str | None
     shipping_cents: int | None = None
     # eBay: the sale date, "2026-10-06".
@@ -159,15 +127,8 @@ class MarketListing:
     relevant: bool = True
 
 
-def search_url(site: Site, query: str, page: int = 1) -> str:
-    if site == "vinted":
-        params: dict[str, str | int] = {
-            "search_text": query,
-            "catalog[]": VINTED_SINGLE_CARDS_CATALOG,
-        }
-        if page > 1:
-            params["page"] = page
-        return f"https://www.vinted.fr/catalog?{urlencode(params)}"
+def search_url(query: str) -> str:
+    """eBay.fr's search of the sold listings."""
     params = {
         "_nkw": query,
         "_sacat": EBAY_CARDS_CATEGORY,
@@ -177,8 +138,6 @@ def search_url(site: Site, query: str, page: int = 1) -> str:
         # Latest sales first: the pages read then cover the last weeks, for the sale count.
         "_sop": 13,
     }
-    if page > 1:
-        params["_pgn"] = page
     return f"https://www.ebay.fr/sch/i.html?{urlencode(params)}"
 
 
@@ -205,43 +164,29 @@ def is_connected(tab: Tab, site: Site) -> bool:
 
 def read_listings(
     tab: Tab,
-    site: Site,
     queries: list[str],
     *,
-    pages: int = 1,
     progress: Callable[[str], None] = lambda _step: None,
     pause: Callable[[], None] = lambda: None,
 ) -> list[dict[str, Any]]:
-    """The raw listings of the searches, over a few pages each, as the pages show them.
-
-    A search stops at the first page bringing nothing new; ``pause`` runs between two pages.
-    """
-    script = VINTED_ITEMS if site == "vinted" else EBAY_SOLD_ITEMS
+    """The raw sold listings of the searches, as the pages show them; ``pause`` runs between
+    two searches."""
     found: dict[str, dict[str, Any]] = {}
-    loaded = 0
-    for query in queries[: MAX_QUERIES[site]]:
-        for page in range(1, pages + 1):
-            if loaded:
-                pause()
-            loaded += 1
-            progress(f"{SITE_LABELS[site]} : « {query} », page {page}")
-            tab.navigate(search_url(site, query, page))
-            if site == "ebay" and "signin" in tab.url():
-                raise ChromeError("connectez-vous à eBay dans la fenêtre Chrome de Mekiki")
-            check_bot_challenge(tab)
-            if tab.evaluate(BLOCKED_CHECK):
-                raise SiteBlocked(f"{SITE_LABELS[site]} a bloqué la lecture automatique")
-            # Results render after the page itself: wait for them, or for an empty search.
-            try:
-                tab.wait_for(f"({script}).length > 0", timeout=10)
-            except ChromeError:
-                break
-            items = list(tab.evaluate(script) or [])
-            new = [item for item in items if str(item.get("id")) not in found]
-            if not new:
-                break
-            for item in new:
-                found[str(item.get("id"))] = item
+    for index, query in enumerate(queries[:MAX_QUERIES]):
+        if index:
+            pause()
+        progress(f"eBay : ventes réussies « {query} »")
+        tab.navigate(search_url(query))
+        if "signin" in tab.url():
+            raise ChromeError("connectez-vous à eBay dans la fenêtre Chrome de Mekiki")
+        check_bot_challenge(tab)
+        # Results render after the page itself: wait for them, or for an empty search.
+        try:
+            tab.wait_for(f"({EBAY_SOLD_ITEMS}).length > 0", timeout=10)
+        except ChromeError:
+            continue
+        for item in tab.evaluate(EBAY_SOLD_ITEMS) or []:
+            found.setdefault(str(item.get("id")), item)
     return list(found.values())
 
 
@@ -256,10 +201,7 @@ def check_bot_challenge(tab: Tab) -> None:
 
 
 def parse_listings(
-    site: Site,
-    raw: list[dict[str, Any]],
-    card_number: str | None,
-    names: list[str] | None = None,
+    raw: list[dict[str, Any]], card_number: str | None, names: list[str] | None = None
 ) -> list[MarketListing]:
     listings = []
     for item in raw:
@@ -268,19 +210,17 @@ def parse_listings(
         if price is None or not url:
             continue
         title = str(item.get("title") or "")
-        if site == "vinted":
-            title = str(item.get("summary") or "").split(", Marque:")[0].strip()
         listings.append(
             MarketListing(
-                site=site,
+                site="ebay",
                 external_id=str(item.get("id") or url),
                 title=title,
                 price_cents=price,
                 url=str(url),
                 image_url=item.get("image"),
-                detail=item.get("condition") if site == "vinted" else item.get("sold"),
+                detail=item.get("sold"),
                 shipping_cents=euro_cents(str(item.get("shipping") or "")),
-                sold_on=sold_date(str(item.get("sold") or "")) if site == "ebay" else None,
+                sold_on=sold_date(str(item.get("sold") or "")),
                 best_offer=bool(item.get("best_offer")),
                 relevant=is_relevant(title, card_number, names),
             )

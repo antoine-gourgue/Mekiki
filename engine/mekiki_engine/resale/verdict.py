@@ -1,8 +1,7 @@
 """Whether a card is worth buying: every resale outlet, what it leaves, and a verdict.
 
-The Cardmarket price guide is the reference; the median of eBay's live listings joins it
-when the engine has eBay keys. Vinted publishes no prices to software, so it only appears
-as a link (see links.py).
+The Cardmarket price guide is the reference. eBay joins it: the median of its sold listings
+read in Chrome, else that of its live listings when the account has eBay keys.
 """
 
 from __future__ import annotations
@@ -125,10 +124,6 @@ def _resale_prices(
     elif ebay.median_cents is not None:
         basis = f"Médiane de {len(ebay.listings)} annonces eBay en cours"
         found.append((SalePlatform.EBAY, ebay.median_cents, basis))
-    vinted = market.get("vinted")
-    if vinted is not None and vinted.median_cents is not None:
-        basis = f"Médiane de {len(vinted.relevant)} annonces Vinted en cours"
-        found.append((SalePlatform.VINTED, vinted.median_cents, basis))
     return found
 
 
@@ -211,7 +206,7 @@ def _signals(
     product: CardmarketProduct | None, prices: ResalePrices, market: dict[str, MarketPrices]
 ) -> list[VerdictSignal]:
     signals: list[VerdictSignal] = []
-    for site, label in (("ebay", "ventes réussies eBay"), ("vinted", "annonces Vinted")):
+    for site, label in (("ebay", "ventes réussies eBay"),):
         read = market.get(site)
         if read is None:
             continue
@@ -253,10 +248,7 @@ def _signals(
     ebay = prices.ebay
     # Prices read in Chrome already stand in for the missing eBay keys.
     if not ebay.configured and not market:
-        text = (
-            "Lisez les prix Vinted et les ventes réussies eBay dans Chrome pour compléter "
-            "avec ce qui se vend vraiment."
-        )
+        text = "Ajoutez vos clés eBay dans Paramètres pour voir aussi les annonces eBay en cours."
         signals.append(VerdictSignal(tone="neutral", text=text))
     elif ebay.listings and len(ebay.listings) < FEW_EBAY_LISTINGS:
         text = f"Seulement {len(ebay.listings)} annonces eBay : la médiane est fragile."

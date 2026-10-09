@@ -83,13 +83,11 @@ def check_site(site: BrowserSite, request: Request, user: UserDep) -> SiteConnec
     return SiteConnection(site=site, connected=connected)
 
 
-@router.post("/{site}/prices")
-def site_prices(
-    site: BrowserSite, payload: BrowserPricesRequest, request: Request, user: UserDep
-) -> BrowserPricesOut:
-    """Reads a search on the site in Chrome: Vinted listings, or eBay sold listings."""
-    prices = _browsers(request).prices(
-        user.id, site, payload.query, payload.card_number, payload.names
+@router.post("/ebay/sold")
+def ebay_sold(payload: BrowserPricesRequest, request: Request, user: UserDep) -> BrowserPricesOut:
+    """Reads a card's sales on eBay's sold search, in Chrome."""
+    prices = _browsers(request).sold_prices(
+        user.id, payload.query, payload.card_number, payload.names
     )
     return prices_out(prices)
 

@@ -18,41 +18,26 @@ from mekiki_engine.browser.markets import (
 )
 from mekiki_engine.browser.service import Browsers
 
-# What the page scripts return, shaped like the real Vinted and eBay pages.
-VINTED_RAW = [
-    {
-        "id": "1",
-        "summary": "Dracaufeu ex 201/165 SAR japonaise, Marque: Pokémon, État: Très bon état, "
-        "65.00 €, 68.95 €",
-        "url": "https://www.vinted.fr/items/1-dracaufeu",
-        "price": "65,00 €",
-        "condition": "Très bon état",
+
+# What the page script returns, shaped like eBay.fr's sold listings.
+def sale(item_id: str, title: str, price: str) -> dict[str, object]:
+    return {
+        "id": item_id,
+        "title": title,
+        "url": f"https://www.ebay.fr/itm/{item_id}",
+        "price": price,
+        "best_offer": False,
+        "sold": "Vendu le 6 oct. 2026",
+        "shipping": "Livraison gratuite",
         "image": None,
-    },
-    {
-        "id": "2",
-        "summary": "Dracaufeu ex 201 / 165 jap, Marque: Pokémon, État: Neuf, 75.00 €, 79.45 €",
-        "url": "https://www.vinted.fr/items/2-dracaufeu",
-        "price": "75,00 €",
-        "condition": "Neuf",
-        "image": None,
-    },
-    {
-        "id": "3",
-        "summary": "Dracaufeu ex 201/165 PSA 10, Marque: Pokémon, État: Neuf, 350.00 €, 368 €",
-        "url": "https://www.vinted.fr/items/3-dracaufeu-psa",
-        "price": "350,00 €",
-        "condition": "Neuf",
-        "image": None,
-    },
-    {
-        "id": "4",
-        "summary": "Dracaufeu ex 006/165, Marque: Pokémon, État: Bon état, 10.00 €, 11 €",
-        "url": "https://www.vinted.fr/items/4-dracaufeu-rr",
-        "price": "10,00 €",
-        "condition": "Bon état",
-        "image": None,
-    },
+    }
+
+
+FRENCH_SALES = [
+    sale("1", "Dracaufeu ex 201/165 SAR japonaise", "65,00 EUR"),
+    sale("2", "Dracaufeu ex 201 / 165 jap", "75,00 EUR"),
+    sale("3", "Dracaufeu ex 201/165 PSA 10", "350,00 EUR"),
+    sale("4", "Dracaufeu ex 006/165", "10,00 EUR"),
 ]
 EBAY_RAW = [
     {
@@ -83,7 +68,6 @@ class FakeTab:
         self.pages = pages
         self.connected = connected
         self.challenge = False
-        self.blocked = False
         self.visited: list[str] = []
 
     def navigate(self, url: str, *, timeout: float = 30) -> None:
@@ -102,14 +86,10 @@ class FakeTab:
     def evaluate(self, expression: str, *, await_promise: bool = False) -> Any:
         if expression == markets.CHALLENGE_CHECK:
             return self.challenge
-        if expression == markets.BLOCKED_CHECK:
-            return self.blocked
         return self._current()
 
     def _current(self) -> list[dict[str, Any]]:
-        url = self.url()
-        site = "vinted" if "vinted" in url else "ebay"
-        return self.pages.get(site, [])
+        return self.pages.get("ebay", []) if "ebay.fr/sch" in self.url() else []
 
 
 class FakeSession:
@@ -134,26 +114,26 @@ class FakeSession:
 
 @pytest.fixture
 def chrome(client: TestClient, tmp_path: Path) -> FakeSession:
-    session = FakeSession(FakeTab({"vinted": VINTED_RAW, "ebay": EBAY_RAW}, connected=True))
+    session = FakeSession(FakeTab({"ebay": EBAY_RAW}, connected=True))
     client.app.state.browsers = Browsers(
         tmp_path, session_factory=lambda _profile: session, pause_s=(0, 0)
     )  # type: ignore[attr-defined,arg-type,return-value]
     return session
 
 
-def test_listings_count_only_ungraded_single_copies_of_the_card() -> None:
-    vinted = parse_listings("vinted", VINTED_RAW, "201/165")
+def test_sales_count_only_ungraded_single_copies_of_the_card() -> None:
+    sold = parse_listings(FRENCH_SALES, "201/165")
 
-    assert vinted[0].title == "Dracaufeu ex 201/165 SAR japonaise"
-    assert [listing.relevant for listing in vinted] == [True, True, False, False]
-    assert median_cents(vinted) == 7000
+    assert sold[0].title == "Dracaufeu ex 201/165 SAR japonaise"
+    assert [listing.relevant for listing in sold] == [True, True, False, False]
+    assert median_cents(sold) == 7000
     assert not is_relevant("Lot de 3 Dracaufeu ex 201/165", "201/165")
     assert is_relevant("Luffy OP05-119 parallèle", "OP05-119")
     assert not is_relevant("Dracaufeu ex promo 29", None, ["Dracaufeu"])
 
 
 def test_ebay_accepted_offers_only_count_when_nothing_else_is_left() -> None:
-    sold = parse_listings("ebay", EBAY_RAW, "201/165")
+    sold = parse_listings(EBAY_RAW, "201/165")
 
     assert sold[1].best_offer is True
     assert sold[1].shipping_cents == 347
@@ -162,18 +142,21 @@ def test_ebay_accepted_offers_only_count_when_nothing_else_is_left() -> None:
     assert median_cents(sold[1:]) == 41470
 
 
-def test_prices_are_read_once_then_kept(client: TestClient, chrome: FakeSession) -> None:
+def test_sales_are_read_once_then_kept(client: TestClient, chrome: FakeSession) -> None:
+    chrome.tab.pages["ebay"] = FRENCH_SALES
     body = {"query": "Dracaufeu ex 201/165", "card_number": "201/165"}
 
-    first = client.post("/browser/vinted/prices", json=body).json()
-    again = client.post("/browser/vinted/prices", json=body).json()
+    first = client.post("/browser/ebay/sold", json=body).json()
+    again = client.post("/browser/ebay/sold", json=body).json()
 
     assert first["relevant_count"] == 2
     assert first["median_cents"] == 7000
     assert (first["min_cents"], first["max_cents"]) == (6500, 7500)
     assert again == first
     assert chrome.pages_opened == 1
-    assert chrome.tab.visited[0].startswith("https://www.vinted.fr/catalog?search_text=Dracaufeu")
+    assert chrome.tab.visited[0].startswith("https://www.ebay.fr/sch/i.html?_nkw=Dracaufeu")
+    # Vinted's search pages are no longer read: they block an address that does.
+    assert client.post("/browser/vinted/prices", json=body).status_code == 404
 
 
 def test_connection_is_checked_on_the_site(client: TestClient, chrome: FakeSession) -> None:
@@ -192,16 +175,16 @@ def test_prices_read_in_chrome_join_the_verdict(client: TestClient, chrome: Fake
     assert "Dracaufeu" in before["card_names"]
     queries = before["market_queries"]
     assert [o["platform"] for o in before["outlets"]] == ["cardmarket"]
+    assert set(queries) == {"ebay"}
 
-    for site in ("vinted", "ebay"):
-        client.post(
-            f"/browser/{site}/prices",
-            json={"query": queries[site], "card_number": before["card_number"]},
-        )
+    client.post(
+        "/browser/ebay/sold",
+        json={"query": queries["ebay"], "card_number": before["card_number"]},
+    )
     after = client.get("/resale/verdict", params=params).json()
 
     outlets = {o["platform"]: o for o in after["outlets"]}
-    assert outlets["vinted"]["sale_cents"] == 7000
+    assert set(outlets) == {"cardmarket", "ebay"}
     assert outlets["ebay"]["sale_cents"] == 35500
     assert "ventes réussies eBay" in outlets["ebay"]["basis"]
 
@@ -217,15 +200,10 @@ def test_other_cards_and_languages_sharing_the_number_are_left_out() -> None:
 
 def test_prices_far_from_the_others_are_left_out_of_the_median() -> None:
     raw = [
-        {
-            "id": str(i),
-            "summary": f"Dracaufeu ex 201/165 n°{i}, Marque: Pokémon",
-            "url": f"u{i}",
-            "price": price,
-        }
+        sale(str(i), f"Dracaufeu ex 201/165 n°{i}", price)
         for i, price in enumerate(["60,00 €", "65,00 €", "70,00 €", "1,00 €", "2 000,00 €"])
     ]
-    listings = parse_listings("vinted", raw, "201/165", ["Dracaufeu"])
+    listings = parse_listings(raw, "201/165", ["Dracaufeu"])
 
     assert median_cents(listings) == 6500
 
@@ -261,21 +239,22 @@ def test_the_window_shows_to_sign_in_and_hides_once_signed_in(
 def test_the_log_lists_each_step_and_its_outcome(client: TestClient, chrome: FakeSession) -> None:
     assert client.get("/browser/activity").json()["log"] == []
 
+    chrome.tab.pages["ebay"] = FRENCH_SALES
     body = {"query": "Dracaufeu ex 201/165", "card_number": "201/165"}
-    client.post("/browser/vinted/prices", json=body)
-    client.post("/browser/vinted/prices", json=body)
+    client.post("/browser/ebay/sold", json=body)
+    client.post("/browser/ebay/sold", json=body)
 
     log = [line["text"] for line in client.get("/browser/activity").json()["log"]]
-    assert log[0].startswith("Vinted : « Dracaufeu ex 201/165 », page 1")
-    assert "Vinted : 4 annonces lues, 2 de cette carte" in log
-    assert log[-1] == "Vinted : prix déjà lus il y a moins de six heures"
+    assert log[0] == "eBay : ventes réussies « Dracaufeu ex 201/165 »"
+    assert "eBay : 4 ventes lues, 2 de cette carte" in log
+    assert log[-1] == "eBay : ventes déjà lues il y a moins de six heures"
 
 
 def test_a_bot_check_is_left_to_the_user(client: TestClient, chrome: FakeSession) -> None:
     chrome.tab.challenge = True
 
     read = client.post(
-        "/browser/vinted/prices", json={"query": "Pikachu 173/165", "card_number": "173/165"}
+        "/browser/ebay/sold", json={"query": "Pikachu 173/165", "card_number": "173/165"}
     ).json()
 
     assert "vérification anti-robot" in read["error"]
@@ -308,7 +287,7 @@ def test_ebay_sales_are_counted_over_30_and_90_days() -> None:
         # Another card sold the same day does not count.
         {**EBAY_RAW[0], "id": "5", "title": "Charizard ex 006/165", "sold": "Vendu le 6 oct. 2026"},
     ]
-    sold = parse_listings("ebay", raw, "201/165")
+    sold = parse_listings(raw, "201/165")
     today = date(2026, 10, 8)
 
     assert sold[0].sold_on == "2026-10-06"
@@ -317,7 +296,7 @@ def test_ebay_sales_are_counted_over_30_and_90_days() -> None:
 
 
 def test_ebay_sold_searches_read_the_latest_sales_first() -> None:
-    assert "_sop=13" in markets.search_url("ebay", "Charizard 201/165")
+    assert "_sop=13" in markets.search_url("Charizard 201/165")
 
 
 def test_ebay_sales_frequency_joins_the_verdict(client: TestClient, chrome: FakeSession) -> None:
@@ -326,7 +305,7 @@ def test_ebay_sales_frequency_joins_the_verdict(client: TestClient, chrome: Fake
     before = client.get("/resale/verdict", params=params).json()
 
     prices = client.post(
-        "/browser/ebay/prices",
+        "/browser/ebay/sold",
         json={"query": before["market_queries"]["ebay"], "card_number": "201/165"},
     ).json()
     after = client.get("/resale/verdict", params=params).json()
@@ -334,21 +313,6 @@ def test_ebay_sales_frequency_joins_the_verdict(client: TestClient, chrome: Fake
     assert prices["sales_90_days"] is not None
     assert prices["listings"][0]["sold_on"] == "2026-10-06"
     assert any("sur 90 jours" in signal["text"] for signal in after["signals"])
-
-
-def test_a_blocked_site_is_left_alone_for_hours(client: TestClient, chrome: FakeSession) -> None:
-    chrome.tab.blocked = True
-    body = {"query": "Pikachu 173/165", "card_number": "173/165"}
-
-    first = client.post("/browser/vinted/prices", json=body).json()
-    loaded = len(chrome.tab.visited)
-    chrome.tab.blocked = False
-    again = client.post("/browser/vinted/prices", json=body).json()
-
-    assert "a bloqué la lecture automatique" in first["error"]
-    assert "a bloqué la lecture automatique" in again["error"]
-    assert len(chrome.tab.visited) == loaded
-    assert chrome.visible is False
 
 
 class NewResultsTab(FakeTab):
@@ -361,17 +325,13 @@ class NewResultsTab(FakeTab):
         return [{"id": self.url()}]
 
 
-def test_vinted_reads_one_page_of_two_searches_at_most() -> None:
+def test_a_card_reads_one_page_of_three_searches_at_most() -> None:
     tab = NewResultsTab()
     pauses: list[None] = []
 
     markets.read_listings(
-        tab,
-        "vinted",
-        ["a 1/1", "b 1/1", "c 1/1"],
-        pages=markets.PAGES["vinted"],
-        pause=lambda: pauses.append(None),
+        tab, ["a 1/1", "b 1/1", "c 1/1", "d 1/1"], pause=lambda: pauses.append(None)
     )
 
-    assert len(tab.visited) == 2
-    assert len(pauses) == 1
+    assert len(tab.visited) == 3
+    assert len(pauses) == 2

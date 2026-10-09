@@ -8,7 +8,6 @@ import time
 from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime
 from pathlib import Path
 from typing import Literal
 
@@ -16,14 +15,11 @@ from mekiki_engine.browser import markets, publish
 from mekiki_engine.browser.chrome import ChromeError, ChromeSession, find_chrome
 from mekiki_engine.browser.markets import MarketListing, Site
 
-# Prices read in Chrome are reused for six hours: reading them again means loading pages,
-# and sites block an address that loads too many.
+# Sales read in Chrome are reused for six hours: each card opened would otherwise load eBay's
+# pages again, and sites block an address that loads too many.
 CACHE_S = 6 * 60 * 60
-# Seconds between two result pages, drawn at random, as a person reading them would take.
-PAUSE_S = (4.0, 9.0)
-# Once a site has blocked the address, Mekiki stays away this long: reading on would only
-# make the block last longer.
-BLOCK_PAUSE_S = 6 * 60 * 60
+# Seconds between two searches, drawn at random, as a person reading them would take.
+PAUSE_S = (1.5, 3.5)
 # Steps kept per account for the progress log shown in the app.
 LOG_LINES = 80
 
@@ -88,13 +84,11 @@ class Browsers:
     data_dir: Path
     session_factory: Callable[[Path], ChromeSession] = ChromeSession
     _sessions: dict[int, ChromeSession] = field(default_factory=dict)
-    _cache: dict[tuple[int, Site, str], _Cached] = field(default_factory=dict)
+    _cache: dict[tuple[int, str], _Cached] = field(default_factory=dict)
     _jobs: dict[tuple[int, int, Site], PublishJob] = field(default_factory=dict)
     # What Chrome is doing for each account, and the steps it went through.
     _activity: dict[int, str] = field(default_factory=dict)
     _log: dict[int, deque[LogLine]] = field(default_factory=dict)
-    # When each account may read a site again after it blocked the address (time.time()).
-    _blocked_until: dict[tuple[int, Site], float] = field(default_factory=dict)
     pause_s: tuple[float, float] = PAUSE_S
     _lock: threading.Lock = field(default_factory=threading.Lock)
 
@@ -163,57 +157,41 @@ class Browsers:
             log = self._log.setdefault(user_id, deque(maxlen=LOG_LINES))
             log.append(LogLine(markets.utc_now(), text))
 
-    def prices(
+    def sold_prices(
         self,
         user_id: int,
-        site: Site,
         query: str,
         card_number: str | None = None,
         names: list[str] | None = None,
     ) -> MarketPrices:
-        key = (user_id, site, query.strip().lower())
+        """eBay's sold listings of a card, read in Chrome or reused within six hours."""
+        key = (user_id, query.strip().lower())
         with self._lock:
             cached = self._cache.get(key)
-        label = markets.SITE_LABELS[site]
         if cached and time.monotonic() - cached.at < CACHE_S:
-            self._note(user_id, f"{label} : prix déjà lus il y a moins de six heures")
+            self._note(user_id, "eBay : ventes déjà lues il y a moins de six heures")
             return cached.prices
-        with self._lock:
-            blocked_until = self._blocked_until.get((user_id, site), 0.0)
-        if blocked_until > time.time():
-            return MarketPrices(
-                site, query, [], None, markets.utc_now(), error=_blocked(label, blocked_until)
-            )
         try:
             queries = markets.search_queries(query, card_number, names)
             with self.session(user_id).page() as tab:
                 raw = markets.read_listings(
                     tab,
-                    site,
                     queries,
-                    pages=markets.PAGES[site],
                     progress=lambda step: self._doing(user_id, step),
                     pause=lambda: time.sleep(random.uniform(*self.pause_s)),
                 )
-        except markets.SiteBlocked:
-            until = time.time() + BLOCK_PAUSE_S
-            with self._lock:
-                self._blocked_until[(user_id, site)] = until
-            message = _blocked(label, until)
-            self._note(user_id, f"{label} : {message}")
-            return MarketPrices(site, query, [], None, markets.utc_now(), error=message)
         except ChromeError as error:
-            self._note(user_id, f"{label} : {error}")
+            self._note(user_id, f"eBay : {error}")
             if isinstance(error, markets.BotChallenge):
                 self.session(user_id).set_visible(True)
-            return MarketPrices(site, query, [], None, markets.utc_now(), error=str(error))
+            return MarketPrices("ebay", query, [], None, markets.utc_now(), error=str(error))
         finally:
             self._doing(user_id, None)
-        listings = markets.parse_listings(site, raw, card_number, names)
+        listings = markets.parse_listings(raw, card_number, names)
         relevant = sum(listing.relevant for listing in listings)
-        self._note(user_id, f"{label} : {len(listings)} annonces lues, {relevant} de cette carte")
+        self._note(user_id, f"eBay : {len(listings)} ventes lues, {relevant} de cette carte")
         prices = MarketPrices(
-            site=site,
+            site="ebay",
             query=query,
             listings=listings,
             median_cents=markets.median_cents(listings),
@@ -223,16 +201,13 @@ class Browsers:
             self._cache[key] = _Cached(time.monotonic(), prices)
         return prices
 
-    def cached(self, user_id: int, query: str) -> dict[Site, MarketPrices]:
-        """Prices already read for ``query``, by site; nothing is loaded."""
-        now = time.monotonic()
-        found: dict[Site, MarketPrices] = {}
+    def cached(self, user_id: int, query: str) -> MarketPrices | None:
+        """eBay sales already read for ``query``; nothing is loaded."""
         with self._lock:
-            for site in ("vinted", "ebay"):
-                entry = self._cache.get((user_id, site, query.strip().lower()))
-                if entry and now - entry.at < CACHE_S:
-                    found[site] = entry.prices
-        return found
+            entry = self._cache.get((user_id, query.strip().lower()))
+        if entry and time.monotonic() - entry.at < CACHE_S:
+            return entry.prices
+        return None
 
     def publish(
         self,
@@ -300,10 +275,3 @@ class Browsers:
             sessions = list(self._sessions.values())
         for session in sessions:
             session.stop()
-
-
-def _blocked(label: str, until: float) -> str:
-    return (
-        f"{label} a bloqué la lecture automatique : Mekiki n'y retourne pas avant "
-        f"{datetime.fromtimestamp(until).strftime('%H:%M')}, pour ne pas prolonger le blocage"
-    )

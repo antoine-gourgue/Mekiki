@@ -133,16 +133,9 @@ def verdict(
         query = drafts.search_query(product.name, card_number)
     if not query:
         return None
-    game = Game(product.game) if product is not None else None
-    queries = {
-        "ebay": query,
-        "vinted": (names.translate(session, game, query, "fr") if game else None) or query,
-    }
     market = {}
-    if browsers is not None:
-        for site, site_query in queries.items():
-            if (read := browsers.cached(user_id, site_query).get(site)) is not None:
-                market[site] = read
+    if browsers is not None and (sold := browsers.cached(user_id, query)) is not None:
+        market["ebay"] = sold
     names_of_card = card_names(session, product, typed_name)
     result = card_verdict(
         settings,
@@ -156,7 +149,7 @@ def verdict(
     )
     result.card_number = card_number
     result.card_names = names_of_card
-    result.market_queries = queries
+    result.market_queries = {"ebay": query}
     return result
 
 

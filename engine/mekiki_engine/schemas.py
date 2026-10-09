@@ -898,7 +898,7 @@ class CardVerdict(BaseModel):
     card_number: str | None = None
     # The card's name in French, English and Japanese, which listings must also name.
     card_names: list[str] = []
-    # What to search on each site in Chrome (French names on Vinted), to complete the verdict.
+    # What to search on eBay's sold listings in Chrome, to complete the verdict.
     market_queries: dict[str, str] = {}
 
 
@@ -950,7 +950,7 @@ class MarketListingOut(BaseModel):
     price_cents: int
     url: str
     image_url: str | None
-    # Vinted: the condition. eBay: the sale date ("Vendu le 6 oct. 2026").
+    # The sale date as eBay writes it: "Vendu le 6 oct. 2026".
     detail: str | None
     # eBay: the sale date read from ``detail``, "2026-10-06".
     sold_on: str | None = None
@@ -969,7 +969,7 @@ class BrowserPricesOut(BaseModel):
     median_cents: int | None
     min_cents: int | None
     max_cents: int | None
-    # eBay: sales of the card over the last 30 and 90 days; None on Vinted.
+    # Sales of the card over the last 30 and 90 days.
     sales_30_days: int | None = None
     sales_90_days: int | None = None
     fetched_at: str
