@@ -26,6 +26,16 @@ def _throttle(request: Request) -> auth.SignInThrottle:
     return request.app.state.sign_in_throttle
 
 
+def _check_throttle(throttle: auth.SignInThrottle, email: str) -> None:
+    try:
+        throttle.check(email)
+    except auth.TooManyAttempts as error:
+        raise HTTPException(
+            status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="trop de tentatives, réessayez dans quelques minutes",
+        ) from error
+
+
 @router.get("/status")
 def auth_status(session: SessionDep) -> AuthStatus:
     return AuthStatus(accounts_exist=not auth.no_account_yet(session))
@@ -62,16 +72,10 @@ def register(payload: RegisterRequest, session: SessionDep) -> AuthResponse:
 def login(payload: LoginRequest, request: Request, session: SessionDep) -> AuthResponse:
     email = auth.normalize_email(payload.email)
     throttle = _throttle(request)
-    try:
-        throttle.check(email)
-    except auth.TooManyAttempts as error:
-        raise HTTPException(
-            status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="trop de tentatives, réessayez dans quelques minutes",
-        ) from error
+    _check_throttle(throttle, email)
     user = session.scalars(select(User).where(User.email == email)).first()
     if user is None or not auth.verify_password(payload.password, user.password_hash):
-        throttle.failed(email)
+        throttle.failed(email, account=user is not None)
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail=INVALID_CREDENTIALS)
     throttle.succeeded(email)
     if auth.needs_rehash(user.password_hash):
@@ -94,14 +98,23 @@ def me(user: UserDep) -> UserOut:
 
 @router.patch("/me")
 def update_me(
-    payload: AccountUpdate, session: SessionDep, token: TokenDep, user: UserDep
+    payload: AccountUpdate,
+    request: Request,
+    session: SessionDep,
+    token: TokenDep,
+    user: UserDep,
 ) -> UserOut:
     if payload.display_name is not None:
         user.display_name = payload.display_name.strip()
     if payload.new_password is not None:
+        # A stolen session must not let anyone guess the password at full speed either.
+        throttle = _throttle(request)
+        _check_throttle(throttle, user.email)
         current = payload.current_password or ""
         if not auth.verify_password(current, user.password_hash):
+            throttle.failed(user.email)
             raise HTTPException(status.HTTP_403_FORBIDDEN, detail="mot de passe actuel incorrect")
+        throttle.succeeded(user.email)
         user.password_hash = auth.hash_password(payload.new_password)
         # A changed password must lock out whoever else was signed in.
         auth.revoke_other_sessions(session, user.id, token)

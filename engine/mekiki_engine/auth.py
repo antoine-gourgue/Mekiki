@@ -13,7 +13,7 @@ import hmac
 import secrets
 import threading
 import time
-from collections import defaultdict, deque
+from collections import OrderedDict, deque
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import delete, select, update
@@ -78,7 +78,10 @@ def normalize_email(email: str) -> str:
 
 def create_session(session: Session, user: User) -> str:
     token = secrets.token_urlsafe(32)
-    expires = datetime.now(UTC) + SESSION_LIFETIME
+    now = datetime.now(UTC)
+    # Expired sessions are only refused, never used again: cleared at each sign-in.
+    session.execute(delete(AuthSession).where(AuthSession.expires_at < now.strftime(_TIMESTAMP)))
+    expires = now + SESSION_LIFETIME
     session.add(
         AuthSession(
             token_hash=_token_hash(token),
@@ -132,33 +135,59 @@ def no_account_yet(session: Session) -> bool:
 
 
 class SignInThrottle:
-    """At most ``limit`` failed sign-ins per address within ``window_s`` seconds."""
+    """At most ``limit`` failed password checks per address within ``window_s`` seconds.
 
-    def __init__(self, limit: int = 5, window_s: float = 15 * 60) -> None:
+    Only addresses with recent failures are remembered. Those of accounts are few; the others
+    are guesses, which anyone can make up by the thousand: at most ``max_strangers`` of them
+    are kept, the oldest forgotten first, since forgetting them protects nothing less.
+    """
+
+    def __init__(
+        self, limit: int = 5, window_s: float = 15 * 60, max_strangers: int = 1000
+    ) -> None:
         self.limit = limit
         self.window_s = window_s
-        self._failures: dict[str, deque[float]] = defaultdict(deque)
+        self.max_strangers = max_strangers
+        self._accounts: dict[str, deque[float]] = {}
+        self._strangers: OrderedDict[str, deque[float]] = OrderedDict()
         self._lock = threading.Lock()
 
     def check(self, email: str) -> None:
         with self._lock:
-            failures = self._recent(email)
-            if len(failures) >= self.limit:
-                raise TooManyAttempts
+            for table in (self._accounts, self._strangers):
+                failures = table.get(email)
+                if failures is None:
+                    continue
+                self._forget_old(failures)
+                if not failures:
+                    del table[email]
+                elif len(failures) >= self.limit:
+                    raise TooManyAttempts
 
-    def failed(self, email: str) -> None:
+    def failed(self, email: str, *, account: bool = True) -> None:
+        """Counts a wrong password; ``account`` is false when no account has this address."""
         with self._lock:
-            self._recent(email).append(time.monotonic())
+            table = self._accounts if account else self._strangers
+            failures = table.pop(email, None) or deque()
+            self._forget_old(failures)
+            failures.append(time.monotonic())
+            table[email] = failures
+            while len(self._strangers) > self.max_strangers:
+                self._strangers.popitem(last=False)
 
     def succeeded(self, email: str) -> None:
         with self._lock:
-            self._failures.pop(email, None)
+            self._accounts.pop(email, None)
+            self._strangers.pop(email, None)
 
-    def _recent(self, email: str) -> deque[float]:
-        failures = self._failures[email]
+    def tracked(self) -> int:
+        """How many addresses are remembered."""
+        with self._lock:
+            return len(self._accounts) + len(self._strangers)
+
+    def _forget_old(self, failures: deque[float]) -> None:
         while failures and failures[0] < time.monotonic() - self.window_s:
             failures.popleft()
-        return failures
 
 
 def _token_hash(token: str) -> str:

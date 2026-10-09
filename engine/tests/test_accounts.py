@@ -119,6 +119,49 @@ def test_expired_sessions_are_refused(anonymous: TestClient) -> None:
     assert anonymous.get("/auth/me").status_code == 401
 
 
+def test_expired_sessions_are_cleared_at_sign_in(anonymous: TestClient) -> None:
+    sign_in(anonymous, "ash@example.com")
+    with anonymous.app.state.session_factory() as session:  # type: ignore[attr-defined]
+        session.execute(update(AuthSession).values(expires_at="2000-01-01T00:00:00Z"))
+        session.commit()
+
+    anonymous.post("/auth/login", json={"email": "ash@example.com", "password": PASSWORD})
+
+    with anonymous.app.state.session_factory() as session:  # type: ignore[attr-defined]
+        expiries = session.scalars(select(AuthSession.expires_at)).all()
+    assert len(expiries) == 1
+    assert expiries[0] > "2026"
+
+
+def test_the_throttle_only_remembers_recent_failures() -> None:
+    throttle = auth.SignInThrottle(limit=2, max_strangers=3)
+
+    for number in range(10):
+        throttle.check(f"guess{number}@example.com")
+    assert throttle.tracked() == 0
+
+    throttle.failed("ash@example.com")
+    throttle.failed("ash@example.com")
+    for number in range(10):
+        throttle.failed(f"guess{number}@example.com", account=False)
+
+    # Made-up addresses are forgotten, oldest first; an account's failures are not.
+    assert throttle.tracked() == 1 + 3
+    with pytest.raises(auth.TooManyAttempts):
+        throttle.check("ash@example.com")
+
+
+def test_the_current_password_check_is_throttled(anonymous: TestClient) -> None:
+    sign_in(anonymous, "ash@example.com")
+    wrong = {"current_password": "wrong-password", "new_password": "new-secret-1"}
+    right = {"current_password": PASSWORD, "new_password": "new-secret-1"}
+
+    statuses = [anonymous.patch("/auth/me", json=wrong).status_code for _ in range(6)]
+
+    assert statuses == [403] * 5 + [429]
+    assert anonymous.patch("/auth/me", json=right).status_code == 429
+
+
 def test_password_change_needs_the_current_one_and_signs_out_elsewhere(
     anonymous: TestClient,
 ) -> None:
