@@ -26,7 +26,7 @@ from mekiki_engine.costing.money import percent_to_fraction
 from mekiki_engine.costing.sale import SaleBreakdown
 from mekiki_engine.domain import Game, ListingCondition, SourcePlatform
 from mekiki_engine.models import CardIndexEntry, CardmarketProduct, SettingRow
-from mekiki_engine.scanner import availability, card_index, links
+from mekiki_engine.scanner import availability, card_index, links, sellers
 from mekiki_engine.scanner.identify import CardIdentity, identify
 from mekiki_engine.scanner.matching import MatchRule, match_title, split_keywords
 from mekiki_engine.scanner.pricing import (
@@ -339,6 +339,7 @@ def discover(
     candidates = evaluate(session, settings, request, found.values(), run)
     on_progress(run)
     picked, gone = compose_available_parcel(
+        session,
         client,
         run,
         settings,
@@ -417,6 +418,7 @@ def evaluate(
     resolver = CatalogResolver(session)
     noise = MatchRule(global_excluded=split_keywords(settings.scanner.excluded_keywords))
     target = target_roi(settings, request)
+    avoided = sellers.blocked(session)
     # Why the other listings were left out, for the log: most never become a candidate.
     dropped: Counter[str] = Counter()
     candidates: list[Candidate] = []
@@ -431,6 +433,9 @@ def evaluate(
             and not (listing.condition and listing.condition.at_least(minimum))
         ):
             dropped["condition"] += 1
+            continue
+        if (listing.source.value, listing.seller_id) in avoided:
+            dropped["seller"] += 1
             continue
         identity = identify(listing.title, request.game)
         # Graded copies and lots are other products; the noise rule rejects both.
@@ -479,6 +484,7 @@ def evaluate(
                 f"{counted(count, 'annonce')} {why}"
                 for count, why in (
                     (dropped["condition"], "par l'état (insuffisant ou non précisé)"),
+                    (dropped["seller"], "d'un vendeur bloqué par Neokyo"),
                     (dropped["noise"], "en lot, booster, gradée ou avec un mot exclu"),
                     (dropped["unknown"], "sans carte reconnue dans le titre"),
                 )
@@ -633,6 +639,7 @@ def short_of_target(
 
 
 def compose_available_parcel(
+    session: Session,
     client: PoliteClient,
     run: DiscoveryRun,
     settings: AppSettings,
@@ -682,6 +689,13 @@ def compose_available_parcel(
                 gone.add(id(candidate))
                 run.listings_gone += 1
                 note(run, f"{label} ({site}) : déjà vendue, remplacée par la suivante.")
+            elif result.seller_warning and result.seller_id:
+                # Neokyo would turn the purchase down: the seller is avoided from now on.
+                gone.add(id(candidate))
+                sellers.block(
+                    session, listing.source.value, result.seller_id, result.seller_warning
+                )
+                note(run, f"{label} ({site}) : vendeur à éviter, {result.seller_warning}.")
             elif minimum and not (condition and condition.at_least(minimum)):
                 gone.add(id(candidate))
                 state = (

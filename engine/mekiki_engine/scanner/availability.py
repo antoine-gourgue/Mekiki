@@ -11,6 +11,7 @@ import re
 from datetime import UTC, datetime
 
 from mekiki_engine.domain import SourcePlatform
+from mekiki_engine.scanner import sellers
 from mekiki_engine.scanner.sources.base import JAPANESE_CONDITIONS, PoliteClient, SourceError
 from mekiki_engine.scanner.sources.mercari import CONDITIONS as MERCARI_CONDITIONS
 from mekiki_engine.scanner.sources.mercari import DPoPSigner
@@ -78,12 +79,15 @@ def _mercari(client: PoliteClient, item_id: str) -> ListingAvailability:
     available, label = MERCARI_STATUSES.get(status, (False, f"plus en vente ({status})"))
     condition = (data.get("item_condition") or {}).get("id")
     price = data.get("price")
+    seller = (data.get("seller") or {}).get("id")
     return ListingAvailability(
         available=available,
         status=label,
         condition=MERCARI_CONDITIONS.get(str(condition)),
         price_jpy=int(price) if price is not None else None,
         checked_at=_now(),
+        seller_id=str(seller) if seller else None,
+        seller_warning=sellers.seller_problem(data),
     )
 
 

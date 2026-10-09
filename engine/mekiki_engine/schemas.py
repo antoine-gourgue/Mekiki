@@ -662,6 +662,9 @@ class ListingAvailability(BaseModel):
     condition: ListingCondition | None = None
     price_jpy: int | None = None
     checked_at: str
+    seller_id: str | None = None
+    # Why Neokyo would refuse this seller, when the listing gives it away.
+    seller_warning: str | None = None
 
 
 class DiscoveryRequest(BaseModel):
@@ -1057,6 +1060,24 @@ class PublishJobOut(BaseModel):
     # The published listing, once done.
     url: str | None
     error: str | None
+
+
+class BlockSellerRequest(BaseModel):
+    """A listing whose seller Neokyo refused; its seller is looked up when not given."""
+
+    source: SourcePlatform
+    external_id: Annotated[str, Field(min_length=1, max_length=40)]
+    seller_id: Annotated[str, Field(max_length=40)] | None = None
+    reason: Annotated[str, Field(max_length=200)] = "bloqué par Neokyo"
+
+
+class BlockedSellerOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    source: SourcePlatform
+    seller_id: str
+    reason: str
+    blocked_at: str
 
 
 class TaskOut(BaseModel):

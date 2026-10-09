@@ -480,6 +480,25 @@ export interface ListingAvailability {
   condition: ListingCondition | null
   price_jpy: number | null
   checked_at: string
+  seller_id?: string | null
+  /** Why Neokyo would refuse this seller, when the listing gives it away. */
+  seller_warning?: string | null
+}
+
+/** A seller Neokyo refuses: their listings are never proposed. */
+export interface BlockedSeller {
+  source: SourcePlatform
+  seller_id: string
+  reason: string
+  blocked_at: string
+}
+
+export interface BlockSellerRequest {
+  source: SourcePlatform
+  external_id: string
+  /** Looked up from the listing when not given (Mercari only). */
+  seller_id?: string | null
+  reason?: string
 }
 
 export interface DiscoveryRequest {

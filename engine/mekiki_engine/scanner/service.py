@@ -18,7 +18,7 @@ from mekiki_engine.models import (
     Listing,
     TrackedCard,
 )
-from mekiki_engine.scanner import links, names, tracking
+from mekiki_engine.scanner import links, names, sellers, tracking
 from mekiki_engine.scanner.identify import identify
 from mekiki_engine.scanner.matching import build_rule, match_title, split_keywords
 from mekiki_engine.scanner.pricing import (
@@ -258,7 +258,12 @@ def list_deals(
         statement = statement.where(Listing.triage == triage.value)
     if tracked_card_id is not None:
         statement = statement.where(Listing.tracked_card_id == tracked_card_id)
-    listings = session.scalars(statement).all()
+    avoided = sellers.blocked(session)
+    listings = [
+        listing
+        for listing in session.scalars(statement)
+        if (listing.source, listing.seller_id) not in avoided
+    ]
     products = _products(
         session, (listing.tracked_card.cardmarket_product_id for listing in listings)
     )
@@ -399,6 +404,7 @@ def record_found_listings(
             if meets_target(settings, estimate):
                 new_deals += 1
         listing.title = item.title
+        listing.seller_id = item.seller_id or listing.seller_id
         listing.price_jpy = item.price_jpy
         listing.shipping_included = item.shipping_included
         listing.url = item.url

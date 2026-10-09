@@ -206,10 +206,22 @@ class Listing(Base):
     bids: Mapped[int | None]
     condition: Mapped[str | None]
     triage: Mapped[str] = mapped_column(default="new")
+    seller_id: Mapped[str | None]
     first_seen_at: Mapped[str]
     last_seen_at: Mapped[str]
 
     tracked_card: Mapped[TrackedCard] = relationship(back_populates="listings")
+
+
+class BlockedSeller(Base):
+    """A seller Neokyo will not buy from: their listings are never proposed."""
+
+    __tablename__ = "blocked_sellers"
+
+    source: Mapped[str] = mapped_column(primary_key=True)
+    seller_id: Mapped[str] = mapped_column(primary_key=True)
+    reason: Mapped[str]
+    blocked_at: Mapped[str]
 
 
 class PokemonSpecies(Base):

@@ -5,6 +5,8 @@ import type {
   AuthStatus,
   Backup,
   Backups,
+  BlockSellerRequest,
+  BlockedSeller,
   BooksSummary,
   BrowserActivity,
   BrowserPrices,
@@ -224,6 +226,14 @@ export function useEngine() {
       request<PublishJob | null>(`/browser/${site}/publish/${itemId}`),
     search: (body: SearchRequest) =>
       request<SearchResponse>('/search', { method: 'POST', body, timeout: 120_000 }),
+    blockedSellers: () => request<BlockedSeller[]>('/sellers/blocked'),
+    blockSeller: (body: BlockSellerRequest) =>
+      request<BlockedSeller>('/sellers/blocked', { method: 'POST', body, timeout: 30_000 }),
+    unblockSeller: async (source: SourcePlatform, sellerId: string): Promise<void> => {
+      await request(`/sellers/blocked/${source}/${encodeURIComponent(sellerId)}`, {
+        method: 'DELETE',
+      })
+    },
     listingAvailability: (source: SourcePlatform, externalId: string) =>
       request<ListingAvailability>(
         `/listings/${source}/${encodeURIComponent(externalId)}/availability`,

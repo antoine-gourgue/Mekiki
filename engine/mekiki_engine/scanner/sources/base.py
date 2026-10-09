@@ -49,6 +49,8 @@ class FoundListing:
     bids: int | None = None
     # None when the results page does not give it (Rakuma, Yahoo Auctions).
     condition: ListingCondition | None = None
+    # The marketplace's id of the seller, when its results give it (Mercari).
+    seller_id: str | None = None
 
 
 class Source(Protocol):

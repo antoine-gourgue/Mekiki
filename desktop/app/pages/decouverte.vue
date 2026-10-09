@@ -161,7 +161,42 @@ function menu(pick: DiscoveryPick): DropdownMenuItem[] {
       icon: 'i-lucide-package-plus',
       onSelect: () => bought(pick),
     },
+    ...(pick.source === 'mercari'
+      ? [
+          {
+            label: 'Vendeur bloqué sur Neokyo',
+            icon: 'i-lucide-ban',
+            onSelect: () => blockPickSeller(pick),
+          },
+        ]
+      : []),
   ]
+}
+
+const blockSeller = useBlockSeller()
+const toast = useToast()
+
+/** Neokyo refused this seller: the pick leaves the results; a new search recomposes. */
+async function blockPickSeller(pick: DiscoveryPick) {
+  if (!(await blockSeller(pick))) return
+  const current = run.value
+  if (!current) return
+  const other = (p: DiscoveryPick) =>
+    !(p.source === pick.source && p.external_id === pick.external_id)
+  const wasPicked = !current.picks.every(other)
+  run.value = {
+    ...current,
+    picks: current.picks.filter(other),
+    alternatives: current.alternatives.filter(other),
+  }
+  if (wasPicked) {
+    toast.add({
+      title: 'Relancez la recherche',
+      description:
+        'Le colis proposé n’a plus que ses autres cartes : une nouvelle recherche le recompose sans ce vendeur.',
+      color: 'neutral',
+    })
+  }
 }
 
 function toFavorite(pick: DiscoveryPick) {

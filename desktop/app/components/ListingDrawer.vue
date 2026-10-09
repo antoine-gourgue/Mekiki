@@ -9,6 +9,19 @@ import type { ListingAvailability } from '~/types/engine'
 const props = defineProps<{ listing: ListingPreview }>()
 
 const engine = useEngine()
+const blockSeller = useBlockSeller()
+const emit = defineEmits<{ blocked: [] }>()
+const drawer = useDrawer()
+
+async function blockThisSeller() {
+  const blocked = await blockSeller(props.listing, {
+    sellerId: availability.value?.seller_id,
+    reason: availability.value?.seller_warning ?? undefined,
+  })
+  if (!blocked) return
+  emit('blocked')
+  drawer.close()
+}
 
 // Results age (a discovery is kept, a favorite stays): the marketplace is asked again.
 const availability = ref<ListingAvailability | null>(null)
@@ -163,6 +176,22 @@ const verdictQuery = computed(() => ({
         <UIcon name="i-lucide-circle-help" class="size-4" />
         Disponibilité non vérifiée : {{ availability.status }}
       </p>
+      <UAlert
+        v-if="availability?.seller_warning"
+        color="warning"
+        variant="subtle"
+        icon="i-lucide-user-x"
+        title="Neokyo refusera sans doute ce vendeur"
+        :description="`Le vendeur ${availability.seller_warning}.`"
+        :actions="[
+          {
+            label: 'Ne plus proposer ce vendeur',
+            color: 'neutral',
+            variant: 'outline',
+            onClick: blockThisSeller,
+          },
+        ]"
+      />
 
       <section class="space-y-2.5">
         <h3 class="text-xs font-semibold tracking-[0.12em] text-dimmed uppercase">
@@ -172,7 +201,17 @@ const verdictQuery = computed(() => ({
       </section>
     </div>
 
-    <div class="flex gap-2.5 border-t border-default px-4 py-4 sm:px-6">
+    <div class="flex flex-wrap gap-2.5 border-t border-default px-4 py-4 sm:px-6">
+      <UButton
+        v-if="listing.source === 'mercari'"
+        icon="i-lucide-ban"
+        label="Vendeur bloqué sur Neokyo"
+        color="neutral"
+        variant="ghost"
+        size="xl"
+        class="basis-full justify-center"
+        @click="blockThisSeller"
+      />
       <UButton
         icon="i-lucide-external-link"
         label="Voir l’annonce"

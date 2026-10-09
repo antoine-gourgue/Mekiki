@@ -188,6 +188,7 @@ def parse_item(item: dict[str, Any]) -> FoundListing | None:
         ends_at=auction.get("bidDeadline") if auction else None,
         bids=int(auction["totalBid"]) if auction and auction.get("totalBid") else None,
         condition=CONDITIONS.get(str(item.get("itemConditionId"))),
+        seller_id=str(item.get("sellerId") or "") or None,
     )
 
 

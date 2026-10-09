@@ -320,6 +320,8 @@ class FakeMarketplace:
         # Rakuma listings' condition, as their page writes it ("未使用に近い").
         self.rakuma_conditions: dict[str, str] = {}
         self.tcgcsv_down = False
+        # Extra fields of Mercari items, as their API gives them: seller, description.
+        self.item_details: dict[str, dict[str, object]] = {}
 
     def handle(self, request: httpx.Request) -> httpx.Response:
         """Mercari's item API and Rakuma's item pages; everything else as cardmarket_handler."""
@@ -327,7 +329,12 @@ class FakeMarketplace:
             item_id = request.url.params["id"]
             self.checked.append(item_id)
             status = "sold_out" if item_id in self.sold else "on_sale"
-            data = {"id": item_id, "status": status, "item_condition": {"id": 3}}
+            data = {
+                "id": item_id,
+                "status": status,
+                "item_condition": {"id": 3},
+                **self.item_details.get(item_id, {}),
+            }
             return httpx.Response(200, json={"result": "OK", "data": data})
         if request.url.host == "tcgcsv.com" and self.tcgcsv_down:
             return httpx.Response(503, text="Service Unavailable")

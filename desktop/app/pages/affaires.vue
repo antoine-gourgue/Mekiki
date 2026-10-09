@@ -151,8 +151,21 @@ function menu(deal: Deal): DropdownMenuItem[] {
           icon: 'i-lucide-eye-off',
           onSelect: () => setTriage(deal, 'dismissed'),
         },
+    ...(deal.source === 'mercari'
+      ? [
+          {
+            label: 'Vendeur bloqué sur Neokyo',
+            icon: 'i-lucide-ban',
+            onSelect: async () => {
+              if (await blockSeller(deal)) await refresh()
+            },
+          },
+        ]
+      : []),
   ]
 }
+
+const blockSeller = useBlockSeller()
 
 const newCount = computed(() => (deals.value ?? []).filter((d) => d.triage === 'new').length)
 
