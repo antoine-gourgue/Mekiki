@@ -96,7 +96,11 @@ function actions(item: Item): DropdownMenuItem[][] {
           icon: 'i-lucide-tag',
           onSelect: () => open(item, 'listing'),
         },
-        { label: 'Vendue', icon: 'i-lucide-badge-euro', onSelect: () => open(item, 'sale') },
+        {
+          label: 'Enregistrer la vente',
+          icon: 'i-lucide-badge-euro',
+          onSelect: () => open(item, 'sale'),
+        },
       ]
   return [
     selling,
@@ -271,7 +275,7 @@ const totals = computed(() => {
                   size="sm"
                   color="neutral"
                   variant="outline"
-                  label="Vendue"
+                  label="Marquer vendue"
                   @click="open(row.original, 'sale')"
                 />
                 <UDropdownMenu :items="actions(row.original)" :content="{ align: 'end' }">

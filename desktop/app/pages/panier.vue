@@ -35,10 +35,11 @@ function editPrice(item: Favorite) {
 
 async function savePrice(clear = false) {
   if (!editing.value) return
-  await favorites.update(editing.value.id, {
+  const saved = await favorites.update(editing.value.id, {
     target_price_cents: clear ? null : targetPrice.value,
   })
-  editingOpen.value = false
+  // On failure the modal stays open with the price typed.
+  if (saved) editingOpen.value = false
 }
 
 // "Acheté" opens the card form pre-filled, to put the card straight into a lot.
@@ -62,6 +63,8 @@ function bought(item: Favorite) {
 }
 
 const drawer = useDrawer()
+// Blocked from a listing's side panel: the list is read again.
+drawer.onSellerBlocked(() => favorites.refresh())
 
 function openFavorite(item: Favorite) {
   drawer.open({

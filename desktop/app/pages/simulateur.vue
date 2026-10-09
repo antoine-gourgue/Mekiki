@@ -200,7 +200,7 @@ const fxFormat: Intl.NumberFormatOptions = { maximumFractionDigits: 4 }
                 <p class="font-semibold text-highlighted">{{ verdict?.label ?? 'Simulation' }}</p>
                 <p class="mt-1 text-sm text-muted">
                   <template v-if="result.max_price_jpy != null">
-                    Pour {{ state.target_roi_percent }} % de ROI, payez au plus
+                    Pour {{ formatPercent(state.target_roi_percent) }} de ROI, payez au plus
                     <span class="font-semibold text-highlighted tabular-nums">
                       {{ formatYen(result.max_price_jpy) }}
                     </span>
@@ -210,8 +210,8 @@ const fxFormat: Intl.NumberFormatOptions = { maximumFractionDigits: 4 }
                     </template>
                   </template>
                   <template v-else-if="state.target_roi_percent != null">
-                    Aucun prix d’achat n’atteint {{ state.target_roi_percent }} % de ROI à ce prix
-                    de revente.
+                    Aucun prix d’achat n’atteint {{ formatPercent(state.target_roi_percent) }} de
+                    ROI à ce prix de revente.
                   </template>
                 </p>
               </div>

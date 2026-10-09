@@ -73,7 +73,12 @@ async function copy(text: string, what: string) {
 // Publishing in Mekiki's Chrome window: started here, followed until it ends.
 const job = ref<PublishJob | null>(null)
 let jobTimer: ReturnType<typeof setTimeout> | undefined
-onBeforeUnmount(() => clearTimeout(jobTimer))
+// Cleared on unmount, so a read still on its way does not start the loop again.
+let alive = true
+onBeforeUnmount(() => {
+  alive = false
+  clearTimeout(jobTimer)
+})
 watch(open, (isOpen) => {
   if (isOpen) job.value = null
 })
@@ -100,6 +105,7 @@ function followJob(current: ListingSite, itemId: number) {
     } catch {
       // A missed poll is retried on the next tick.
     }
+    if (!alive) return
     if (job.value?.status === 'running') return followJob(current, itemId)
     if (job.value?.status === 'done' && props.item) {
       toast.add({

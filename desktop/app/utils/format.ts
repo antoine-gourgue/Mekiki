@@ -38,6 +38,16 @@ export function formatRatio(ratio: number | null | undefined): string {
   return ratio == null ? EMPTY : percent.format(ratio)
 }
 
+const plainPercent = new Intl.NumberFormat('fr-FR', {
+  style: 'percent',
+  maximumFractionDigits: 2,
+})
+
+/** Formats a value already in percent, like `*_percent` fields (12.3 → 12,3 %, 30 → 30 %). */
+export function formatPercent(value: number | null | undefined): string {
+  return value == null ? EMPTY : plainPercent.format(value / 100)
+}
+
 /**
  * Formats an ISO date (2026-10-05) without shifting it through the local time zone. A full
  * timestamp (2026-10-05T18:55:54Z) shows its date part.

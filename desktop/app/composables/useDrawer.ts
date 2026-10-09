@@ -18,6 +18,14 @@ export interface ListingPreview {
   label: string | null
 }
 
+/** A listing whose seller was just blocked from its side panel. */
+export interface BlockedListing {
+  source: SourcePlatform
+  external_id: string
+  /** `null` when the panel could not read it (the engine then looks it up). */
+  seller_id: string | null
+}
+
 /** A detail panel opened on the right of the app. */
 export type DrawerEntry =
   /** A card in stock; `siblings` are the cards of the list it was opened from, in order. */
@@ -33,6 +41,11 @@ export type DrawerEntry =
  */
 export function useDrawer() {
   const stack = useState<DrawerEntry[]>('drawer-stack', () => [])
+  // Counted, so blocking a second seller is news even when the listing is the same.
+  const blocked = useState<{ count: number; listing: BlockedListing | null }>(
+    'drawer-seller-blocked',
+    () => ({ count: 0, listing: null }),
+  )
 
   return {
     stack,
@@ -45,5 +58,19 @@ export function useDrawer() {
     replace: (entry: DrawerEntry) => (stack.value = [...stack.value.slice(0, -1), entry]),
     back: () => (stack.value = stack.value.slice(0, -1)),
     close: () => (stack.value = []),
+    /** Tells the page underneath that a listing's seller was blocked from its panel. */
+    sellerBlocked: (listing: BlockedListing) =>
+      (blocked.value = { count: blocked.value.count + 1, listing }),
+    /**
+     * Calls `handler` each time a seller is blocked from a listing panel, for the page to drop
+     * or reload that listing. Call it during setup: it stops with the component.
+     */
+    onSellerBlocked: (handler: (listing: BlockedListing) => void) =>
+      watch(
+        () => blocked.value.count,
+        () => {
+          if (blocked.value.listing) handler(blocked.value.listing)
+        },
+      ),
   }
 }

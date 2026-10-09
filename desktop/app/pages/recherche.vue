@@ -79,6 +79,18 @@ const rejectedCount = computed(
 
 const drawer = useDrawer()
 
+// Blocked from the listing's side panel: it leaves the results without searching again.
+drawer.onSellerBlocked((listing) => {
+  const current = response.value
+  if (!current) return
+  response.value = {
+    ...current,
+    results: current.results.filter(
+      (result) => result.source !== listing.source || result.external_id !== listing.external_id,
+    ),
+  }
+})
+
 function openResult(result: SearchResult) {
   drawer.open({
     kind: 'listing',

@@ -53,9 +53,24 @@ const updatingPrices = ref(false)
 async function updatePrices() {
   updatingPrices.value = true
   try {
-    cardmarket.value = await engine.refreshCardmarket()
+    const statuses = await engine.refreshCardmarket()
+    cardmarket.value = statuses
     await refresh()
-    toast.add({ title: 'Cotes Cardmarket à jour', color: 'success' })
+    // A download that failed leaves the previous prices: the engine answers all the same.
+    const problems = statuses.flatMap((entry) =>
+      [entry.last_error, entry.index_error]
+        .filter((text): text is string => !!text)
+        .map((text) => `${GAME_LABELS[entry.game]} : ${text}`),
+    )
+    if (problems.length) {
+      toast.add({
+        title: 'Cotes pas toutes mises à jour',
+        description: problems.join(' · '),
+        color: 'warning',
+      })
+    } else {
+      toast.add({ title: 'Cotes Cardmarket à jour', color: 'success' })
+    }
   } catch (failure) {
     showError(failure, 'Mise à jour des cotes impossible')
     await refreshStatus()
@@ -119,7 +134,10 @@ function menu(card: TrackedCard): DropdownMenuItem[] {
             produits)
           </template>
           <template v-else>cotes jamais téléchargées</template>
-          <UTooltip v-if="entry.last_error" :text="entry.last_error">
+          <UTooltip
+            v-if="entry.last_error || entry.index_error"
+            :text="[entry.last_error, entry.index_error].filter(Boolean).join(' · ')"
+          >
             <UIcon
               name="i-lucide-triangle-alert"
               class="ml-1 size-4 align-text-bottom text-warning"

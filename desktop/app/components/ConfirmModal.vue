@@ -4,8 +4,9 @@ withDefaults(
     title: string
     description?: string
     confirmLabel?: string
+    cancelLabel?: string
   }>(),
-  { description: undefined, confirmLabel: 'Supprimer' },
+  { description: undefined, confirmLabel: 'Supprimer', cancelLabel: 'Annuler' },
 )
 
 const emit = defineEmits<{ close: [confirmed: boolean] }>()
@@ -20,7 +21,7 @@ const emit = defineEmits<{ close: [confirmed: boolean] }>()
     @update:open="(open) => !open && emit('close', false)"
   >
     <template #footer>
-      <UButton color="neutral" variant="ghost" label="Annuler" @click="emit('close', false)" />
+      <UButton color="neutral" variant="ghost" :label="cancelLabel" @click="emit('close', false)" />
       <UButton color="error" :label="confirmLabel" @click="emit('close', true)" />
     </template>
   </UModal>

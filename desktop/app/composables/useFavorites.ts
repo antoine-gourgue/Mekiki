@@ -18,11 +18,14 @@ export function useFavorites() {
   )
   const cartCount = computed(() => state.value?.cart?.card_count ?? 0)
 
-  async function run(action: () => Promise<Favorites>) {
+  /** Applies a change; resolves to `false` when it failed (the error is already shown). */
+  async function run(action: () => Promise<Favorites>): Promise<boolean> {
     try {
       state.value = await action()
+      return true
     } catch (error) {
       showError(error)
+      return false
     }
   }
 
@@ -34,8 +37,7 @@ export function useFavorites() {
     const existing = find(listing.source, listing.external_id)
     if (existing) {
       await run(() => engine.deleteFavorite(existing.id))
-    } else {
-      await run(() => engine.addFavorite(listing))
+    } else if (await run(() => engine.addFavorite(listing))) {
       toast.add({
         title: 'Ajoutée aux favoris',
         description: 'Retrouvez-la dans le panier pour composer un colis.',

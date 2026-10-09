@@ -43,6 +43,19 @@ const sections = [
 function scrollTo(id: string) {
   document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
+
+// A link to a section (the task "La sauvegarde du jour a échoué") is followed once the cards
+// are on the page.
+const route = useRoute()
+watch(
+  [() => state.value !== null, () => route.hash],
+  async ([shown, hash]) => {
+    if (!shown || !hash) return
+    await nextTick()
+    scrollTo(hash.slice(1))
+  },
+  { immediate: true },
+)
 </script>
 
 <template>

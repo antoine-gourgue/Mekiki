@@ -42,6 +42,7 @@ async function cancelSale(item: SoldItem) {
     title: `Annuler la vente de « ${item.name} » ?`,
     description: 'La carte retourne dans le stock.',
     confirmLabel: 'Annuler la vente',
+    cancelLabel: 'Garder la vente',
   })
   if (!confirmed) return
   try {
@@ -277,8 +278,9 @@ async function importReport(event: Event) {
                   <div class="w-72 p-3">
                     <SaleBreakdownList :sale="row.original.sale.breakdown" />
                     <p class="mt-2 text-xs text-muted">
-                      Cotisations figées à {{ row.original.sale.contribution_rate_percent }} % au
-                      moment de la vente.
+                      Cotisations figées à
+                      {{ formatPercent(row.original.sale.contribution_rate_percent) }} au moment de
+                      la vente.
                     </p>
                   </div>
                 </template>

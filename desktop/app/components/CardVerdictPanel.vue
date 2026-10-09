@@ -20,15 +20,21 @@ const result = ref<CardVerdict | null>(null)
 const failure = ref<string | null>(null)
 const loading = ref(false)
 
+// Another card may open while the previous one is still read: its answers are dropped, so
+// a late verdict or eBay sales never land under the wrong card.
+let opened = 0
+
 async function load() {
+  const card = opened
   loading.value = true
   failure.value = null
   try {
-    result.value = await engine.verdict(props.query)
+    const verdict = await engine.verdict(props.query)
+    if (card === opened) result.value = verdict
   } catch (error) {
-    failure.value = engineErrorMessage(error)
+    if (card === opened) failure.value = engineErrorMessage(error)
   } finally {
-    loading.value = false
+    if (card === opened) loading.value = false
   }
 }
 
@@ -81,9 +87,6 @@ const shownSold = computed(() => {
   const relevant = sold.value?.listings.filter((listing) => listing.relevant) ?? []
   return soldExpanded.value ? relevant : relevant.slice(0, SHOWN_LISTINGS)
 })
-
-// Another card may open while the previous one is still read: its results are dropped.
-let opened = 0
 
 const soldError = computed(() => soldFailure.value ?? sold.value?.error ?? null)
 // eBay shows its sold listings to signed-in visitors only.
@@ -143,7 +146,10 @@ async function readSold() {
       access.value = { api: api.value, signedIn: !/connectez-vous/i.test(read.error ?? '') }
     }
     // The verdict now counts these sales.
-    if (!read.error) result.value = await engine.verdict(props.query)
+    if (!read.error) {
+      const verdict = await engine.verdict(props.query)
+      if (card === opened) result.value = verdict
+    }
   } catch (error) {
     if (card === opened) soldFailure.value = engineErrorMessage(error)
   } finally {
@@ -169,22 +175,6 @@ async function showReadSales() {
   }
 }
 
-watch(
-  () => JSON.stringify(props.query),
-  async () => {
-    opened += 1
-    sold.value = null
-    soldFailure.value = null
-    soldExpanded.value = false
-    readingSold.value = false
-    signingIn.value = false
-    await load()
-    void refreshAccess()
-    void showReadSales()
-  },
-  { immediate: true },
-)
-
 // eBay's own listings, read with the account's eBay keys when it has some.
 const ebayLive = computed(() =>
   result.value?.prices.ebay.configured ? result.value.prices.ebay : null,
@@ -194,6 +184,26 @@ const shownEbay = computed(() => {
   const listings = ebayLive.value?.listings ?? []
   return ebayExpanded.value ? listings : listings.slice(0, SHOWN_LISTINGS)
 })
+
+watch(
+  () => JSON.stringify(props.query),
+  async () => {
+    opened += 1
+    const card = opened
+    result.value = null
+    sold.value = null
+    soldFailure.value = null
+    soldExpanded.value = false
+    ebayExpanded.value = false
+    readingSold.value = false
+    signingIn.value = false
+    await load()
+    if (card !== opened) return
+    void refreshAccess()
+    void showReadSales()
+  },
+  { immediate: true },
+)
 
 /** The highest price worth paying in Japan, on the outlet that allows the most. */
 const bestMaxBuy = computed(() => {

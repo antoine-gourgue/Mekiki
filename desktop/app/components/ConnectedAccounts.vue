@@ -23,6 +23,10 @@ const windowShown = ref(false)
 onMounted(async () => {
   try {
     status.value = await engine.browserStatus()
+    // What Chrome last saw, until the user checks again.
+    for (const [site, signedIn] of Object.entries(status.value.connections)) {
+      connected[site as BrowserSite] ??= signedIn
+    }
   } catch (error) {
     showError(error)
   }

@@ -20,7 +20,14 @@ async function load() {
     const [rows, items] = await Promise.all([engine.pendingSales(), engine.inventory()])
     pending.value = rows
     unsold.value = items.filter((item) => !item.sale)
-    for (const row of rows) chosen[row.id] ??= row.suggestions[0]?.item_id
+    const offered = new Set(unsold.value.map((item) => item.id))
+    for (const row of rows) {
+      const current = chosen[row.id]
+      // A card just matched to another line is sold: it left this line's choices.
+      if (current == null || !offered.has(current)) {
+        chosen[row.id] = row.suggestions.find((s) => offered.has(s.item_id))?.item_id
+      }
+    }
   } catch (error) {
     showError(error)
   }

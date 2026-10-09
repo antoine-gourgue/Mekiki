@@ -10,16 +10,21 @@ const props = defineProps<{ listing: ListingPreview }>()
 
 const engine = useEngine()
 const blockSeller = useBlockSeller()
-const emit = defineEmits<{ blocked: [] }>()
 const drawer = useDrawer()
 
 async function blockThisSeller() {
+  const sellerId = availability.value?.seller_id ?? null
   const blocked = await blockSeller(props.listing, {
-    sellerId: availability.value?.seller_id,
+    sellerId,
     reason: availability.value?.seller_warning ?? undefined,
   })
   if (!blocked) return
-  emit('blocked')
+  // The page underneath drops the listing (see useDrawer's onSellerBlocked).
+  drawer.sellerBlocked({
+    source: props.listing.source,
+    external_id: props.listing.external_id,
+    seller_id: sellerId,
+  })
   drawer.close()
 }
 

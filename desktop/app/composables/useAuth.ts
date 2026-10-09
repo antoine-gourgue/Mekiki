@@ -44,7 +44,9 @@ export function useEndSession() {
     nuxtApp.runWithContext(async () => {
       storeToken(null)
       clearNuxtData()
-      clearNuxtState((key) => key !== 'engine-status' && key !== 'auth-token')
+      // Reset rather than deleted: the components still mounted read their initial value
+      // (an empty list, no drawer) instead of undefined.
+      clearNuxtState((key) => key !== 'engine-status' && key !== 'auth-token', { reset: true })
       token.value = null
       if (to) await navigateTo(to)
     })

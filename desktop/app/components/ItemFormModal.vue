@@ -40,8 +40,10 @@ interface ItemForm {
 
 function initialState(): ItemForm {
   const values = props.item ?? props.initial ?? {}
-  // A new card from a deal goes by default into the lot being bought.
-  const buyingLot = props.lots?.find((lot) => lot.status === 'purchasing')?.id
+  // A new card from a deal goes by default into the lot being bought, when there is only
+  // one: with several, the user picks it.
+  const buying = props.lots?.filter((lot) => lot.status === 'purchasing') ?? []
+  const buyingLot = buying.length === 1 ? buying[0]!.id : undefined
   return {
     lot_id: props.item?.lot_id ?? props.lotId ?? buyingLot,
     game: values.game ?? 'pokemon',
@@ -138,7 +140,10 @@ async function submit() {
 }
 
 const lotItems = computed(() =>
-  (props.lots ?? []).map((lot) => ({ value: lot.id, label: lot.label })),
+  (props.lots ?? []).map((lot) => ({
+    value: lot.id,
+    label: `${lot.label} · ${LOT_STATUS_LABELS[lot.status]}`,
+  })),
 )
 const gameItems = selectItems(GAME_LABELS)
 const sourceItems = selectItems(SOURCE_LABELS)
@@ -200,8 +205,34 @@ const sourceItems = selectItems(SOURCE_LABELS)
           <UFormField label="Lien de l’annonce" name="source_url" class="sm:col-span-2">
             <UInput v-model="state.source_url" type="url" class="w-full" />
           </UFormField>
-          <UFormField v-if="item && lotItems.length" label="Lot" name="lot_id">
-            <USelect v-model="state.lot_id" :items="lotItems" class="w-full" />
+          <UFormField
+            v-if="lots"
+            label="Lot"
+            name="lot_id"
+            required
+            :class="{ 'sm:col-span-2': !lotItems.length }"
+          >
+            <USelect
+              v-if="lotItems.length"
+              v-model="state.lot_id"
+              :items="lotItems"
+              placeholder="Choisir un lot"
+              class="w-full"
+            />
+            <div v-else class="space-y-1.5">
+              <p class="text-sm text-muted">
+                Aucun lot : créez d’abord le lot du colis, puis ajoutez-y la carte.
+              </p>
+              <UButton
+                to="/lots?nouveau=1"
+                icon="i-lucide-plus"
+                label="Créer un lot"
+                size="sm"
+                color="neutral"
+                variant="outline"
+                @click="open = false"
+              />
+            </div>
           </UFormField>
           <UFormField label="ID produit Cardmarket" name="cardmarket_product_id">
             <UInputNumber

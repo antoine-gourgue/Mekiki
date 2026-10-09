@@ -55,6 +55,21 @@ watch(open, (isOpen) => {
   })
 })
 
+// The frozen fee was computed for the recorded price and platform: once either changes, it is
+// emptied so the engine computes it again rather than keeping the old one.
+watch(
+  () => [state.platform, state.sale_price_cents, state.shipping_charged_cents] as const,
+  ([platform, price, shipping]) => {
+    const sale = props.item?.sale
+    if (!open.value || !sale) return
+    const recorded =
+      platform === sale.platform &&
+      price === sale.sale_price_cents &&
+      shipping === sale.shipping_charged_cents
+    if (!recorded) state.platform_fee_cents = null
+  },
+)
+
 function validate(form: SaleForm): FormError[] {
   const errors: FormError[] = []
   if (form.sale_price_cents == null)

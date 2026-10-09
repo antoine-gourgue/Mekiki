@@ -136,7 +136,7 @@ const gameItems = selectItems(GAME_LABELS)
   <UModal
     v-model:open="open"
     :title="card ? 'Modifier la carte suivie' : 'Suivre une carte'"
-    description="Le scanner cherche cette carte sur Mercari et Yahoo et calcule la marge de chaque annonce."
+    description="Le scanner cherche cette carte sur Mercari et Rakuma et calcule la marge de chaque annonce."
     :ui="{ content: 'sm:max-w-2xl', footer: 'justify-end' }"
   >
     <template #body>

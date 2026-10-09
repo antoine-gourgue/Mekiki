@@ -12,18 +12,43 @@ const product = ref<MarketPrice | null>(null)
 const photos = ref<ItemPhoto[]>([])
 const failure = ref<string | null>(null)
 
+const listingOpen = ref(false)
+const saleOpen = ref(false)
+const editOpen = ref(false)
+
+// The next card of the list may open while this one is still read: its answers are dropped,
+// so the buttons below never act on the previous card.
+let opened = 0
+
 async function load() {
+  const card = opened
   failure.value = null
   try {
-    item.value = await engine.getItem(props.id)
-    photos.value = [...item.value.photos]
-    const productId = item.value.cardmarket_product_id
-    product.value = productId ? await engine.getProduct(productId).catch(() => null) : null
+    const read = await engine.getItem(props.id)
+    const productId = read.cardmarket_product_id
+    const linked = productId ? await engine.getProduct(productId).catch(() => null) : null
+    if (card !== opened) return
+    item.value = read
+    photos.value = [...read.photos]
+    product.value = linked
   } catch (error) {
-    failure.value = engineErrorMessage(error)
+    if (card === opened) failure.value = engineErrorMessage(error)
   }
 }
-watch(() => props.id, load, { immediate: true })
+watch(
+  () => props.id,
+  () => {
+    opened += 1
+    item.value = null
+    product.value = null
+    photos.value = []
+    listingOpen.value = false
+    saleOpen.value = false
+    editOpen.value = false
+    void load()
+  },
+  { immediate: true },
+)
 
 // A change made here also shows in the page underneath (stock, lot).
 async function changed() {
@@ -45,10 +70,6 @@ const subtitle = computed(() => {
 
 // Projected margin while listed, actual margin once sold.
 const outcome = computed(() => item.value?.sale?.breakdown ?? item.value?.listing_projection)
-
-const listingOpen = ref(false)
-const saleOpen = ref(false)
-const editOpen = ref(false)
 </script>
 
 <template>
@@ -231,7 +252,7 @@ const editOpen = ref(false)
       />
       <template v-else>
         <UButton
-          label="Vendue"
+          label="Marquer vendue"
           color="neutral"
           variant="outline"
           size="xl"

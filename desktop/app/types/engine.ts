@@ -429,6 +429,9 @@ export interface CardmarketStatus {
   prices_date: string | null
   fetched_at: string | null
   last_error: string | null
+  /** Japanese cards whose number leads to their Cardmarket product (Pokémon only). */
+  indexed_cards: number
+  index_error: string | null
 }
 
 export interface SearchRequest {

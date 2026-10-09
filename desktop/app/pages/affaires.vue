@@ -44,6 +44,8 @@ const cardsById = computed(() => new Map((cards.value ?? []).map((card) => [card
 // Scan progress: polled quickly while a scan runs, then the deals are reloaded.
 const scan = ref<ScanStatus | null>(null)
 let scanTimer: ReturnType<typeof setTimeout> | undefined
+// Cleared on leaving the page, so a read still on its way does not start the loop again.
+let alive = true
 
 async function pollScan() {
   clearTimeout(scanTimer)
@@ -61,10 +63,15 @@ async function pollScan() {
   } catch {
     // The layout already reports an unreachable engine.
   }
+  if (!alive) return
+  clearTimeout(scanTimer)
   scanTimer = setTimeout(pollScan, scan.value?.running ? 2000 : 15000)
 }
 onMounted(pollScan)
-onBeforeUnmount(() => clearTimeout(scanTimer))
+onBeforeUnmount(() => {
+  alive = false
+  clearTimeout(scanTimer)
+})
 
 async function runScan() {
   try {
@@ -93,9 +100,11 @@ async function markAllSeen() {
   }
 }
 
-// "Bought" opens the card form pre-filled, to put it straight into a lot.
+// "Bought" opens the card form pre-filled, to put it straight into a lot; the deal is marked
+// bought once the card is saved, not when the form is merely opened.
 const buying = ref(false)
 const purchase = ref<Partial<ItemCreate> | null>(null)
+const buyingDeal = ref<Deal | null>(null)
 
 function bought(deal: Deal) {
   const card: TrackedCard | undefined = cardsById.value.get(deal.tracked_card_id)
@@ -114,8 +123,15 @@ function bought(deal: Deal) {
       : (settings.value?.scanner.domestic_shipping_jpy ?? 0),
     cardmarket_product_id: card?.cardmarket_product_id ?? null,
   }
+  buyingDeal.value = deal
   buying.value = true
-  void setTriage(deal, 'bought')
+}
+
+function purchaseSaved() {
+  const deal = buyingDeal.value
+  // "Ajouter et continuer" saves other cards after this one: only the first is the deal.
+  buyingDeal.value = null
+  if (deal) void setTriage(deal, 'bought')
 }
 
 function toFavorite(deal: Deal) {
@@ -166,6 +182,8 @@ function menu(deal: Deal): DropdownMenuItem[] {
 }
 
 const blockSeller = useBlockSeller()
+// Blocked from a listing's side panel: its listings leave the deals.
+drawer.onSellerBlocked(() => refresh())
 
 const newCount = computed(() => (deals.value ?? []).filter((d) => d.triage === 'new').length)
 
@@ -178,7 +196,10 @@ const view = computed<View>({
   },
 })
 const viewItems = computed(() => [
-  { value: 'good' as View, label: `ROI ≥ ${Math.round(targetRoi.value * 100)} %` },
+  {
+    value: 'good' as View,
+    label: `ROI ≥ ${formatPercent(settings.value?.scanner.min_roi_percent ?? 30)}`,
+  },
   { value: 'all' as View, label: 'Toutes' },
   { value: 'dismissed' as View, label: 'Ignorées' },
 ])
@@ -323,7 +344,12 @@ const viewItems = computed(() => [
         />
       </div>
 
-      <ItemFormModal v-model:open="buying" :initial="purchase" :lots="lots ?? []" />
+      <ItemFormModal
+        v-model:open="buying"
+        :initial="purchase"
+        :lots="lots ?? []"
+        @saved="purchaseSaved"
+      />
     </template>
   </UDashboardPanel>
 </template>

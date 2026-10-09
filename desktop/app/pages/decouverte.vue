@@ -53,18 +53,30 @@ function prefill(current: DiscoveryRun | null) {
   })
 }
 
+// Cleared on leaving the page, so a read still on its way does not start the loop again.
+let alive = true
+// The layout's status dot already says when the engine is down: one toast is enough.
+let pollFailed = false
+
 async function poll() {
   clearTimeout(timer)
   try {
     run.value = await engine.discovery()
     prefill(run.value)
+    pollFailed = false
   } catch (error) {
-    showError(error)
+    if (!pollFailed) showError(error)
+    pollFailed = true
   }
+  if (!alive) return
+  clearTimeout(timer)
   if (run.value?.status === 'running') timer = setTimeout(poll, 1500)
 }
 onMounted(poll)
-onBeforeUnmount(() => clearTimeout(timer))
+onBeforeUnmount(() => {
+  alive = false
+  clearTimeout(timer)
+})
 
 const running = computed(() => run.value?.status === 'running')
 
@@ -175,6 +187,18 @@ const BLOCKED_BY_HAND = 'bloqué par vous après un refus de Neokyo'
 /** Neokyo refused this seller: the pick moves to the blocked ones; a new search recomposes. */
 async function blockPickSeller(pick: DiscoveryPick) {
   if (!(await blockSeller(pick, { sellerId: pick.seller_id, reason: BLOCKED_BY_HAND }))) return
+  moveToBlocked(pick)
+}
+
+// Blocked from the listing's side panel: the same as from the card's menu.
+drawer.onSellerBlocked((listing) => {
+  const same = (p: DiscoveryPick) =>
+    p.source === listing.source && p.external_id === listing.external_id
+  const pick = run.value?.picks.find(same) ?? run.value?.alternatives.find(same)
+  if (pick) moveToBlocked({ ...pick, seller_id: pick.seller_id ?? listing.seller_id })
+})
+
+function moveToBlocked(pick: DiscoveryPick) {
   const current = run.value
   if (!current) return
   const other = (p: DiscoveryPick) =>

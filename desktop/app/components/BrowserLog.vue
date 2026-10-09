@@ -17,6 +17,8 @@ const LEAD_MS = 3000
 const state = ref<BrowserActivity | null>(null)
 const since = ref<string | null>(null)
 let timer: ReturnType<typeof setTimeout> | undefined
+// Cleared on unmount, so a read still on its way does not start the loop again.
+let alive = true
 
 async function poll() {
   try {
@@ -24,6 +26,9 @@ async function poll() {
   } catch {
     // A missed read is replaced by the next one.
   }
+  if (!alive) return
+  // A read started by the watcher may overlap one already on its way: one loop only.
+  clearTimeout(timer)
   if (props.active) timer = setTimeout(poll, POLL_MS)
 }
 
@@ -42,7 +47,10 @@ watch(
   },
   { immediate: true },
 )
-onBeforeUnmount(() => clearTimeout(timer))
+onBeforeUnmount(() => {
+  alive = false
+  clearTimeout(timer)
+})
 
 const lines = computed(() =>
   since.value ? (state.value?.log ?? []).filter((line) => line.at >= since.value!) : [],
