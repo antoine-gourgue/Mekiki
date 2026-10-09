@@ -1015,6 +1015,8 @@ export interface Backup {
   name: string
   created_at: string
   size_bytes: number
+  /** Each kind keeps its own number of copies. */
+  kind: 'daily' | 'manual' | 'before-restore'
 }
 
 /** The daily copies of the database, newest first. */

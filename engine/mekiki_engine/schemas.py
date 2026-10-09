@@ -1240,6 +1240,13 @@ class BackupOut(BaseModel):
     name: str
     created_at: str
     size_bytes: int
+    # "daily", "manual" or "before-restore": each kind keeps its own number of copies.
+    kind: Literal["daily", "manual", "before-restore"] = "daily"
+
+
+class RestoreRequest(BaseModel):
+    # The account's password, asked again: a restore takes every account back in time.
+    password: Annotated[str, Field(min_length=1, max_length=200)]
 
 
 class BackupsOut(BaseModel):

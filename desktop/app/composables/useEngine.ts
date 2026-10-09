@@ -218,9 +218,10 @@ export function useEngine() {
     backups: () => request<Backups>('/backups'),
     createBackup: () => request<Backup>('/backups', { method: 'POST', timeout: 60_000 }),
     /** Puts a copy back; returns the copy of the database taken just before. */
-    restoreBackup: (name: string) =>
+    restoreBackup: (name: string, password: string) =>
       request<Backup>(`/backups/${encodeURIComponent(name)}/restore`, {
         method: 'POST',
+        body: { password },
         timeout: 60_000,
       }),
     browserStatus: () => request<BrowserStatus>('/browser/status'),
