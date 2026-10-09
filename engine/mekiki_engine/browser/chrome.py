@@ -95,7 +95,9 @@ class Tab:
         return result.get("result", {}).get("value")
 
     def navigate(self, url: str, *, timeout: float = COMMAND_TIMEOUT_S) -> None:
-        self.call("Page.navigate", url=url)
+        # Offline or refused, Chrome shows its own error page, which would read as an empty one.
+        if error := self.call("Page.navigate", url=url).get("errorText"):
+            raise ChromeError(f"page injoignable ({error})")
         # Page.navigate returns once the request is sent; the old document may still answer.
         time.sleep(0.5)
         self.wait_for("document.readyState === 'complete'", timeout=timeout)

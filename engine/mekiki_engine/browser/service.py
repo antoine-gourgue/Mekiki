@@ -219,9 +219,10 @@ class Browsers:
                     progress=lambda step: self._doing(user_id, step),
                     pause=lambda: time.sleep(random.uniform(*self.pause_s)),
                 )
+        # Nothing is kept of a failed read: it would pass for a card without sales.
         except ChromeError as error:
             self._note(user_id, f"eBay : {error}")
-            if isinstance(error, markets.BotChallenge):
+            if isinstance(error, markets.BotChallenge | markets.UnexpectedPage):
                 self.session(user_id).set_visible(True)
             if isinstance(error, markets.SignInRequired):
                 self._remember_connection(user_id, "ebay", False)

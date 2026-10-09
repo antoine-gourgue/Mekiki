@@ -1,3 +1,4 @@
+import json
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import date
@@ -7,6 +8,7 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
+from mekiki_engine.browser import chrome as chrome_module
 from mekiki_engine.browser import markets
 from mekiki_engine.browser.chrome import ChromeError
 from mekiki_engine.browser.markets import (
@@ -70,11 +72,17 @@ class FakeTab:
         self.challenge = False
         # eBay sends signed-out visitors of its sold searches to its sign-in page.
         self.signed_out = False
+        # Where eBay sends a search instead, e.g. its /splashui/ challenge.
+        self.redirect: str | None = None
+        # eBay says the search found nothing.
+        self.no_results = False
         self.visited: list[str] = []
 
     def navigate(self, url: str, *, timeout: float = 30) -> None:
         if self.signed_out and "ebay.fr/sch" in url:
             url = "https://signin.ebay.fr/ws/eBayISAPI.dll?SignIn"
+        elif self.redirect and "ebay.fr/sch" in url:
+            url = self.redirect
         self.visited.append(url)
 
     def url(self) -> str:
@@ -84,6 +92,10 @@ class FakeTab:
         if condition in markets.CONNECTED_CHECKS.values():
             if not self.connected:
                 raise ChromeError("pas connecté")
+            return True
+        if condition == markets.EBAY_RESULTS_SHOWN:
+            if not (self._current() or self.no_results):
+                raise ChromeError("la page n'a pas affiché ce qui était attendu à temps")
             return True
         return bool(self._current())
 
@@ -402,6 +414,100 @@ def test_a_bot_check_is_left_to_the_user(client: TestClient, chrome: FakeSession
     assert "vérification anti-robot" in read["error"]
     assert chrome.visible is True
     assert client.get("/browser/activity").json()["activity"] is None
+
+
+SOLD = {"query": "Dracaufeu ex 201/165", "card_number": "201/165"}
+
+
+def test_ebay_s_own_challenge_page_is_left_to_the_user(
+    client: TestClient, chrome: FakeSession
+) -> None:
+    chrome.tab.redirect = "https://www.ebay.fr/splashui/challenge?ap=1&appName=orch"
+
+    read = client.post("/browser/ebay/sold", json=SOLD).json()
+
+    assert "vérification anti-robot" in read["error"]
+    assert chrome.visible is True
+    assert client.get("/browser/status").json()["connections"] == {}
+
+
+def test_an_unknown_page_is_shown_to_the_user_and_not_kept(
+    client: TestClient, chrome: FakeSession
+) -> None:
+    chrome.tab.redirect = "https://www.ebay.fr/n/error"
+
+    read = client.post("/browser/ebay/sold", json=SOLD).json()
+
+    assert "page inattendue" in read["error"]
+    assert chrome.visible is True
+    assert client.post("/browser/ebay/sold/cached", json=SOLD).json() is None
+
+
+def test_results_that_never_show_are_an_error_not_a_card_without_sales(
+    client: TestClient, chrome: FakeSession
+) -> None:
+    chrome.tab.pages["ebay"] = []
+
+    failed = client.post("/browser/ebay/sold", json=SOLD).json()
+    chrome.tab.pages["ebay"] = FRENCH_SALES
+    read = client.post("/browser/ebay/sold", json=SOLD).json()
+
+    assert "n'a pas affiché les résultats" in failed["error"]
+    assert failed["listings"] == []
+    assert read["error"] is None
+    assert read["relevant_count"] == 2
+    # The failed read was not kept: the second one loaded the page again.
+    assert chrome.pages_opened == 2
+
+
+def test_ebay_s_word_that_nothing_sold_is_kept(client: TestClient, chrome: FakeSession) -> None:
+    chrome.tab.pages["ebay"] = []
+    chrome.tab.no_results = True
+
+    read = client.post("/browser/ebay/sold", json=SOLD).json()
+    again = client.post("/browser/ebay/sold", json=SOLD).json()
+
+    assert read["error"] is None
+    assert (read["relevant_count"], read["median_cents"]) == (0, None)
+    assert again == read
+    assert chrome.pages_opened == 1
+    assert client.get("/browser/status").json()["connections"] == {"ebay": True}
+
+
+class FakeSocket:
+    """A DevTools websocket: answers each command with ``results[method]``, after the events
+    queued for it."""
+
+    def __init__(self, results: dict[str, dict[str, Any]] | None = None) -> None:
+        self.results = results or {}
+        self.events: list[dict[str, Any]] = []
+        self.sent: list[dict[str, Any]] = []
+        self._answers: list[str] = []
+
+    def send(self, data: str) -> None:
+        message = json.loads(data)
+        self.sent.append(message)
+        if message["method"] == "Page.handleJavaScriptDialog":
+            return
+        self._answers += [json.dumps(event) for event in self.events]
+        self.events = []
+        result = self.results.get(message["method"], {})
+        self._answers.append(json.dumps({"id": message["id"], "result": result}))
+
+    def recv(self) -> str:
+        return self._answers.pop(0)
+
+    def close(self) -> None:
+        pass
+
+
+def test_a_page_chrome_cannot_load_is_an_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    socket = FakeSocket({"Page.navigate": {"frameId": "1", "errorText": "net::ERR_TIMED_OUT"}})
+    monkeypatch.setattr(chrome_module.websocket, "create_connection", lambda *_a, **_k: socket)
+    tab = chrome_module.Tab("ws://127.0.0.1:9222/devtools/page/1")
+
+    with pytest.raises(ChromeError, match="ERR_TIMED_OUT"):
+        tab.navigate("https://www.ebay.fr/sch/i.html?_nkw=Pikachu")
 
 
 @pytest.mark.parametrize(

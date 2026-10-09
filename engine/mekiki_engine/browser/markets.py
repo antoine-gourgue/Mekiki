@@ -15,7 +15,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from typing import Any, Literal
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit
 
 from mekiki_engine.browser.chrome import ChromeError, Tab
 from mekiki_engine.resale.links import EBAY_CARDS_CATEGORY
@@ -65,16 +65,33 @@ EBAY_SOLD_ITEMS = r"""
 
 # French prices group thousands with narrow or plain no-break spaces: "1\u202f200,00 €".
 _SPACES = r"\s" + chr(0x202F) + chr(0x00A0)
-# Cloudflare's and DataDome's checks, which put a challenge page or frame in front.
+# Cloudflare's and DataDome's checks, which put a challenge page or frame in front, and
+# eBay's own, on its /splashui/ pages ("Security Measure").
 CHALLENGE_CHECK = (
-    "(() => /^(just a moment|un instant)/i.test(document.title) || "
+    "(() => /^(just a moment|un instant|security measure|mesure de sécurité|pardon our "
+    "interruption)/i.test(document.title) || location.pathname.startsWith('/splashui/') || "
     '!!document.querySelector(\'iframe[src*="challenges.cloudflare.com"], '
     'iframe[src*="captcha-delivery.com"], #challenge-form\'))()'
 )
+# eBay's answer to a search without any result: its "no match" block, or a count of 0.
+EBAY_NO_RESULTS = (
+    "(() => !!document.querySelector('.srp-save-null-search, .s-message--null-search') || "
+    "/^0\\s+r[ée]sultat/i.test((document.querySelector('.srp-controls__count-heading')"
+    "?.innerText ?? '').trim()))()"
+)
+EBAY_RESULTS_SHOWN = f"({EBAY_SOLD_ITEMS}).length > 0 || {EBAY_NO_RESULTS}"
 
 
 class BotChallenge(ChromeError):
     """A site wants the user to prove they are human before going on."""
+
+
+class UnexpectedPage(ChromeError):
+    """The site showed a page Mekiki does not know: the user looks at it in the window."""
+
+
+class ResultsMissing(ChromeError):
+    """The search page never showed its results, nor that there were none."""
 
 
 _EUROS = re.compile(rf"(\d[\d{_SPACES}.]*,\d{{2}}|\d+)\s*(?:€|EUR)")
@@ -212,30 +229,51 @@ def read_listings(
     pause: Callable[[], None] = lambda: None,
 ) -> list[dict[str, Any]]:
     """The raw sold listings of the searches, as the pages show them; ``pause`` runs between
-    two searches."""
+    two searches.
+
+    Every search must show its results or eBay's word that there are none: anything else
+    raises, so that a page that failed is never taken for a card without sales.
+    """
     found: dict[str, dict[str, Any]] = {}
     for index, query in enumerate(queries[:MAX_QUERIES]):
         if index:
             pause()
         progress(f"eBay : ventes réussies « {query} »")
         tab.navigate(search_url(query))
-        if "signin" in tab.url():
-            raise SignInRequired("connectez-vous à eBay dans la fenêtre Chrome de Mekiki")
-        check_bot_challenge(tab)
+        check_search_page(tab)
         # Results render after the page itself: wait for them, or for an empty search.
         try:
-            tab.wait_for(f"({EBAY_SOLD_ITEMS}).length > 0", timeout=10)
-        except ChromeError:
-            continue
+            tab.wait_for(EBAY_RESULTS_SHOWN, timeout=10)
+        except ChromeError as error:
+            # A challenge can also come up once the page is there.
+            check_search_page(tab)
+            raise ResultsMissing(
+                "eBay n'a pas affiché les résultats de la recherche : relancez la lecture"
+            ) from error
         for item in tab.evaluate(EBAY_SOLD_ITEMS) or []:
             found.setdefault(str(item.get("id")), item)
     return list(found.values())
 
 
+def check_search_page(tab: Tab) -> None:
+    """Stops unless the window shows eBay's search page: its sign-in page, a challenge or
+    any other page is left to the user."""
+    url = tab.url()
+    if "signin" in url:
+        raise SignInRequired("connectez-vous à eBay dans la fenêtre Chrome de Mekiki")
+    check_bot_challenge(tab)
+    parts = urlsplit(url)
+    if not (parts.hostname or "").endswith("ebay.fr") or not parts.path.startswith("/sch/"):
+        raise UnexpectedPage(
+            "eBay a ouvert une page inattendue : regardez la fenêtre Chrome de Mekiki, "
+            "puis relancez"
+        )
+
+
 def check_bot_challenge(tab: Tab) -> None:
     """Stops when the site asks to prove a human is there: the user answers it in the
     window, Mekiki never does."""
-    if tab.evaluate(CHALLENGE_CHECK):
+    if "/splashui/" in tab.url() or tab.evaluate(CHALLENGE_CHECK):
         raise BotChallenge(
             "le site demande une vérification anti-robot : passez-la dans la fenêtre Chrome "
             "de Mekiki, puis relancez"
