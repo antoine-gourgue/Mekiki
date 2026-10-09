@@ -366,6 +366,13 @@ class LotDetail(LotOut):
     items: list[ItemOut]
 
 
+class PricePoint(BaseModel):
+    """A card's resale price on Cardmarket, one day."""
+
+    date: str
+    cents: int
+
+
 class MonthlySales(BaseModel):
     month: str
     sold_count: int
@@ -388,6 +395,13 @@ class Dashboard(BaseModel):
     margin_cents: int
     roi: Rate | None
     monthly: list[MonthlySales]
+    # Unsold cards received more than ``DORMANT_DAYS`` ago, and what they cost.
+    dormant_count: int = 0
+    dormant_cost_cents: int = 0
+    # Days from receiving a card to selling it, on average over the period's sales.
+    average_days_to_sell: int | None = None
+    # Sales whose parcel has not left yet, whatever their date.
+    to_ship_count: int = 0
 
 
 class BooksPeriod(BaseModel):

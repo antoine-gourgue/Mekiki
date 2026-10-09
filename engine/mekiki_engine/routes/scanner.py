@@ -32,6 +32,7 @@ from mekiki_engine.schemas import (
     FavoriteUpdate,
     ListingAvailability,
     MarketPriceOut,
+    PricePoint,
     ScanStatus,
     SearchRequest,
     SearchResponse,
@@ -115,6 +116,11 @@ def search_products(
 @router.get("/cardmarket/products/{id_product}")
 def read_product(id_product: int, session: SessionDep, _user: UserDep) -> MarketPriceOut:
     return service.product_detail(session, id_product)
+
+
+@router.get("/cardmarket/products/{id_product}/history")
+def product_history(id_product: int, session: SessionDep, _user: UserDep) -> list[PricePoint]:
+    return service.price_history(session, id_product)
 
 
 @router.get("/cardmarket/status")

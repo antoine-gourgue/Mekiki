@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { MarketPrice } from '~/types/engine'
+import type { MarketPrice, PricePoint } from '~/types/engine'
 
 /** Side panel of a Cardmarket product: its price guide and European resale prices. */
 const props = defineProps<{ id: number }>()
@@ -45,6 +45,26 @@ const prices = computed(() => {
 })
 
 const trackOpen = ref(false)
+
+// Recorded each day for the cards tracked or in stock (see the engine's price import).
+const history = ref<PricePoint[]>([])
+watch(
+  () => props.id,
+  async (id) => {
+    history.value = []
+    try {
+      history.value = await engine.productHistory(id)
+    } catch {
+      // The history only adds to the panel: without it, the prices above remain.
+    }
+  },
+  { immediate: true },
+)
+const change = computed(() => {
+  const first = history.value[0]?.cents
+  const last = history.value.at(-1)?.cents
+  return first && last ? (last - first) / first : null
+})
 </script>
 
 <template>
@@ -111,6 +131,27 @@ const trackOpen = ref(false)
           </div>
           <p v-if="product.prices_date" class="text-xs text-dimmed">
             Cotes du {{ formatDate(product.prices_date) }}, toutes langues et tous états confondus.
+          </p>
+        </section>
+
+        <section class="space-y-2.5">
+          <div class="flex items-baseline justify-between gap-3">
+            <h3 class="text-xs font-semibold tracking-[0.12em] text-dimmed uppercase">
+              Évolution de la cote
+            </h3>
+            <span
+              v-if="change != null && history.length > 1"
+              class="text-xs font-semibold tabular-nums"
+              :class="signClass(change)"
+            >
+              {{ change > 0 ? '+' : '' }}{{ formatRatio(change) }} depuis le
+              {{ formatDate(history[0]?.date) }}
+            </span>
+          </div>
+          <PriceHistoryChart v-if="history.length > 1" :points="history" />
+          <p v-else class="text-sm text-muted">
+            Mekiki relève la cote chaque jour pour les cartes suivies et celles de votre stock :
+            suivez cette carte pour voir son évolution.
           </p>
         </section>
       </template>

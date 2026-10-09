@@ -243,6 +243,19 @@ export interface Dashboard {
   margin_cents: number
   roi: number | null
   monthly: MonthlySales[]
+  /** Unsold cards received more than 60 days ago, and what they cost. */
+  dormant_count: number
+  dormant_cost_cents: number
+  /** Days from receiving a card to selling it, on average over the period's sales. */
+  average_days_to_sell: number | null
+  /** Sales whose parcel has not left yet. */
+  to_ship_count: number
+}
+
+/** A card's resale price on Cardmarket, one day. */
+export interface PricePoint {
+  date: string
+  cents: number
 }
 
 export interface SimulationRequest {

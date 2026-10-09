@@ -201,6 +201,32 @@ const TONE_CLASSES: Record<Todo['tone'], string> = {
           />
         </div>
 
+        <div class="grid gap-3.5 sm:grid-cols-3">
+          <StatTile
+            label="Cartes qui dorment"
+            icon="i-lucide-moon"
+            :value="String(data.dormant_count)"
+            :hint="
+              data.dormant_count
+                ? `${formatCents(data.dormant_cost_cents)} immobilisés, en stock depuis plus de 60 jours`
+                : 'aucune carte en stock depuis plus de 60 jours'
+            "
+          />
+          <StatTile
+            label="Délai moyen de vente"
+            icon="i-lucide-timer"
+            :value="data.average_days_to_sell == null ? '—' : `${data.average_days_to_sell} j`"
+            hint="de la réception du colis à la vente"
+          />
+          <StatTile
+            label="À expédier"
+            icon="i-lucide-truck"
+            :value="String(data.to_ship_count)"
+            :hint="data.to_ship_count ? 'ventes dont le colis n’est pas parti' : 'tout est parti'"
+            :value-class="data.to_ship_count ? 'text-warning' : undefined"
+          />
+        </div>
+
         <div class="flex flex-wrap gap-3.5">
           <UCard class="min-w-0 flex-[2_1_520px]" :ui="{ body: 'sm:p-5' }">
             <div class="mb-3 flex items-baseline justify-between gap-3">

@@ -290,6 +290,10 @@ def inventory(
     return sorted(items, key=lambda item: item.id, reverse=True)
 
 
+# A card unsold this many days after its parcel arrived sleeps: its money is stuck.
+DORMANT_DAYS = 60
+
+
 def dashboard(
     session: Session,
     user_id: int,
@@ -302,13 +306,22 @@ def dashboard(
     counts = dict.fromkeys(ItemStatus, 0)
     stock_cost = listed_price = listed_margin = 0
     revenue = net = cost_of_sold = 0
+    dormant_count = dormant_cost = to_ship = 0
+    days_to_sell: list[int] = []
     monthly: dict[str, MonthlySales] = {}
+    today = date.today()
 
     for item, landed in costed_items(session, user_id, settings):
         status = item_status(item)
+        received = date.fromisoformat(item.lot.received_on) if item.lot.received_on else None
+        if item.sale is not None and item.sale.shipped_on is None:
+            to_ship += 1
         if item.sale is None:
             counts[status] += 1
             stock_cost += landed.total_cents
+            if received is not None and (today - received).days > DORMANT_DAYS:
+                dormant_count += 1
+                dormant_cost += landed.total_cents
             if status is ItemStatus.LISTED and item.listing_price_cents is not None:
                 projection = project_sale(
                     settings, SalePlatform(item.listing_platform), item.listing_price_cents
@@ -322,6 +335,8 @@ def dashboard(
             continue
         sale = _recorded_sale(item.sale)
         counts[status] += 1
+        if received is not None:
+            days_to_sell.append(max(0, (sold_on - received).days))
         revenue += sale.revenue_cents
         net += sale.net_cents
         cost_of_sold += landed.total_cents
@@ -350,6 +365,10 @@ def dashboard(
         margin_cents=net - cost_of_sold,
         roi=roi(net - cost_of_sold, cost_of_sold),
         monthly=[monthly[key] for key in sorted(monthly)],
+        dormant_count=dormant_count,
+        dormant_cost_cents=dormant_cost,
+        average_days_to_sell=round(sum(days_to_sell) / len(days_to_sell)) if days_to_sell else None,
+        to_ship_count=to_ship,
     )
 
 

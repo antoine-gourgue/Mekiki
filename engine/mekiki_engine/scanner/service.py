@@ -11,7 +11,13 @@ from sqlalchemy.orm import Session, selectinload
 
 from mekiki_engine.costing.sale import roi
 from mekiki_engine.domain import Game, ListingCondition, ListingTriage, SourcePlatform
-from mekiki_engine.models import CardIndexEntry, CardmarketProduct, Listing, TrackedCard
+from mekiki_engine.models import (
+    CardIndexEntry,
+    CardmarketPriceHistory,
+    CardmarketProduct,
+    Listing,
+    TrackedCard,
+)
 from mekiki_engine.scanner import links, names, tracking
 from mekiki_engine.scanner.identify import identify
 from mekiki_engine.scanner.matching import build_rule, match_title, split_keywords
@@ -30,6 +36,7 @@ from mekiki_engine.schemas import (
     DealOut,
     LandedCostOut,
     MarketPriceOut,
+    PricePoint,
     SaleBreakdownOut,
     TrackedCardCreate,
     TrackedCardFields,
@@ -134,6 +141,29 @@ def product_detail(session: Session, id_product: int) -> MarketPriceOut:
         raise NotFoundError(f"product {id_product} not found")
     japanese = japanese_printings(session, Game(product.game), [product])
     return market_price_out(product, japanese=bool(japanese))
+
+
+def price_history(session: Session, id_product: int) -> list[PricePoint]:
+    """The resale price of each day recorded, oldest first (see cardmarket.import_prices)."""
+    rows = session.scalars(
+        select(CardmarketPriceHistory)
+        .where(CardmarketPriceHistory.id_product == id_product)
+        .order_by(CardmarketPriceHistory.price_date)
+    )
+    points = []
+    for row in rows:
+        # The same order as the resale price itself: avg30 first, never the lowest offer.
+        cents = next(
+            (
+                value
+                for value in (row.avg30_cents, row.avg7_cents, row.avg_cents, row.avg1_cents)
+                if value is not None
+            ),
+            row.trend_cents,
+        )
+        if cents is not None:
+            points.append(PricePoint(date=row.price_date, cents=cents))
+    return points
 
 
 def list_tracked_cards(

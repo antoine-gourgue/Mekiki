@@ -259,3 +259,34 @@ def test_a_sale_keeps_its_parcel(client: TestClient) -> None:
 
     assert (to_ship["tracking_number"], to_ship["shipped_on"]) == (None, None)
     assert (shipped["tracking_number"], shipped["shipped_on"]) == ("6A12345678901", "2026-10-06")
+
+
+def test_dashboard_counts_sleeping_cards_and_parcels_to_ship(client: TestClient) -> None:
+    lot = create_reference_lot(client)
+    client.patch(f"/lots/{lot['id']}", json={"status": "received", "received_on": "2026-01-01"})
+    first = lot["items"][0]["id"]
+    sale = {"platform": "ebay", "sold_on": "2026-01-21", "sale_price_cents": 9000}
+    client.put(f"/items/{first}/sale", json=sale)
+
+    dashboard = client.get("/dashboard").json()
+
+    # Nine unsold cards of a parcel received months ago, and one sale still to ship.
+    assert dashboard["dormant_count"] == 9
+    assert (
+        dashboard["dormant_cost_cents"]
+        == lot["landed_total_cents"] - lot["items"][0]["landed_cost"]["total_cents"]
+    )
+    assert dashboard["average_days_to_sell"] == 20
+    assert dashboard["to_ship_count"] == 1
+
+
+def test_stock_cards_get_a_price_history(client: TestClient) -> None:
+    lot = client.post("/lots", json={"label": "Colis"}).json()
+    card = {**CARD, "cardmarket_product_id": 719448}
+    client.post(f"/lots/{lot['id']}/items", json=card)
+
+    client.post("/cardmarket/refresh", json={})
+
+    history = client.get("/cardmarket/products/719448/history").json()
+    assert history == [{"date": "2026-10-07", "cents": 9000}]
+    assert client.get("/cardmarket/products/719654/history").json() == []

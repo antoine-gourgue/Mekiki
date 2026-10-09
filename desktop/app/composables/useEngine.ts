@@ -40,6 +40,7 @@ import type {
   LotSummary,
   LotUpdate,
   MarketPrice,
+  PricePoint,
   PublishJob,
   PublishRequest,
   RegisterRequest,
@@ -160,6 +161,8 @@ export function useEngine() {
     searchProducts: (game: Game, q: string) =>
       request<MarketPrice[]>('/cardmarket/products', { query: { game, q } }),
     getProduct: (id: number) => request<MarketPrice>(`/cardmarket/products/${id}`),
+    /** The resale price recorded each day for a card tracked or in stock. */
+    productHistory: (id: number) => request<PricePoint[]>(`/cardmarket/products/${id}/history`),
     cardmarketStatus: () => request<CardmarketStatus[]>('/cardmarket/status'),
     refreshCardmarket: () =>
       request<CardmarketStatus[]>('/cardmarket/refresh', { method: 'POST', body: {} }),

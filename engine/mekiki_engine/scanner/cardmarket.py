@@ -24,6 +24,7 @@ from mekiki_engine.domain import Game
 from mekiki_engine.models import (
     CardmarketPriceHistory,
     CardmarketProduct,
+    Item,
     SettingRow,
     TrackedCard,
 )
@@ -138,7 +139,8 @@ def import_catalog(
 
 
 def import_prices(session: Session, game: Game, guide: dict[str, Any]) -> int:
-    """Stores the latest prices of the known singles and today's history of tracked ones."""
+    """Stores the latest prices of the known singles, and today's prices of the cards tracked
+    or ever in stock, whose history the app charts."""
     prices_date = guide.get("createdAt")
     known = set(
         session.scalars(
@@ -157,11 +159,15 @@ def import_prices(session: Session, game: Game, guide: dict[str, Any]) -> int:
     if rows:
         session.execute(update(CardmarketProduct), rows)
 
-    tracked = set(
+    followed = set(
         session.scalars(
             select(TrackedCard.cardmarket_product_id).where(
                 TrackedCard.cardmarket_product_id.is_not(None)
             )
+        )
+    ) | set(
+        session.scalars(
+            select(Item.cardmarket_product_id).where(Item.cardmarket_product_id.is_not(None))
         )
     )
     day = (prices_date or "")[:10]
@@ -172,7 +178,7 @@ def import_prices(session: Session, game: Game, guide: dict[str, Any]) -> int:
             **{f"{f}_cents": row[f"{f}_cents"] for f in ("avg", "trend", "avg1", "avg7", "avg30")},
         }
         for row in rows
-        if row["id_product"] in tracked
+        if row["id_product"] in followed
     ]
     if history and day:
         statement = insert(CardmarketPriceHistory)
