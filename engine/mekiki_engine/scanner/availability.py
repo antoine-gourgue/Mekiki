@@ -40,9 +40,13 @@ _RAKUMA_DESCRIPTION = re.compile(
 )
 _RAKUMA_PROFILE = re.compile(r'class="shop__profile__line-limited"[^>]*>(.*?)</div>', re.DOTALL)
 # The seller's shop, whose id stays the same across their listings.
-_RAKUMA_SHOP = re.compile(
-    r'class="shopinfo-wrap shop_link[^"]*"\s+href="https://fril\.jp/shop/([0-9a-f]+)"'
-)
+# The link to the seller's shop, whatever the order of its attributes; the shop id stays the
+# same across their listings.
+_RAKUMA_SHOP_LINK = re.compile(r"<a\b[^>]*\bshop_link\b[^>]*>", re.DOTALL)
+_RAKUMA_SHOP = re.compile(r'href="https://fril\.jp/shop/([0-9a-f]+)"')
+# Rakuma's availability values: anything else is a change of the page, not a sale.
+_RAKUMA_IN_STOCK = frozenset({"instock"})
+_RAKUMA_SOLD = frozenset({"outofstock", "soldout", "discontinued"})
 # Rakuma's ratings: sun (good), cloud (fair) and rain (bad).
 _RAKUMA_RATINGS = {
     kind: re.compile(rf'icon_review_{kind}"></i>\s*<span>(\d+)</span>')
@@ -92,7 +96,8 @@ def _mercari(client: PoliteClient, item_id: str) -> ListingAvailability:
         return ListingAvailability(available=False, status="supprimée", checked_at=_now())
     data = response.json().get("data") or {}
     status = str(data.get("status") or "")
-    available, label = MERCARI_STATUSES.get(status, (False, f"plus en vente ({status})"))
+    # An unknown status is a change of Mercari's API, not a sale: the listing stays a candidate.
+    available, label = MERCARI_STATUSES.get(status, (None, f"état inconnu sur Mercari ({status})"))
     condition = (data.get("item_condition") or {}).get("id")
     price = data.get("price")
     seller = (data.get("seller") or {}).get("id")
@@ -117,12 +122,16 @@ def _rakuma(client: PoliteClient, item_id: str) -> ListingAvailability:
     availability = _RAKUMA_AVAILABILITY.search(page)
     if availability is None:
         return _unknown("page Rakuma illisible")
-    available = availability[1].strip().lower() == "in stock"
+    value = re.sub(r"[\s_-]", "", availability[1].lower())
+    if value not in _RAKUMA_IN_STOCK | _RAKUMA_SOLD:
+        return _unknown(f"état inconnu sur Rakuma ({availability[1]})")
+    available = value in _RAKUMA_IN_STOCK
     condition = _RAKUMA_CONDITION.search(page)
     price = _RAKUMA_PRICE.search(page)
     text = _page_text(_RAKUMA_DESCRIPTION.search(page))
     profile = _page_text(_RAKUMA_PROFILE.search(page))
-    shop = _RAKUMA_SHOP.search(page)
+    link = _RAKUMA_SHOP_LINK.search(page)
+    shop = _RAKUMA_SHOP.search(link[0]) if link else None
     ratings = {
         kind: int(found[1]) if (found := pattern.search(page)) else 0
         for kind, pattern in _RAKUMA_RATINGS.items()

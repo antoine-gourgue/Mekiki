@@ -148,3 +148,29 @@ def test_the_trainer_card_named_after_a_ball_is_no_mirror(client: TestClient) ->
 
     assert resolution is not None
     assert (resolution.label, resolution.mirror) == ("SV4a 349/190 · UR", None)
+
+
+def test_a_card_without_set_code_or_name_needs_its_set_named(client: TestClient) -> None:
+    catalog = resolver(client)
+    session = catalog.session
+    # A trainer linked through TCGplayer: no Japanese name in the index.
+    session.add(CardmarketProduct(id_product=91, game="pokemon", name="Boss", avg30_cents=900))
+    session.add(
+        CardIndexEntry(
+            game="pokemon",
+            set_code="s6a",
+            set_name="イーブイヒーローズ",
+            number=70,
+            id_product=91,
+            set_total=69,
+            rarity="SR",
+            name=None,
+        )
+    )
+    session.commit()
+
+    unnamed = catalog.resolve(identify("ミュウツーEX SR 070/069 XY", Game.POKEMON))
+    named_set = catalog.resolve(identify("ボスの指令 SR 070/069 イーブイヒーローズ", Game.POKEMON))
+
+    assert unnamed is None
+    assert named_set is not None and named_set.confidence == "medium"

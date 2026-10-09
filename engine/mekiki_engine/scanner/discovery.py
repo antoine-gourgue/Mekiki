@@ -916,14 +916,15 @@ def compose_available_parcel(
                 gone.add(id(candidate))
                 run.listings_gone += 1
                 note(run, f"{label} ({site}) : déjà vendue, remplacée par la suivante.")
-            elif result.seller_id and (
-                refusal := avoided.get((listing.source.value, result.seller_id))
-                or result.seller_warning
+            elif refusal := (
+                avoided.get((listing.source.value, result.seller_id or "")) or result.seller_warning
             ):
-                # Neokyo would turn the purchase down: the seller is avoided from now on.
+                # Neokyo would turn the purchase down: the seller is avoided from now on, when
+                # the page names them; the listing leaves the parcel either way.
                 gone.add(id(candidate))
-                sellers.block(session, listing.source.value, result.seller_id, refusal)
-                avoided[(listing.source.value, result.seller_id)] = refusal
+                if result.seller_id:
+                    sellers.block(session, listing.source.value, result.seller_id, refusal)
+                    avoided[(listing.source.value, result.seller_id)] = refusal
                 if blocked is not None:
                     candidate.blocked = refusal
                     candidate.listing = replace(listing, seller_id=result.seller_id)

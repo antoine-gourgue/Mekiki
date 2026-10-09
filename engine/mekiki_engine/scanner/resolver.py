@@ -33,6 +33,7 @@ MIN_SET_PREFIX = 5
 # The index holds every set of the Scarlet & Violet and MEGA eras, but older ones only in
 # part: there, a name and a rarity may also fit a card of a set the index lacks.
 FULLY_INDEXED_SET = re.compile(r"^(?:sv|m)\d")
+NUMBER_SET_NOTE = "Reconnue par son numéro et le nom de son extension : vérifiez la carte"
 NAME_RARITY_NOTE = (
     "Reconnue par son nom et sa rareté, sans numéro dans le titre : vérifiez la version"
 )
@@ -78,16 +79,23 @@ class CatalogResolver:
         else:
             statement = statement.where(CardIndexEntry.set_total == identity.total)
         rows = list(self.session.scalars(statement).all())
-        if not identity.set_code and any(row.name for row in rows):
+        note = None
+        if not identity.set_code:
             # A number over a total fits every set of that size, and the older sets missing
             # from the index too: the card's name in the title says which one, or none.
             title = compact(identity.text)
-            rows = [row for row in rows if row.name and compact(row.name) in title]
-            if len({row.set_code for row in rows}) > 1:
-                rows = _in_named_set(rows, title) or rows
+            named = [row for row in rows if row.name and compact(row.name) in title]
+            if len({row.set_code for row in named}) > 1:
+                named = _in_named_set(named, title) or named
+            if not named:
+                # Cards linked through TCGplayer may have no Japanese name (trainers): then the
+                # title must name their set, and the version is worth a look.
+                named = _in_named_set([row for row in rows if not row.name], title)
+                note = NUMBER_SET_NOTE
+            rows = named
         if not rows or len({row.set_code for row in rows}) > 1:
             return None
-        return self._resolution(rows, identity)
+        return self._resolution(rows, identity, note)
 
     def _resolve_by_name(self, identity: CardIdentity) -> Resolution | None:
         """A title without a number, like "タケルライコex SAR ワイルドフォース キラ…".

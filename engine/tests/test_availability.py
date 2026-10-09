@@ -1,8 +1,11 @@
 """Checking that a listing is still for sale, against answers shaped like the real ones."""
 
 import httpx
+from conftest import FakeMarketplace
+from fastapi.testclient import TestClient
 
 from mekiki_engine.domain import ListingCondition, SourcePlatform
+from mekiki_engine.scanner import availability
 from mekiki_engine.scanner.availability import check_listing
 from mekiki_engine.scanner.sources.base import PoliteClient
 
@@ -95,3 +98,37 @@ def test_a_failing_marketplace_leaves_the_answer_open() -> None:
 
     assert result.available is None
     assert "429" in result.status
+
+
+def test_a_changed_page_or_status_is_unknown_not_sold(
+    client: TestClient, marketplace: FakeMarketplace
+) -> None:
+    marketplace.item_details["m1000000"] = {"status": "on_hold_new"}
+    page = '<meta property="product:availability" content="preorder">'
+    rakuma = PoliteClient(
+        intervals_s={},
+        default_interval_s=0,
+        transport=httpx.MockTransport(lambda _request: httpx.Response(200, text=page)),
+    )
+
+    mercari = client.get("/listings/mercari/m1000000/availability").json()
+    changed = availability.check_listing(rakuma, SourcePlatform.RAKUMA, "a" * 32)
+
+    assert (mercari["available"], changed.available) == (None, None)
+
+
+def test_the_rakuma_shop_is_read_whatever_the_attribute_order() -> None:
+    page = (
+        '<meta property="product:availability" content="in stock">'
+        '<a href="https://fril.jp/shop/5507d4dd830da1c486defe12789d8bf4" class="shopinfo-wrap '
+        'shop_link clearfix" data-x="1"></a>'
+    )
+    client = PoliteClient(
+        intervals_s={},
+        default_interval_s=0,
+        transport=httpx.MockTransport(lambda _request: httpx.Response(200, text=page)),
+    )
+
+    checked = availability.check_listing(client, SourcePlatform.RAKUMA, "a" * 32)
+
+    assert checked.seller_id == "5507d4dd830da1c486defe12789d8bf4"
