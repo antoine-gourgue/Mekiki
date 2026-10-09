@@ -78,8 +78,13 @@ class BotChallenge(ChromeError):
 
 
 _EUROS = re.compile(rf"(\d[\d{_SPACES}.]*,\d{{2}}|\d+)\s*(?:€|EUR)")
+# Sellers glue the grade to the grader ("PSA10", "BGS9.5"). ACE, TAG, ARS and AGS only count
+# with a grade: Ace is a One Piece character, and "Tag Team" a kind of Pokémon card.
+_GRADE = r"\s?\d{1,2}(?:[.,]5)?"
 _GRADED = re.compile(
-    r"\b(psa|bgs|cgc|pca|ccc|sgc|beckett|collect\s?aura|grad(?:e|é|ée|ing)|gem mint)\b",
+    rf"\b(?:(?:psa|bgs|cgc|pca|ccc|sgc|beckett|collect\s?aura)(?:{_GRADE})?"
+    rf"|(?:ace|tag|ars|ags){_GRADE})(?![a-z\d])"
+    r"|\b(?:grad(?:ing|ées|ée|ed|é|e)|gem\s?mint|slabs?)\b",
     re.IGNORECASE,
 )
 # Other printings of the same number sell for less than the Japanese one.
@@ -87,7 +92,12 @@ _OTHER_LANGUAGE = re.compile(
     r"\b(cor[ée]en(ne)?|korean|kor|chinois(e)?|chinese|chn|s-chinese|t-chinese)\b",
     re.IGNORECASE,
 )
-_SEVERAL = re.compile(r"\b(lot|lots|x\s?[2-9]|[2-9]\s?x|bundle)\b", re.IGNORECASE)
+# "x1" is a single copy; "x4", "x10" and a playset are not. A number followed by a slash
+# is the card's own: "Mega Charizard X 110/080".
+_SEVERAL = re.compile(
+    r"\b(?:lots?|bundle|playsets?|x\s?(?:[2-9]|\d{2,})|(?:[2-9]|\d{2,})\s?x)\b(?!\s?/)",
+    re.IGNORECASE,
+)
 # eBay.fr dates its sold listings "Vendu le 6 oct. 2026".
 _SOLD_ON = re.compile(r"(\d{1,2})\s+([a-zéû]+)\.?\s+(\d{4})", re.IGNORECASE)
 FRENCH_MONTHS = {

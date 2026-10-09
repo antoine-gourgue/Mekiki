@@ -136,6 +136,46 @@ def test_sales_count_only_ungraded_single_copies_of_the_card() -> None:
     assert not is_relevant("Dracaufeu ex promo 29", None, ["Dracaufeu"])
 
 
+@pytest.mark.parametrize(
+    "title",
+    [
+        "Pikachu 025/165 PSA10",
+        "Pikachu 025/165 PSA 9",
+        "Pikachu 025/165 BGS9.5",
+        "Pikachu 025/165 CGC10",
+        "Pikachu 025/165 Graded 10",
+        "Pikachu 025/165 carte gradée",
+        "Pikachu 025/165 slab",
+        "Pikachu 025/165 ARS10",
+        "Pikachu 025/165 ACE 10",
+        "Pikachu 025/165 TAG 9",
+        "Pikachu 025/165 AGS 9.5",
+        "Pikachu 025/165 x10",
+        "Pikachu 025/165 x 4",
+        "Pikachu 025/165 4x",
+        "Pikachu 025/165 playset",
+    ],
+)
+def test_graded_copies_and_several_copies_never_count(title: str) -> None:
+    assert not is_relevant(title, "025/165", ["Pikachu"])
+
+
+@pytest.mark.parametrize(
+    "title",
+    [
+        "Pikachu 025/165 x1",
+        "Pikachu & Zekrom GX Tag Team 025/165",
+        "Mega Charizard X 025/165",
+    ],
+)
+def test_names_close_to_a_grader_or_a_quantity_still_count(title: str) -> None:
+    assert is_relevant(title, "025/165")
+
+
+def test_ace_is_a_card_not_a_grader() -> None:
+    assert is_relevant("Portgas D. Ace OP02-013 SR", "OP02-013", ["Ace"])
+
+
 def test_ebay_accepted_offers_only_count_when_nothing_else_is_left() -> None:
     sold = parse_listings(EBAY_RAW, "201/165")
 
