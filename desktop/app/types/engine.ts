@@ -30,6 +30,48 @@ export interface AppSettings {
   default_packaging_cents: number
   platform_fees: Record<SalePlatform, PlatformFeeSettings>
   scanner: ScannerSettings
+  business: BusinessSettings
+}
+
+/** The micro-enterprise behind the account, for its books and declarations. */
+export interface BusinessSettings {
+  name: string
+  siret: string
+  /** "2026-10-01" */
+  started_on: string | null
+  /** How often the turnover is declared to URSSAF. */
+  declaration: 'monthly' | 'quarterly'
+  /** Yearly limits of the micro-enterprise and of the VAT franchise, set by law. */
+  turnover_limit_cents: number
+  vat_franchise_limit_cents: number
+}
+
+/** One month or quarter to declare to URSSAF. */
+export interface BooksPeriod {
+  label: string
+  start: string
+  end: string
+  /** Last day to declare it. */
+  due_on: string
+  turnover_cents: number
+  contributions_cents: number
+  /** The flat income tax paid with the contributions, when chosen. */
+  income_tax_cents: number
+  /** upcoming: not over yet; due: to declare by `due_on`; past: its deadline passed. */
+  state: 'upcoming' | 'due' | 'past'
+}
+
+export interface BooksSummary {
+  year: number
+  declaration: 'monthly' | 'quarterly'
+  periods: BooksPeriod[]
+  turnover_cents: number
+  contributions_cents: number
+  income_tax_cents: number
+  turnover_limit_cents: number
+  vat_franchise_limit_cents: number
+  /** The period over and not declared yet, if any. */
+  next_declaration: BooksPeriod | null
 }
 
 export interface LotFields {

@@ -44,6 +44,7 @@ const links = computed<NavigationMenuItem[][]>(() => [
     { label: 'Lots', icon: 'i-lucide-package', to: '/lots' },
     { label: 'Stock', icon: 'i-lucide-layers', to: '/stock' },
     { label: 'Ventes', icon: 'i-lucide-receipt-euro', to: '/ventes' },
+    { label: 'Comptabilité', icon: 'i-lucide-landmark', to: '/compta' },
     { label: 'Outils', type: 'label' },
     { label: 'Simulateur', icon: 'i-lucide-calculator', to: '/simulateur' },
     { label: 'Paramètres', icon: 'i-lucide-sliders-horizontal', to: '/parametres' },

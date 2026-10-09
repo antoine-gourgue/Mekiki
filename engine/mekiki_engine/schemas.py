@@ -110,6 +110,20 @@ class ScannerSettings(BaseModel):
         return list(dict.fromkeys(value))
 
 
+class BusinessSettings(BaseModel):
+    """The micro-enterprise behind the account, for its books and declarations."""
+
+    name: Annotated[str, Field(max_length=120)] = ""
+    siret: Annotated[str, Field(max_length=20)] = ""
+    started_on: date | None = None
+    # How often the turnover is declared to URSSAF.
+    declaration: Literal["monthly", "quarterly"] = "quarterly"
+    # Yearly limits of the micro-enterprise and of the VAT franchise for sales of goods. Set
+    # by law and revised every few years: the user checks them on urssaf.fr.
+    turnover_limit_cents: Cents = 18_870_000
+    vat_franchise_limit_cents: Cents = 8_500_000
+
+
 class AppSettings(BaseModel):
     fx_jpy_per_eur: Annotated[Rate, Field(gt=0)] = Decimal(170)
     vat_rate_percent: Percent = Decimal(20)
@@ -123,6 +137,7 @@ class AppSettings(BaseModel):
         default_factory=default_platform_fees
     )
     scanner: ScannerSettings = Field(default_factory=ScannerSettings)
+    business: BusinessSettings = Field(default_factory=BusinessSettings)
 
     @field_validator("platform_fees")
     @classmethod
@@ -368,6 +383,35 @@ class Dashboard(BaseModel):
     margin_cents: int
     roi: Rate | None
     monthly: list[MonthlySales]
+
+
+class BooksPeriod(BaseModel):
+    """One month or quarter to declare to URSSAF."""
+
+    label: str
+    start: str
+    end: str
+    # Last day to declare it.
+    due_on: str
+    turnover_cents: int
+    contributions_cents: int
+    # The flat income tax paid with the contributions, when chosen.
+    income_tax_cents: int
+    # upcoming: not over yet. due: over, to declare by ``due_on``. past: its deadline passed.
+    state: Literal["upcoming", "due", "past"]
+
+
+class BooksSummary(BaseModel):
+    year: int
+    declaration: Literal["monthly", "quarterly"]
+    periods: list[BooksPeriod]
+    turnover_cents: int
+    contributions_cents: int
+    income_tax_cents: int
+    turnover_limit_cents: int
+    vat_franchise_limit_cents: int
+    # The period over and not declared yet, if any.
+    next_declaration: BooksPeriod | None
 
 
 class SimulationRequest(BaseModel):

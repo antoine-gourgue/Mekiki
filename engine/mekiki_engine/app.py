@@ -21,6 +21,7 @@ from mekiki_engine.resale.ebay import EbayBrowse
 from mekiki_engine.routes import (
     auth,
     backups,
+    books,
     browser,
     items,
     lots,
@@ -106,6 +107,7 @@ def create_app(
         resale,
         browser,
         backups,
+        books,
     ):
         app.include_router(module.router)
 

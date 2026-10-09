@@ -284,7 +284,7 @@ def inventory(
 ) -> list[ItemOut]:
     items = [
         _item_out(item, landed, settings)
-        for item, landed in _costed_items(session, user_id, settings)
+        for item, landed in costed_items(session, user_id, settings)
         if (game is None or item.game == game) and (status is None or item_status(item) is status)
     ]
     return sorted(items, key=lambda item: item.id, reverse=True)
@@ -304,7 +304,7 @@ def dashboard(
     revenue = net = cost_of_sold = 0
     monthly: dict[str, MonthlySales] = {}
 
-    for item, landed in _costed_items(session, user_id, settings):
+    for item, landed in costed_items(session, user_id, settings):
         status = item_status(item)
         if item.sale is None:
             counts[status] += 1
@@ -457,9 +457,10 @@ def _load_lots(session: Session, user_id: int) -> list[Lot]:
     return list(session.scalars(statement))
 
 
-def _costed_items(
+def costed_items(
     session: Session, user_id: int, settings: AppSettings
 ) -> list[tuple[Item, ItemLandedCost]]:
+    """Every card of the account with its landed cost, recomputed from its lot."""
     rows: list[tuple[Item, ItemLandedCost]] = []
     for lot in _load_lots(session, user_id):
         costing = cost_lot(lot, settings)

@@ -33,6 +33,7 @@ const platformItems = selectItems(PLATFORM_LABELS)
 const fxFormat: Intl.NumberFormatOptions = { maximumFractionDigits: 4 }
 
 const sections = [
+  { id: 'entreprise', label: 'Entreprise' },
   { id: 'achat', label: 'Achat au Japon' },
   { id: 'import', label: 'Import' },
   { id: 'revente', label: 'Revente et cotisations' },
@@ -93,6 +94,8 @@ function scrollTo(id: string) {
         </nav>
 
         <div class="min-w-0 flex-1 space-y-4">
+          <BusinessCard v-if="state.business" v-model="state.business" />
+
           <UCard id="achat" :ui="{ body: 'space-y-4 sm:p-5' }">
             <div>
               <h2 class="font-semibold text-highlighted">Achat au Japon</h2>
