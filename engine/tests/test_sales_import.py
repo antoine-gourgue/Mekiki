@@ -103,9 +103,9 @@ def test_report_lines_become_sales(client: TestClient) -> None:
     )
     assert (sale["shipping_charged_cents"], sale["shipped_on"]) == (350, "2026-10-06")
     assert sale["tracking_number"] == "6A12345678901"
-    # Fees come from the eBay rule in the settings, as for a sale entered by hand.
-    rule = client.get("/settings").json()["platform_fees"]["ebay"]
-    assert sale["platform_fee_cents"] == round(9000 * rule["percent"] / 100) + rule["fixed_cents"]
+    # Fees come from the eBay rule in the settings, as for a sale entered by hand: by default
+    # 11 % of the 93,50 € paid, shipping included, plus 0,35 €.
+    assert sale["platform_fee_cents"] == 1029 + 35
 
     [pending] = client.get("/sales/pending").json()
     assert pending["title"] == "Charizard ex 201/165 SV2a Japanese"

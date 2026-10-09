@@ -62,7 +62,13 @@ class PlatformFeeSettings(BaseModel):
 def default_platform_fees() -> dict[SalePlatform, PlatformFeeSettings]:
     return {
         SalePlatform.CARDMARKET: PlatformFeeSettings(percent=Decimal(5)),
-        SalePlatform.EBAY: PlatformFeeSettings(),
+        # An approximation of eBay France's fees for a professional seller of trading cards:
+        # a share of the total paid by the buyer, shipping included, plus a fixed fee per
+        # order. eBay changes its grid by category and seller type: the user checks it on
+        # ebay.fr and corrects it in the settings. Saved settings keep their own rule.
+        SalePlatform.EBAY: PlatformFeeSettings(
+            percent=Decimal(11), fixed_cents=35, applies_to_shipping=True
+        ),
         SalePlatform.VINTED: PlatformFeeSettings(),
         SalePlatform.LEBONCOIN: PlatformFeeSettings(),
         SalePlatform.OTHER: PlatformFeeSettings(),

@@ -2,6 +2,8 @@ from typing import Any
 
 from fastapi.testclient import TestClient
 
+from mekiki_engine.models import SettingRow
+
 CARD = {"game": "pokemon", "name": "Pikachu ex SAR", "set_code": "SV8a", "price_jpy": 8000}
 
 
@@ -128,6 +130,20 @@ def test_settings_changes_do_not_rewrite_past_sales(client: TestClient) -> None:
     [item] = client.get("/inventory", params={"status": "sold"}).json()
     assert item["sale"]["breakdown"]["net_cents"] == 7393
     assert item["sale"]["contribution_rate_percent"] == 12.3
+
+
+def test_ebay_fees_have_a_realistic_default(client: TestClient) -> None:
+    ebay = client.get("/settings").json()["platform_fees"]["ebay"]
+    user_id = client.get("/auth/me").json()["id"]
+    with client.app.state.session_factory() as session:  # type: ignore[attr-defined]
+        # Settings saved under the old default keep their own rule.
+        row = session.get(SettingRow, f"app:{user_id}")
+        assert row is not None
+        row.value = '{"platform_fees": {"ebay": {"percent": 0, "fixed_cents": 0}}}'
+        session.commit()
+
+    assert ebay == {"percent": 11, "fixed_cents": 35, "applies_to_shipping": True}
+    assert client.get("/settings").json()["platform_fees"]["ebay"]["percent"] == 0
 
 
 def test_actual_vat_replaces_the_estimate_and_null_restores_it(client: TestClient) -> None:
