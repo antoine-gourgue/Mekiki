@@ -138,6 +138,9 @@ class AppSettings(BaseModel):
     )
     scanner: ScannerSettings = Field(default_factory=ScannerSettings)
     business: BusinessSettings = Field(default_factory=BusinessSettings)
+    # False from the account's creation until its guided setup is finished; settings saved
+    # before the setup existed read as done.
+    onboarded: bool = True
 
     @field_validator("platform_fees")
     @classmethod

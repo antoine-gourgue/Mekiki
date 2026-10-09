@@ -55,7 +55,7 @@ async function submit(event: FormSubmitEvent<RegisterRequest>) {
   loading.value = true
   try {
     await auth.register(event.data)
-    await navigateTo('/')
+    await navigateTo('/bienvenue')
   } catch (error) {
     failure.value = engineErrorMessage(error)
   } finally {

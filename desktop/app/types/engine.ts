@@ -31,6 +31,8 @@ export interface AppSettings {
   platform_fees: Record<SalePlatform, PlatformFeeSettings>
   scanner: ScannerSettings
   business: BusinessSettings
+  /** False from the account's creation until its guided setup (/bienvenue) is finished. */
+  onboarded: boolean
 }
 
 /** The micro-enterprise behind the account, for its books and declarations. */

@@ -29,6 +29,11 @@ cd desktop && npm run lint && npm run format:check && npm run typecheck && npm r
 
 ## Règles métier
 
+- Un compte neuf passe par l'assistant `/bienvenue` (entreprise, achat, revente, eBay, Chrome,
+  bonnes affaires) : `AppSettings.onboarded` est mis à faux à l'inscription et vaut vrai par
+  défaut, pour que les réglages enregistrés avant l'assistant ne le relancent pas. Tant qu'il
+  est faux, « À faire » propose de terminer la configuration. Les cartes de réglages sont des
+  composants partagés avec Paramètres (`*SettingsCard.vue`).
 - Le cas de référence (colis de 10 cartes à 8 000 ¥ → 62,67 € de coût de revient, vente à
   90 € sur Cardmarket → net 73,93 €, ROI 17,97 %) est verrouillé par
   `engine/tests/test_landed_cost.py`, `test_sale.py` et `test_api.py`. Il doit toujours passer.

@@ -54,6 +54,13 @@ function scrollTo(id: string) {
         <template #right>
           <span v-if="dirty" class="text-sm text-error">Modifications non enregistrées</span>
           <UButton
+            to="/bienvenue"
+            label="Configuration guidée"
+            icon="i-lucide-wand-sparkles"
+            color="neutral"
+            variant="ghost"
+          />
+          <UButton
             label="Enregistrer"
             icon="i-lucide-save"
             :disabled="!dirty"

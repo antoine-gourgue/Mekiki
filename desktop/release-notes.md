@@ -1,5 +1,9 @@
 ## Nouveautés
 
+- Configuration guidée : à la création d'un compte, Mekiki vous accompagne étape par étape
+  (entreprise, achat au Japon, revente et cotisations, clés eBay, connexion à eBay et Vinted,
+  bonnes affaires, notifications). Elle se relance à tout moment depuis Paramètres ›
+  « Configuration guidée ».
 - Import des ventes eBay : dans Ventes, le bouton « Importer les ventes eBay » lit le rapport des
   commandes téléchargé depuis le Seller Hub d'eBay (Commandes › Télécharger le rapport, au
   format CSV). Une carte mise en vente sur eBay depuis Mekiki est reconnue toute seule : sa vente

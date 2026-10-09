@@ -15,6 +15,7 @@ from mekiki_engine.schemas import (
     RegisterRequest,
     UserOut,
 )
+from mekiki_engine.services.settings_service import load_settings, save_settings
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -49,6 +50,10 @@ def register(payload: RegisterRequest, session: SessionDep) -> AuthResponse:
         ) from error
     if first_account:
         auth.claim_unowned_data(session, user.id)
+    # The app opens the guided setup until the account finishes it.
+    settings = load_settings(session, user.id)
+    settings.onboarded = False
+    save_settings(session, user.id, settings)
     token = auth.create_session(session, user)
     return AuthResponse(token=token, user=UserOut.model_validate(user))
 

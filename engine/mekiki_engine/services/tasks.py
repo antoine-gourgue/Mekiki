@@ -42,6 +42,18 @@ def list_tasks(
             )
         )
 
+    if not settings.onboarded:
+        tasks.append(
+            TaskOut(
+                id="onboarding",
+                key="onboarding",
+                title="Terminer la configuration de Mekiki",
+                detail="Entreprise, frais, eBay et Chrome : quelques minutes, pas à pas",
+                to="/bienvenue",
+                tone="primary",
+            )
+        )
+
     deals = scanner.list_deals(
         session,
         user_id,
