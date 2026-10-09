@@ -142,9 +142,12 @@ cd desktop && npm run lint && npm run format:check && npm run typecheck && npm r
   à Mekiki, par le protocole DevTools ; elle ne s'affiche que pour se connecter, finir un
   formulaire ou passer une vérification anti-robot. **Exception voulue par l'utilisateur** à la règle « jamais de connexion » : il s'y
   connecte lui-même à Vinted et eBay (Mekiki ne voit jamais de mot de passe). La lecture des
-  ventes eBay part de l'ouverture de la fiche d'une carte (trois recherches d'une page au plus,
-  1,5 à 3,5 s d'écart, gardées 6 h) ; la publication part d'un clic. Une page à la fois ; ne
-  jamais contourner une vérification anti-robot.
+  ventes eBay part d'un clic dans la fiche d'une carte, jamais de son ouverture (trois
+  recherches d'une page au plus, 1,5 à 3,5 s d'écart, gardées 6 h et réaffichées sans rien
+  charger) ; le bouton reste désactivé tant que Chrome n'est pas connu connecté à eBay (dernier
+  état vu, `chrome/<user>-connections.json`) ou que l'API Marketplace Insights n'est pas
+  ouverte. La publication part d'un clic. Une page à la fois ; ne jamais contourner une
+  vérification anti-robot.
 - Chaque compte saisit ses clés eBay (jeu Production) dans Paramètres : vérifiées auprès
   d'eBay avant d'être gardées (réglage `ebay:{user_id}`), le Cert ID n'est jamais renvoyé.
   Les clés de `engine/.env` servent aux comptes sans clés. Aucun secret dans le dépôt.
