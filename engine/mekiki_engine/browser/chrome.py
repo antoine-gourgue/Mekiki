@@ -33,6 +33,8 @@ READING_TAB_FILE = "MekikiTab"
 OFFSCREEN = {"left": -32000, "top": -32000, "width": 1280, "height": 900}
 ONSCREEN = {"left": 80, "top": 60, "width": 1280, "height": 900}
 COMMAND_TIMEOUT_S = 30.0
+# How long Chrome has to close itself before it is killed.
+STOP_TIMEOUT_S = 5.0
 
 
 class ChromeError(RuntimeError):
@@ -246,8 +248,9 @@ class ChromeSession:
                 [
                     str(chrome),
                     f"--user-data-dir={self.profile_dir}",
+                    # Without --remote-allow-origins, Chrome refuses DevTools connections
+                    # from web pages, which send an Origin; Mekiki's send none.
                     "--remote-debugging-port=0",
-                    "--remote-allow-origins=*",
                     "--no-first-run",
                     "--no-default-browser-check",
                     f"--window-position={OFFSCREEN['left']},{OFFSCREEN['top']}",
@@ -315,12 +318,20 @@ class ChromeSession:
                 self._http.get(f"http://127.0.0.1:{self.port}/json/close/{target_id}")
 
     def stop(self) -> None:
+        """Closes the window. Chrome is asked first, which lets it write its cookies (a
+        sign-in just made among them); it is killed only when it does not close in time."""
+        if self._answers():
+            with suppress(ChromeError):
+                browser = self._browser()
+                try:
+                    browser.call("Browser.close")
+                finally:
+                    browser.close()
         if self.process is not None and self.process.poll() is None:
-            self.process.terminate()
-        elif self._answers():
-            # A window taken over from a previous run: ask Chrome itself to close.
-            with suppress(ChromeError, httpx.HTTPError, KeyError):
-                self._browser().call("Browser.close")
+            try:
+                self.process.wait(timeout=STOP_TIMEOUT_S)
+            except subprocess.TimeoutExpired:
+                self.process.terminate()
         self.process = None
         self.port = None
 

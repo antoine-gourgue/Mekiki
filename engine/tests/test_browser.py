@@ -650,6 +650,46 @@ def test_a_chrome_closed_meanwhile_is_a_chrome_error(
     assert (checked.status_code, opened.status_code) == (503, 503)
 
 
+class FakeProcess:
+    """Chrome's process, which closes when asked, or not."""
+
+    def __init__(self, closes: bool) -> None:
+        self.closes = closes
+        self.waited: float | None = None
+        self.killed = False
+
+    def poll(self) -> int | None:
+        return None
+
+    def wait(self, timeout: float) -> int:
+        self.waited = timeout
+        if not self.closes:
+            raise chrome_module.subprocess.TimeoutExpired("chrome", timeout)
+        return 0
+
+    def terminate(self) -> None:
+        self.killed = True
+
+
+@pytest.mark.parametrize("closes", [True, False])
+def test_chrome_is_asked_to_close_before_it_is_killed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, closes: bool
+) -> None:
+    browser = FakeSocket()
+    monkeypatch.setattr(chrome_module.websocket, "create_connection", lambda *_a, **_k: browser)
+    session = devtools_session(tmp_path, FakeDevTools())
+    process = FakeProcess(closes)
+    session.process = process  # type: ignore[assignment]
+
+    session.stop()
+
+    assert [sent["method"] for sent in browser.sent] == ["Browser.close"]
+    assert process.waited == chrome_module.STOP_TIMEOUT_S
+    # Killed only when it did not close by itself, which could lose its fresh cookies.
+    assert process.killed is not closes
+    assert session.process is None
+
+
 def test_chrome_that_cannot_be_launched_is_a_chrome_error(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
