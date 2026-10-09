@@ -1065,6 +1065,9 @@ class CardVerdict(BaseModel):
     prices: ResalePrices
     # The number listings must name to count: "201/165", "OP05-119".
     card_number: str | None = None
+    # Which printing of that number: One Piece "regular", "parallel" or "manga"; Pokémon
+    # "regular" or its mirror ("masterball"…). None when unknown.
+    card_version: str | None = None
     # The card's name in French, English and Japanese, which listings must also name.
     card_names: list[str] = []
     # What to search on eBay's sold listings in Chrome, to complete the verdict.
@@ -1110,6 +1113,8 @@ class BrowserPricesRequest(BaseModel):
     card_number: Annotated[str, Field(max_length=40)] | None = None
     # The card's name in several languages; a listing must name one of them to count.
     names: Annotated[list[Annotated[str, Field(max_length=80)]], Field(max_length=6)] = []
+    # The verdict's ``card_version``: listings of another printing of the number do not count.
+    version: Annotated[str, Field(max_length=20)] | None = None
 
 
 class MarketListingOut(BaseModel):

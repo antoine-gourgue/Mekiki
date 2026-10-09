@@ -860,6 +860,8 @@ export interface CardVerdict {
   prices: ResalePrices
   /** The number listings must name to count: "201/165", "OP05-119". */
   card_number: string | null
+  /** Which printing of that number: "regular", "parallel", "manga", "masterball"…; null when unknown. */
+  card_version: string | null
   /** The card's name in French, English and Japanese. */
   card_names: string[]
   /** What to search on each site in Chrome (French names on Vinted). */
@@ -909,6 +911,8 @@ export interface BrowserPricesRequest {
   query: string
   card_number?: string | null
   names?: string[]
+  /** The verdict's `card_version`: other printings of the number do not count. */
+  version?: string | null
 }
 
 export interface MarketListing {

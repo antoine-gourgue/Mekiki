@@ -92,7 +92,13 @@ def ebay_sold(
 ) -> BrowserPricesOut:
     """Reads a card's sales on eBay: through its API when the keys may, else in Chrome."""
     prices = resale_service.ebay_sold(
-        request.app.state, session, user.id, payload.query, payload.card_number, payload.names
+        request.app.state,
+        session,
+        user.id,
+        payload.query,
+        payload.card_number,
+        payload.names,
+        payload.version,
     )
     return prices_out(prices)
 
@@ -102,7 +108,7 @@ def ebay_sold_cached(
     payload: BrowserPricesRequest, request: Request, user: UserDep
 ) -> BrowserPricesOut | None:
     """A card's eBay sales read in the last six hours, if any; nothing is loaded."""
-    prices = _browsers(request).cached(user.id, payload.query)
+    prices = _browsers(request).cached(user.id, payload.query, payload.card_number, payload.version)
     return prices_out(prices) if prices is not None else None
 
 

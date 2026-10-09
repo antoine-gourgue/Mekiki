@@ -95,6 +95,18 @@ def test_dotted_one_piece_names_are_searched_and_matched_as_sellers_write_them(
     assert drafts.search_query(product.name, "OP05-119") == "Monkey D Luffy OP05-119"
 
 
+def test_the_printing_tells_which_listings_of_the_number_count() -> None:
+    from mekiki_engine.resale.service import printing_version
+    from mekiki_engine.scanner.tracking import Printing
+
+    assert printing_version(None) is None
+    assert printing_version(Printing(Game.ONE_PIECE, code="op05-119")) == "regular"
+    assert printing_version(Printing(Game.ONE_PIECE, code="op05-119", version="manga")) == "manga"
+    assert printing_version(Printing(Game.POKEMON, number=25, total=165)) == "regular"
+    pokeball = Printing(Game.POKEMON, number=25, total=165, mirror="pokeball")
+    assert printing_version(pokeball) == "pokeball"
+
+
 def test_drafts_describe_the_card_and_suggest_a_price() -> None:
     product = CardmarketProduct(id_product=1, game="pokemon", name="Pikachu", avg30_cents=4200)
 

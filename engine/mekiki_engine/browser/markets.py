@@ -2,8 +2,8 @@
 
 eBay's API only knows the listings still for sale: what a card really sold for is read on
 the sold search page, as the user sees it, when the card's panel opens. Only listings naming
-the card's number, ungraded and alone, count towards the median. Vinted is only signed in
-to, for publishing: its search pages block an address that reads them.
+the card's number and printing, ungraded and alone, count towards the median. Vinted is only
+signed in to, for publishing: its search pages block an address that reads them.
 """
 
 from __future__ import annotations
@@ -100,6 +100,25 @@ _SEVERAL = re.compile(
 )
 # A dot between two letters, as in One Piece names: "Monkey.D.Luffy".
 _INNER_DOT = re.compile(r"(?<=\w)\.(?=\w)")
+# One Piece codes, "OP05-119" or "P-001": English cards share them with the Japanese ones.
+_ONE_PIECE_CODE = re.compile(r"(?:op|st|eb|prb)\d{2}-\d{3}|p-\d{3}", re.IGNORECASE)
+_ENGLISH = re.compile(r"\b(?:english|anglais(?:es?)?|eng)\b", re.IGNORECASE)
+# How sellers name the printings sharing a number: One Piece's regular, parallel, manga and
+# special (SP) versions, and the mirrors of Pokémon commons.
+_PRINTING_WORDS: dict[str, re.Pattern[str]] = {
+    "manga": re.compile(r"\b(?:manga|comic|super\s?parall[eèé]le?)\b|コミパラ|スーパーパラレル"),
+    "parallel": re.compile(
+        r"\b(?:parall[eèé]le?|alt(?:ernate|ernative)?[\s\-]?art|aa|p-(?:sec|sr|r|l|uc|c))\b"
+        r"|パラレル"
+    ),
+    "special": re.compile(r"\bsp\b"),
+    "masterball": re.compile(r"master\s?ball|マスターボール"),
+    "pokeball": re.compile(r"pok[eé]\s?ball|モンスターボール"),
+    "loveball": re.compile(r"love\s?ball|ラブボール"),
+    "quickball": re.compile(r"quick\s?ball|クイックボール"),
+    "reverse": re.compile(r"\b(?:reverse|invers[eé]e?|mirror|miroir)\b|ミラー"),
+}
+BALL_MIRRORS = frozenset({"masterball", "pokeball", "loveball", "quickball"})
 # eBay.fr dates its sold listings "Vendu le 6 oct. 2026".
 _SOLD_ON = re.compile(r"(\d{1,2})\s+([a-zéû]+)\.?\s+(\d{4})", re.IGNORECASE)
 FRENCH_MONTHS = {
@@ -224,7 +243,10 @@ def check_bot_challenge(tab: Tab) -> None:
 
 
 def parse_listings(
-    raw: list[dict[str, Any]], card_number: str | None, names: list[str] | None = None
+    raw: list[dict[str, Any]],
+    card_number: str | None,
+    names: list[str] | None = None,
+    version: str | None = None,
 ) -> list[MarketListing]:
     listings = []
     for item in raw:
@@ -245,28 +267,72 @@ def parse_listings(
                 shipping_cents=euro_cents(str(item.get("shipping") or "")),
                 sold_on=sold_date(str(item.get("sold") or "")),
                 best_offer=bool(item.get("best_offer")),
-                relevant=is_relevant(title, card_number, names),
+                relevant=is_relevant(title, card_number, names, version),
             )
         )
     return listings
 
 
-def is_relevant(title: str, card_number: str | None, names: list[str] | None = None) -> bool:
+def is_relevant(
+    title: str,
+    card_number: str | None,
+    names: list[str] | None = None,
+    version: str | None = None,
+) -> bool:
     """Whether a listing sells one ungraded copy of the card numbered ``card_number``;
     never without a number.
 
     With ``names`` (the card's name in several languages), the title must also name it: two
-    cards of different sets can share a number.
+    cards of different sets can share a number. With ``version`` (see ``same_printing``), it
+    must sell that printing, not another sharing the number.
     """
-    if _GRADED.search(title) or _SEVERAL.search(title) or _OTHER_LANGUAGE.search(title):
+    if not single_copy(title):
         return False
     # Without the number, a name alone matches every printing of the card.
     if not card_number:
         return False
-    compact = _compact(title)
-    if _compact(card_number) not in compact:
+    text = unicodedata.normalize("NFKC", title).lower()
+    one_piece = _ONE_PIECE_CODE.fullmatch(card_number.strip()) is not None
+    if one_piece and _ENGLISH.search(text):
         return False
-    return not names or any(_compact(name) in compact for name in names if name.strip())
+    number = re.findall(r"[a-z0-9]+", unicodedata.normalize("NFKC", card_number).lower())
+    # Digits around the number make another one: "025" is not in "2025".
+    pattern = r"(?<!\d)" + r"[\s\-_/]*".join(map(re.escape, number)) + r"(?!\d)"
+    if not number or not re.search(pattern, text):
+        return False
+    compact = _compact(title)
+    if names and not any(_compact(name) in compact for name in names if name.strip()):
+        return False
+    return version is None or same_printing(text, version, one_piece=one_piece)
+
+
+def single_copy(title: str) -> bool:
+    """Whether a title sells one ungraded copy, in Japanese as far as it tells."""
+    return not (_GRADED.search(title) or _SEVERAL.search(title) or _OTHER_LANGUAGE.search(title))
+
+
+def same_printing(text: str, version: str, *, one_piece: bool) -> bool:
+    """Whether a lowercase title names the printing ``version`` and no other sharing its
+    number: One Piece's "regular", "parallel" or "manga"; Pokémon's "regular" or a mirror,
+    "reverse", "masterball", "pokeball"…"""
+    named = {kind for kind, words in _PRINTING_WORDS.items() if words.search(text)}
+    if one_piece:
+        if version == "manga":
+            return "manga" in named
+        if named & {"manga", "special"}:
+            return False
+        return ("parallel" in named) == (version == "parallel")
+    balls = named & BALL_MIRRORS
+    if version in BALL_MIRRORS:
+        return balls == {version}
+    if balls:
+        return False
+    return ("reverse" in named) == (version != "regular")
+
+
+def number_key(card_number: str | None) -> str:
+    """The card number as compared: "201 / 165" and "201/165" alike."""
+    return _compact(card_number or "")
 
 
 def median_cents(listings: list[MarketListing]) -> int | None:

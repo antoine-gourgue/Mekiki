@@ -139,6 +139,7 @@ async function readSold() {
       query,
       card_number: current.card_number,
       names: current.card_names,
+      version: current.card_version,
     })
     if (card !== opened) return
     sold.value = read
@@ -168,6 +169,7 @@ async function showReadSales() {
       query,
       card_number: current.card_number,
       names: current.card_names,
+      version: current.card_version,
     })
     if (card === opened && kept) sold.value = kept
   } catch {

@@ -80,6 +80,14 @@ class _Cached:
     prices: MarketPrices
 
 
+def _cache_key(
+    user_id: int, query: str, card_number: str | None, version: str | None
+) -> tuple[int, str, str, str]:
+    # The same search reads differently for another number or printing: the listings that
+    # count towards the median are not the same.
+    return (user_id, query.strip().lower(), markets.number_key(card_number), version or "")
+
+
 @dataclass(slots=True)
 class Browsers:
     """The Chrome session of each account, kept in the data folder (``chrome/<user>``)."""
@@ -87,7 +95,7 @@ class Browsers:
     data_dir: Path
     session_factory: Callable[[Path], ChromeSession] = ChromeSession
     _sessions: dict[int, ChromeSession] = field(default_factory=dict)
-    _cache: dict[tuple[int, str], _Cached] = field(default_factory=dict)
+    _cache: dict[tuple[int, str, str, str], _Cached] = field(default_factory=dict)
     _jobs: dict[tuple[int, int, Site], PublishJob] = field(default_factory=dict)
     # What Chrome is doing for each account, and the steps it went through.
     _activity: dict[int, str] = field(default_factory=dict)
@@ -190,9 +198,13 @@ class Browsers:
         query: str,
         card_number: str | None = None,
         names: list[str] | None = None,
+        version: str | None = None,
     ) -> MarketPrices:
-        """eBay's sold listings of a card, read in Chrome or reused within six hours."""
-        key = (user_id, query.strip().lower())
+        """eBay's sold listings of a card, read in Chrome or reused within six hours.
+
+        ``version`` is the printing among those sharing the number (``markets.same_printing``).
+        """
+        key = _cache_key(user_id, query, card_number, version)
         with self._lock:
             cached = self._cache.get(key)
         if cached and time.monotonic() - cached.at < CACHE_S:
@@ -217,7 +229,7 @@ class Browsers:
         finally:
             self._doing(user_id, None)
         self._remember_connection(user_id, "ebay", True)
-        listings = markets.parse_listings(raw, card_number, names)
+        listings = markets.parse_listings(raw, card_number, names, version)
         relevant = sum(listing.relevant for listing in listings)
         self._note(user_id, f"eBay : {len(listings)} ventes lues, {relevant} de cette carte")
         prices = MarketPrices(
@@ -231,16 +243,33 @@ class Browsers:
             self._cache[key] = _Cached(time.monotonic(), prices)
         return prices
 
-    def remember(self, user_id: int, query: str, prices: MarketPrices) -> None:
+    def remember(
+        self,
+        user_id: int,
+        query: str,
+        prices: MarketPrices,
+        card_number: str | None = None,
+        version: str | None = None,
+    ) -> None:
         """Keeps sales read elsewhere (eBay's API) as if Chrome had read them."""
+        key = _cache_key(user_id, query, card_number, version)
         with self._lock:
-            self._cache[(user_id, query.strip().lower())] = _Cached(time.monotonic(), prices)
+            self._cache[key] = _Cached(time.monotonic(), prices)
 
-    def cached(self, user_id: int, query: str, *, log: bool = False) -> MarketPrices | None:
-        """eBay sales already read for ``query``; nothing is loaded. ``log`` notes the reuse
-        in the window's log, for a reading the user asked for."""
+    def cached(
+        self,
+        user_id: int,
+        query: str,
+        card_number: str | None = None,
+        version: str | None = None,
+        *,
+        log: bool = False,
+    ) -> MarketPrices | None:
+        """eBay sales already read for ``query``, the same card number and printing; nothing
+        is loaded. ``log`` notes the reuse in the window's log, for a reading the user asked
+        for."""
         with self._lock:
-            entry = self._cache.get((user_id, query.strip().lower()))
+            entry = self._cache.get(_cache_key(user_id, query, card_number, version))
         if entry and time.monotonic() - entry.at < CACHE_S:
             if log:
                 self._note(user_id, "eBay : ventes déjà lues il y a moins de six heures")

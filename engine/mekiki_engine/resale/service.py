@@ -62,16 +62,17 @@ def ebay_sold(
     query: str,
     card_number: str | None = None,
     names: list[str] | None = None,
+    version: str | None = None,
 ) -> MarketPrices:
     """A card's sales on eBay: through Marketplace Insights when the keys may read them,
     else in Chrome; kept six hours either way."""
     browsers: Browsers = state.browsers
-    if (cached := browsers.cached(user_id, query, log=True)) is not None:
+    if (cached := browsers.cached(user_id, query, card_number, version, log=True)) is not None:
         return cached
     ebay, _source = ebay_for(state, session, user_id)
     if ebay is not None:
         try:
-            listings = _api_sales(ebay, query, card_number, names)
+            listings = _api_sales(ebay, query, card_number, names, version)
         except SourceError:
             # eBay's API is out of reach for now: Chrome still reads the sales.
             listings = None
@@ -84,13 +85,17 @@ def ebay_sold(
                 fetched_at=markets.utc_now(),
                 source="api",
             )
-            browsers.remember(user_id, query, prices)
+            browsers.remember(user_id, query, prices, card_number, version)
             return prices
-    return browsers.sold_prices(user_id, query, card_number, names)
+    return browsers.sold_prices(user_id, query, card_number, names, version)
 
 
 def _api_sales(
-    ebay: EbayBrowse, query: str, card_number: str | None, names: list[str] | None
+    ebay: EbayBrowse,
+    query: str,
+    card_number: str | None,
+    names: list[str] | None,
+    version: str | None = None,
 ) -> list[MarketListing] | None:
     """The searches Chrome would make, through the API; None when the keys may not."""
     found: dict[str, EbaySale] = {}
@@ -111,7 +116,7 @@ def _api_sales(
             image_url=sale.image_url,
             detail=markets.sold_caption(sale.sold_on),
             sold_on=sale.sold_on,
-            relevant=markets.is_relevant(sale.title, card_number, names),
+            relevant=markets.is_relevant(sale.title, card_number, names, version),
         )
         for sale in ordered
     ]
@@ -122,11 +127,12 @@ def resale_prices(
     query: str,
     card_number: str | None = None,
     names: list[str] | None = None,
+    version: str | None = None,
 ) -> ResalePrices:
     return ResalePrices(
         query=query,
         links=resale_links(query),
-        ebay=ebay_prices(ebay, query, card_number, names),
+        ebay=ebay_prices(ebay, query, card_number, names, version),
     )
 
 
@@ -135,6 +141,7 @@ def ebay_prices(
     query: str,
     card_number: str | None = None,
     names: list[str] | None = None,
+    version: str | None = None,
 ) -> EbayPrices:
     if ebay is None:
         return EbayPrices(configured=False)
@@ -149,7 +156,7 @@ def ebay_prices(
         listings = [
             listing
             for listing in listings
-            if markets.is_relevant(listing.title, card_number, names)
+            if markets.is_relevant(listing.title, card_number, names, version)
         ]
     prices = sorted(listing.price_cents for listing in listings)
     return EbayPrices(
@@ -189,21 +196,23 @@ def verdict(
         query = query or drafts.item_query(item)
         card_number = item.card_number or card_number
     product = session.get(CardmarketProduct, product_id) if product_id is not None else None
-    if product is not None and card_number is None:
-        printing = tracking.printing_of(session, product)
-        card_number = printing.card_number if printing else None
+    printing = tracking.printing_of(session, product) if product is not None else None
+    if card_number is None and printing is not None:
+        card_number = printing.card_number
+    version = printing_version(printing)
     if not query and product is not None and product.name:
         query = drafts.search_query(product.name, card_number)
     if not query:
         return None
     market = {}
-    if browsers is not None and (sold := browsers.cached(user_id, query)) is not None:
+    sold = browsers.cached(user_id, query, card_number, version) if browsers else None
+    if sold is not None:
         market["ebay"] = sold
     names_of_card = card_names(session, product, typed_name)
     result = card_verdict(
         settings,
         product,
-        resale_prices(ebay, query, card_number, names_of_card),
+        resale_prices(ebay, query, card_number, names_of_card, version),
         price_jpy=price_jpy,
         shipping_included=shipping_included,
         landed_cents=landed_cents,
@@ -211,9 +220,21 @@ def verdict(
         market=market,
     )
     result.card_number = card_number
+    result.card_version = version
     result.card_names = names_of_card
     result.market_queries = {"ebay": query}
     return result
+
+
+def printing_version(printing: tracking.Printing | None) -> str | None:
+    """Which of the printings sharing its number a card is, as ``markets.same_printing``
+    takes it: One Piece's version, or Pokémon's mirror ("regular" without one); None when
+    the printing is unknown."""
+    if printing is None:
+        return None
+    if printing.game is Game.ONE_PIECE:
+        return printing.version or "regular"
+    return printing.mirror or "regular"
 
 
 def card_names(

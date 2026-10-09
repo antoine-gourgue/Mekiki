@@ -234,9 +234,14 @@ def test_prices_read_in_chrome_join_the_verdict(client: TestClient, chrome: Fake
     assert [o["platform"] for o in before["outlets"]] == ["cardmarket"]
     assert set(queries) == {"ebay"}
 
+    assert before["card_version"] == "regular"
     client.post(
         "/browser/ebay/sold",
-        json={"query": queries["ebay"], "card_number": before["card_number"]},
+        json={
+            "query": queries["ebay"],
+            "card_number": before["card_number"],
+            "version": before["card_version"],
+        },
     )
     after = client.get("/resale/verdict", params=params).json()
 
@@ -253,6 +258,86 @@ def test_other_cards_and_languages_sharing_the_number_are_left_out() -> None:
     assert not is_relevant("Carte Pokémon Alakazam alternative 201/165", "201/165", names)
     assert not is_relevant("Dracaufeu ex SAR – SV2a 201/165 – Coréen", "201/165", names)
     assert not is_relevant("Charizard ex 201/165 sv2a KOR", "201/165", names)
+
+
+@pytest.mark.parametrize(
+    ("title", "version", "expected"),
+    [
+        ("Monkey D. Luffy OP05-119 SEC Japanese", "regular", True),
+        ("Monkey D. Luffy OP05-119 SEC Parallel", "regular", False),
+        ("Monkey D. Luffy OP05-119 Alt Art", "regular", False),
+        ("Monkey D. Luffy OP05-119 Manga", "regular", False),
+        ("Monkey D. Luffy OP05-119 SP", "regular", False),
+        ("Monkey D. Luffy OP05-119 SEC Parallel", "parallel", True),
+        ("Monkey D. Luffy OP05-119 P-SEC", "parallel", True),
+        ("Monkey D. Luffy OP05-119 SEC parallèle", "parallel", True),
+        ("Monkey D. Luffy OP05-119 SEC", "parallel", False),
+        ("Monkey D. Luffy OP05-119 Manga Parallel", "parallel", False),
+        ("Monkey D. Luffy OP05-119 Manga Rare", "manga", True),
+        ("Monkey D. Luffy OP05-119 SEC Parallel", "manga", False),
+    ],
+)
+def test_one_piece_versions_sharing_a_code_are_told_apart(
+    title: str, version: str, expected: bool
+) -> None:
+    assert is_relevant(title, "OP05-119", ["Luffy"], version) is expected
+
+
+@pytest.mark.parametrize(
+    ("title", "version", "expected"),
+    [
+        ("Pikachu 025/165 Pokémon 151", "regular", True),
+        ("Pikachu 025/165 Master Ball Reverse", "regular", False),
+        ("Pikachu 025/165 Poké Ball", "regular", False),
+        ("Pikachu 025/165 Reverse Holo", "regular", False),
+        ("Pikachu 025/165 Master Ball Reverse", "masterball", True),
+        ("Pikachu 025/165 Masterball", "masterball", True),
+        ("Pikachu 025/165 Pokeball Reverse", "masterball", False),
+        ("Pikachu 025/165", "masterball", False),
+        ("Pikachu 025/165 Pokeball Reverse", "pokeball", True),
+        ("Pikachu 025/165 Reverse Holo", "reverse", True),
+        ("Pikachu 025/165 Master Ball Reverse", "reverse", False),
+    ],
+)
+def test_pokemon_mirrors_sharing_a_number_are_told_apart(
+    title: str, version: str, expected: bool
+) -> None:
+    assert is_relevant(title, "025/165", ["Pikachu"], version) is expected
+
+
+def test_english_one_piece_cards_share_the_code_but_do_not_count() -> None:
+    assert not is_relevant("Monkey D. Luffy OP05-119 SEC English", "OP05-119", ["Luffy"])
+    assert not is_relevant("Luffy OP05-119 SEC version anglaise", "OP05-119", ["Luffy"])
+    assert is_relevant("Luffy OP05-119 SEC japonaise", "OP05-119", ["Luffy"])
+
+
+def test_a_number_needs_its_own_digits() -> None:
+    assert not is_relevant("Pikachu promo 2025", "025", ["Pikachu"])
+    assert not is_relevant("Pikachu 1025/165", "025/165", ["Pikachu"])
+    assert not is_relevant("Pikachu 025/1650", "025/165", ["Pikachu"])
+    assert is_relevant("Pikachu n°025 promo", "025", ["Pikachu"])
+    assert is_relevant("Pikachu 025 / 165", "025/165", ["Pikachu"])
+    assert is_relevant("Luffy OP05 119", "OP05-119", ["Luffy"])
+
+
+def test_sales_are_kept_for_one_number_and_printing(
+    client: TestClient, chrome: FakeSession
+) -> None:
+    chrome.tab.pages["ebay"] = FRENCH_SALES
+    body = {"query": "Dracaufeu ex", "card_number": "201/165", "version": "regular"}
+
+    first = client.post("/browser/ebay/sold", json=body).json()
+    other_number = client.post("/browser/ebay/sold", json=body | {"card_number": "006/165"})
+    other_printing = client.post("/browser/ebay/sold", json=body | {"version": "masterball"})
+    again = client.post("/browser/ebay/sold", json=body).json()
+
+    assert first["relevant_count"] == 2
+    assert other_number.json()["relevant_count"] == 1
+    assert other_printing.json()["relevant_count"] == 0
+    assert again == first
+    assert chrome.pages_opened == 3
+    cached = client.post("/browser/ebay/sold/cached", json=body | {"version": None}).json()
+    assert cached is None
 
 
 def test_prices_far_from_the_others_are_left_out_of_the_median() -> None:
@@ -363,7 +448,11 @@ def test_ebay_sales_frequency_joins_the_verdict(client: TestClient, chrome: Fake
 
     prices = client.post(
         "/browser/ebay/sold",
-        json={"query": before["market_queries"]["ebay"], "card_number": "201/165"},
+        json={
+            "query": before["market_queries"]["ebay"],
+            "card_number": "201/165",
+            "version": before["card_version"],
+        },
     ).json()
     after = client.get("/resale/verdict", params=params).json()
 
