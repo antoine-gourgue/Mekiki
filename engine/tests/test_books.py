@@ -53,11 +53,11 @@ def test_turnover_and_contributions_by_quarter(client: TestClient) -> None:
 
 
 def test_monthly_declarations(client: TestClient) -> None:
-    books_fixture(client)
     settings = client.get("/settings").json()
     settings["business"]["declaration"] = "monthly"
     settings["income_tax_rate_percent"] = 1
     client.put("/settings", json=settings)
+    books_fixture(client)
 
     summary = client.get("/books/summary", params={"year": 2026}).json()
 
@@ -97,3 +97,25 @@ def test_register_of_purchases_for_excel(client: TestClient) -> None:
     )
     assert len(lines) == 11
     assert client.get("/books/purchases.csv", params={"year": 2025}).text.count("\n") == 1
+
+
+def set_rates(client: TestClient, contribution: float, income_tax: float) -> None:
+    settings = client.get("/settings").json()
+    settings["contribution_rate_percent"] = contribution
+    settings["income_tax_rate_percent"] = income_tax
+    assert client.put("/settings", json=settings).status_code == 200
+
+
+def test_each_sale_counts_at_the_rates_frozen_on_it(client: TestClient) -> None:
+    lot = create_reference_lot(client)
+    ids = [item["id"] for item in lot["items"]]
+    set_rates(client, 12.3, 1)
+    sell(client, ids[0], "2026-02-20", 10000)
+    # ACRE ends, or the law changes: the rates of the next sales differ.
+    set_rates(client, 6.2, 0)
+    sell(client, ids[1], "2026-03-02", 10000)
+
+    q1 = summary_on(client, date(2026, 4, 10))["periods"][0]  # type: ignore[index]
+
+    assert (q1["turnover_cents"], q1["contributions_cents"]) == (20000, 1230 + 620)
+    assert q1["income_tax_cents"] == 100

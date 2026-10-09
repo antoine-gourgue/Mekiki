@@ -115,7 +115,10 @@ class Sale(Base):
     # changes never rewrite the margin of past sales.
     platform_fee_cents: Mapped[int]
     packaging_cents: Mapped[int]
+    # URSSAF contributions plus the flat income tax, as a fraction: both frozen at the sale.
     contribution_rate: Mapped[str]
+    # The flat income tax part alone; null on sales recorded before it was kept apart.
+    income_tax_rate: Mapped[str | None]
     notes: Mapped[str | None]
     tracking_number: Mapped[str | None]
     # Null while the card is still to ship.

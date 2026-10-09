@@ -257,7 +257,11 @@ def record_sale(
         }
     )
     if item.sale is None:
-        item.sale = Sale(**values, contribution_rate=str(contribution_rate(settings)))
+        item.sale = Sale(
+            **values,
+            contribution_rate=str(contribution_rate(settings)),
+            income_tax_rate=str(percent_to_fraction(settings.income_tax_rate_percent)),
+        )
     else:
         # Editing a sale keeps the contribution rate that was in force when it was recorded.
         for name, value in values.items():

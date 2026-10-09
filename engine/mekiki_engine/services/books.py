@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 
 from mekiki_engine.costing.money import percent_to_fraction
 from mekiki_engine.domain import SalePlatform
+from mekiki_engine.models import Sale
 from mekiki_engine.schemas import AppSettings, BooksPeriod, BooksSummary
 from mekiki_engine.services import portfolio
 
@@ -120,21 +121,30 @@ def purchases(session: Session, user_id: int, settings: AppSettings, year: int) 
 def summary(
     session: Session, user_id: int, settings: AppSettings, year: int, *, today: date
 ) -> BooksSummary:
-    """Turnover and contributions of each period of ``year``, and the yearly thresholds."""
+    """Turnover and contributions of each period of ``year``, and the yearly thresholds.
+
+    Each sale counts at the rates frozen when it was recorded, as its margin does: the
+    settings of today would rewrite contributions already declared.
+    """
     business = settings.business
-    contribution = percent_to_fraction(settings.contribution_rate_percent)
-    income_tax = percent_to_fraction(settings.income_tax_rate_percent)
-    turnover_by_period: dict[int, int] = {}
-    for receipt in receipts(session, user_id, settings, year):
-        index = _period_index(receipt.on, business.declaration)
-        turnover_by_period[index] = turnover_by_period.get(index, 0) + receipt.amount_cents
+    # Turnover of each period, by (contribution, income tax) rates.
+    by_rates: dict[int, dict[tuple[Decimal, Decimal], int]] = {}
+    for item, _landed in portfolio.costed_items(session, user_id, settings):
+        sale = item.sale
+        if sale is None or date.fromisoformat(sale.sold_on).year != year:
+            continue
+        index = _period_index(date.fromisoformat(sale.sold_on), business.declaration)
+        rates = frozen_rates(sale, settings)
+        period = by_rates.setdefault(index, {})
+        period[rates] = period.get(rates, 0) + sale.sale_price_cents + sale.shipping_charged_cents
 
     periods = []
     count = 12 if business.declaration == "monthly" else 4
     for index in range(count):
         start, end = _period_bounds(year, index, business.declaration)
         due = _due_date(end)
-        turnover = turnover_by_period.get(index, 0)
+        groups = by_rates.get(index, {})
+        turnover = sum(groups.values())
         periods.append(
             BooksPeriod(
                 label=_period_label(year, index, business.declaration),
@@ -142,8 +152,8 @@ def summary(
                 end=end.isoformat(),
                 due_on=due.isoformat(),
                 turnover_cents=turnover,
-                contributions_cents=_share(turnover, contribution),
-                income_tax_cents=_share(turnover, income_tax),
+                contributions_cents=sum(_share(cents, rate) for (rate, _), cents in groups.items()),
+                income_tax_cents=sum(_share(cents, rate) for (_, rate), cents in groups.items()),
                 state="upcoming" if today <= end else ("due" if today <= due else "past"),
             )
         )
@@ -159,6 +169,21 @@ def summary(
         vat_franchise_limit_cents=business.vat_franchise_limit_cents,
         next_declaration=next((p for p in periods if p.state == "due"), None),
     )
+
+
+def frozen_rates(sale: Sale, settings: AppSettings) -> tuple[Decimal, Decimal]:
+    """(URSSAF contributions, flat income tax) rates frozen on the sale."""
+    total = Decimal(sale.contribution_rate)
+    if sale.income_tax_rate is not None:
+        income_tax = Decimal(sale.income_tax_rate)
+        return total - income_tax, income_tax
+    # Recorded before the two were kept apart: split the frozen total as the settings do.
+    contribution = percent_to_fraction(settings.contribution_rate_percent)
+    income_tax = percent_to_fraction(settings.income_tax_rate_percent)
+    if not contribution + income_tax:
+        return total, Decimal(0)
+    income_part = total * income_tax / (contribution + income_tax)
+    return total - income_part, income_part
 
 
 def receipts_csv(rows: list[Receipt]) -> str:
