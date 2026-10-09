@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, status
+from fastapi import APIRouter, HTTPException, status
 
 from mekiki_engine.deps import DataDirDep, SessionDep, SettingsDep, UserDep
 from mekiki_engine.schemas import ItemCreate, ItemOut, LotCreate, LotDetail, LotOut, LotUpdate
@@ -35,8 +35,12 @@ def update_lot(
 
 @router.delete("/{lot_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_lot(lot_id: int, session: SessionDep, user: UserDep, data_dir: DataDirDep) -> None:
+    """Refused while a card of the lot is sold: its sale would leave the books with it."""
     item_ids = portfolio.lot_item_ids(session, user.id, lot_id)
-    portfolio.delete_lot(session, user.id, lot_id)
+    try:
+        portfolio.delete_lot(session, user.id, lot_id)
+    except portfolio.SoldError as error:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=str(error)) from error
     photos.remove_item_files(data_dir, item_ids)
 
 

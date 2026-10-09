@@ -61,6 +61,13 @@ class NotFoundError(LookupError):
     """The requested lot or card does not exist."""
 
 
+class SoldError(Exception):
+    """The lot or card has a recorded sale, which deleting it would take out of the books.
+
+    The message is French, for the app.
+    """
+
+
 def vat_rate(settings: AppSettings) -> Decimal:
     return percent_to_fraction(settings.vat_rate_percent)
 
@@ -197,7 +204,19 @@ def lot_item_ids(session: Session, user_id: int, lot_id: int) -> list[int]:
 
 
 def delete_lot(session: Session, user_id: int, lot_id: int) -> None:
-    session.delete(_get_lot(session, user_id, lot_id))
+    lot = _get_lot(session, user_id, lot_id)
+    sold = sum(1 for item in lot.items if item.sale is not None)
+    if sold == 1:
+        raise SoldError(
+            "ce lot a une carte vendue : annulez d'abord sa vente, qui compte dans vos livres, "
+            "pour pouvoir le supprimer"
+        )
+    if sold:
+        raise SoldError(
+            f"ce lot a {sold} cartes vendues : annulez d'abord leurs ventes, qui comptent dans "
+            "vos livres, pour pouvoir le supprimer"
+        )
+    session.delete(lot)
     _commit(session)
 
 
@@ -234,7 +253,13 @@ def update_item(
 
 
 def delete_item(session: Session, user_id: int, item_id: int) -> None:
-    session.delete(get_item(session, user_id, item_id))
+    item = get_item(session, user_id, item_id)
+    if item.sale is not None:
+        raise SoldError(
+            "cette carte est vendue : annulez d'abord la vente, qui compte dans vos livres, "
+            "pour pouvoir la supprimer"
+        )
+    session.delete(item)
     _commit(session)
 
 

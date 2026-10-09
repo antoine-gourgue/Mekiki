@@ -35,11 +35,24 @@ async function changeStatus(next: LotStatus) {
   }
 }
 
+// A sale counts in the books: the engine refuses to delete it with its card or lot.
+function refuseSold(description: string) {
+  toast.add({ title: 'Suppression impossible', description, color: 'error' })
+}
+
 async function deleteLot() {
   if (!lot.value) return
+  if (lot.value.sold_count) {
+    refuseSold(
+      lot.value.sold_count > 1
+        ? `${lot.value.sold_count} cartes de ce lot sont vendues : annulez d’abord leurs ventes, qui comptent dans vos livres.`
+        : 'Une carte de ce lot est vendue : annulez d’abord sa vente, qui compte dans vos livres.',
+    )
+    return
+  }
   const confirmed = await confirm({
     title: `Supprimer « ${lot.value.label} » ?`,
-    description: `Ses ${lot.value.item_count} cartes et leurs ventes seront supprimées aussi.`,
+    description: `Ses ${lot.value.item_count} cartes seront supprimées aussi.`,
   })
   if (!confirmed) return
   try {
@@ -52,10 +65,11 @@ async function deleteLot() {
 }
 
 async function deleteItem(item: Item) {
-  const confirmed = await confirm({
-    title: `Supprimer « ${item.name} » ?`,
-    description: item.sale ? 'Sa vente sera supprimée aussi.' : undefined,
-  })
+  if (item.sale) {
+    refuseSold('Cette carte est vendue : annulez d’abord sa vente, qui compte dans vos livres.')
+    return
+  }
+  const confirmed = await confirm({ title: `Supprimer « ${item.name} » ?` })
   if (!confirmed) return
   try {
     await engine.deleteItem(item.id)

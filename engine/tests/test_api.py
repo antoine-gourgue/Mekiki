@@ -184,6 +184,15 @@ def test_cancelling_and_deleting(client: TestClient) -> None:
     assert client.delete(f"/items/{item_id}/sale").json()["sale"] is None
 
     client.put(f"/items/{item_id}/sale", json=sale)
+    # The sale is in the books: deleting its card or lot would erase it.
+    refused_item = client.delete(f"/items/{item_id}")
+    refused_lot = client.delete(f"/lots/{lot['id']}")
+    assert (refused_item.status_code, refused_lot.status_code) == (409, 409)
+    assert "annulez d'abord la vente" in refused_item.json()["detail"]
+    assert refused_lot.json()["detail"].startswith("ce lot a une carte vendue")
+    assert client.get("/dashboard").json()["sold_count"] == 1
+
+    client.delete(f"/items/{item_id}/sale")
     assert client.delete(f"/items/{item_id}").status_code == 204
     assert client.get("/dashboard").json()["sold_count"] == 0
 

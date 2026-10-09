@@ -24,7 +24,11 @@ def update_item(
 
 @router.delete("/{item_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_item(item_id: int, session: SessionDep, user: UserDep, data_dir: DataDirDep) -> None:
-    portfolio.delete_item(session, user.id, item_id)
+    """Refused while the card is sold: its sale would leave the books with it."""
+    try:
+        portfolio.delete_item(session, user.id, item_id)
+    except portfolio.SoldError as error:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=str(error)) from error
     photos.remove_item_files(data_dir, [item_id])
 
 
