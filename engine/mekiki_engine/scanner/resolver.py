@@ -155,6 +155,8 @@ class CatalogResolver:
         code = identity.code.upper()
         set_code = identity.code.split("-")[0]
         if len(versions) == 1:
+            if reference_price(versions[0]) is None:
+                return None
             return Resolution(versions[0], code, "high", None, set_code, identity.rarity)
         # Versions share the same name; in creation order the regular print comes first,
         # then the parallel, then the manga (comic) parallel when there is one.
@@ -164,6 +166,10 @@ class CatalogResolver:
             product, kind = versions[1], "parallèle"
         else:
             product, kind = versions[0], "normale"
+        # Picked by its place among all the versions: an unpriced one is no reason to price
+        # the listing as its neighbour (a parallel at the manga's price).
+        if reference_price(product) is None:
+            return None
         return Resolution(
             product,
             f"{code} · {kind}",
@@ -186,7 +192,8 @@ class CatalogResolver:
             for product in products:
                 match = _CODE_IN_NAME.search(product.name or "")
                 japanese = JAPANESE_EXPANSION.search(product.expansion_name or "")
-                if match and japanese and reference_price(product):
+                # Unpriced versions stay: the order regular, parallel, manga counts them.
+                if match and japanese:
                     by_code.setdefault(f"{match[1].lower()}-{match[2]}", []).append(product)
             # Cardmarket creates a code's versions in the official order (regular, parallel,
             # manga), so product ids sort them.

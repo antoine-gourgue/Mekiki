@@ -406,3 +406,28 @@ def test_no_budget_complaint_when_every_listing_failed_its_check(
     assert run["picks"] == []
     assert run["errors"] == []
     assert run["alternatives"] == []
+
+
+def test_an_unpriced_one_piece_version_never_lends_its_place(client: TestClient) -> None:
+    with client.app.state.session_factory() as session:  # type: ignore[attr-defined]
+        # The regular print has no price yet: the parallel is still the second version.
+        for id_product, price in ((11, None), (12, 5000), (13, 150000)):
+            session.add(
+                CardmarketProduct(
+                    id_product=id_product,
+                    game="one_piece",
+                    name="Monkey.D.Luffy (OP09-119)",
+                    id_expansion=40,
+                    expansion_name="Emperors in the New World (Non-English)",
+                    avg30_cents=price,
+                )
+            )
+        session.commit()
+        resolver = CatalogResolver(session)
+
+        parallel = resolver.resolve(identify("ルフィ OP09-119 SEC パラレル", Game.ONE_PIECE))
+        regular = resolver.resolve(identify("ルフィ OP09-119 SEC", Game.ONE_PIECE))
+
+        assert parallel is not None and parallel.product.id_product == 12
+        # The regular print cannot be priced: no listing gets the parallel's price instead.
+        assert regular is None
