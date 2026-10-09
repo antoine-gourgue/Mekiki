@@ -177,3 +177,14 @@ def test_many_sets_never_make_a_quick_search_long(
         plan = search_plan(session, request)
 
     assert sum(pages for _query, pages in plan) <= MAX_PAGES["quick"]
+
+
+def test_a_listing_whose_price_rose_leaves_the_parcel(
+    client: TestClient, cards: FakeMarketplace
+) -> None:
+    cards.item_details["m1000001"] = {"price": 9000}
+
+    run = discover(client, **BUDGET)
+
+    assert "m1000001" not in ids(run)
+    assert any("prix passé à 9 000 ¥" in line["text"] for line in run["log"])

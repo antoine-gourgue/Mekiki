@@ -952,6 +952,14 @@ def compose_available_parcel(
                     candidate.listing = replace(listing, seller_id=result.seller_id)
                     blocked.append(candidate)
                 note(run, f"{label} ({site}) : vendeur à éviter, {refusal}.")
+            elif result.available and (result.price_jpy or 0) > listing.price_jpy:
+                # Priced at its old price, it would look better than it is.
+                gone.add(id(candidate))
+                note(
+                    run,
+                    f"{label} ({site}) : prix passé à {yen(result.price_jpy or 0)}, "
+                    "remplacée par la suivante.",
+                )
             elif minimum and not (condition and condition.at_least(minimum)):
                 gone.add(id(candidate))
                 state = (
