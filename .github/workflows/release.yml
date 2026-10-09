@@ -3,6 +3,7 @@ name: Release
 # Every push to main that passes the checks becomes a version: the Windows installer is
 # built, the update signed and both published as a GitHub release. Installed apps then
 # offer the update, and the landing page's download link points at the new installer.
+# Actions are pinned to full commit SHAs, so a moved tag cannot change the code that runs.
 on:
   push:
     branches: [main]
@@ -46,8 +47,12 @@ jobs:
             "ready=false" >> $env:GITHUB_OUTPUT
           }
 
-      - uses: actions/checkout@v5
+      # Nothing pushes with git (the release and its tag go through the API), so the token
+      # is not left in .git/config, where an install script could read it.
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         if: steps.key.outputs.ready == 'true'
+        with:
+          persist-credentials: false
 
       # The base (major.minor) comes from package.json; the run number makes every
       # release newer than the last, which is how installed apps spot an update.
@@ -60,24 +65,28 @@ jobs:
           "number=$base.${{ github.run_number }}" >> $env:GITHUB_OUTPUT
 
       # Before the engine: its build script names the sidecar after the Rust target.
-      - uses: dtolnay/rust-toolchain@stable
+      # Pinned to a commit of master with the toolchain as an input, as the action's README
+      # asks: its `stable` branch is rewritten and its old commits are garbage-collected.
+      - uses: dtolnay/rust-toolchain@e2a55d2ffb04f378e9626c28d38b36d230d1e12f # master, 2026-10-09
         if: steps.key.outputs.ready == 'true'
-      - uses: swatinem/rust-cache@v2
+        with:
+          toolchain: stable
+      - uses: swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         if: steps.key.outputs.ready == 'true'
         with:
           workspaces: desktop/src-tauri -> target
 
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         if: steps.key.outputs.ready == 'true'
         with:
           python-version: "3.13"
-      - uses: astral-sh/setup-uv@v6
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6.8.0
         if: steps.key.outputs.ready == 'true'
         with:
           enable-cache: true
           cache-dependency-glob: engine/uv.lock
 
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
         if: steps.key.outputs.ready == 'true'
         with:
           node-version: 24
@@ -111,7 +120,7 @@ jobs:
 
       - name: Build the installer and publish the release
         if: steps.key.outputs.ready == 'true'
-        uses: tauri-apps/tauri-action@v0
+        uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0.6.2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
