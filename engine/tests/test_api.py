@@ -1,7 +1,9 @@
 from typing import Any
 
+import pytest
 from fastapi.testclient import TestClient
 
+from mekiki_engine.config import load_config
 from mekiki_engine.models import SettingRow
 
 CARD = {"game": "pokemon", "name": "Pikachu ex SAR", "set_code": "SV8a", "price_jpy": 8000}
@@ -269,6 +271,18 @@ def test_cors_allows_only_the_app_origins(client: TestClient) -> None:
 
     assert allowed.headers["access-control-allow-origin"] == "http://tauri.localhost"
     assert "access-control-allow-origin" not in denied.headers
+
+
+def test_the_dev_server_is_only_allowed_while_developing(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("MEKIKI_DEV", raising=False)
+    released = load_config().allowed_origins
+    developing = load_config(dev=True).allowed_origins
+    monkeypatch.setenv("MEKIKI_DEV", "1")
+
+    assert "http://localhost:3000" not in released
+    assert "http://tauri.localhost" in released
+    assert "http://localhost:3000" in developing
+    assert "http://127.0.0.1:3000" in load_config().allowed_origins
 
 
 def test_a_sale_keeps_its_parcel(client: TestClient) -> None:

@@ -13,14 +13,15 @@ DEFAULT_ALLOWED_HOSTS = ("127.0.0.1", "localhost")
 DEFAULT_EBAY_MARKETPLACE = "EBAY_FR"
 
 # Tauri serves the bundled UI from ``tauri://localhost`` on macOS/Linux and from
-# ``http://tauri.localhost`` on Windows; the Nuxt dev server runs on port 3000.
+# ``http://tauri.localhost`` on Windows.
 DEFAULT_ALLOWED_ORIGINS = (
     "tauri://localhost",
     "http://tauri.localhost",
     "https://tauri.localhost",
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
 )
+# The Nuxt dev server. Any program serving pages on this common port could otherwise call
+# the engine, so it is only allowed while developing (``--dev`` or MEKIKI_DEV=1).
+DEV_ALLOWED_ORIGINS = ("http://localhost:3000", "http://127.0.0.1:3000")
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,14 +58,19 @@ def load_config(
     port: int | None = None,
     host: str | None = None,
     background_jobs: bool = True,
+    dev: bool | None = None,
 ) -> EngineConfig:
     """Explicit arguments win over ``MEKIKI_*`` environment variables, then defaults."""
     resolved_dir = Path(data_dir or os.environ.get("MEKIKI_DATA_DIR") or ".data").expanduser()
     resolved_port = port or int(os.environ.get("MEKIKI_ENGINE_PORT", DEFAULT_PORT))
+    if dev is None:
+        dev = os.environ.get("MEKIKI_DEV") == "1"
     return EngineConfig(
         data_dir=resolved_dir.resolve(),
         port=resolved_port,
-        allowed_origins=DEFAULT_ALLOWED_ORIGINS + _env_list("MEKIKI_ALLOWED_ORIGINS"),
+        allowed_origins=DEFAULT_ALLOWED_ORIGINS
+        + (DEV_ALLOWED_ORIGINS if dev else ())
+        + _env_list("MEKIKI_ALLOWED_ORIGINS"),
         background_jobs=background_jobs,
         host=host or os.environ.get("MEKIKI_HOST") or DEFAULT_HOST,
         allowed_hosts=DEFAULT_ALLOWED_HOSTS + _env_list("MEKIKI_ALLOWED_HOSTS"),

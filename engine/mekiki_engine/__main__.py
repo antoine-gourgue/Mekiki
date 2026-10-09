@@ -30,15 +30,21 @@ def main(argv: list[str] | None = None) -> None:
         action="store_true",
         help="stop when stdin reaches end of file, i.e. when the desktop app is gone",
     )
+    parser.add_argument(
+        "--dev",
+        action="store_true",
+        help="accept requests from the Nuxt dev server on port 3000 (MEKIKI_DEV=1)",
+    )
     args = parser.parse_args(argv)
 
     # Secrets such as the eBay keys live in a .env file next to the engine, never in git.
     load_env_file(Path(".env"))
-    config = load_config(data_dir=args.data_dir, port=args.port, host=args.host)
+    dev = True if args.dev else None
+    config = load_config(data_dir=args.data_dir, port=args.port, host=args.host, dev=dev)
     # The installed app starts the engine from no particular folder: its .env sits next to
     # the database instead. The first file read wins.
     load_env_file(config.data_dir / ".env")
-    config = load_config(data_dir=args.data_dir, port=args.port, host=args.host)
+    config = load_config(data_dir=args.data_dir, port=args.port, host=args.host, dev=dev)
     # Loopback unless deployed as a server (see config.DEFAULT_HOST).
     server = uvicorn.Server(uvicorn.Config(create_app(config), host=config.host, port=config.port))
     if args.exit_with_parent and sys.stdin is not None:
