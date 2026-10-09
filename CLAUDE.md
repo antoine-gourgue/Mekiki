@@ -4,7 +4,11 @@ Application desktop d'achat-revente de cartes TCG (Pokémon, One Piece) achetée
 Neokyo et revendues en Europe. `engine/` est le moteur Python (FastAPI + SQLite) ;
 `desktop/` est l'interface Nuxt 4 + Nuxt UI 4 empaquetée avec Tauri 2, qui lance le moteur
 comme sidecar en release seulement. Chaque revendeur a son compte (`auth.py`, jeton porteur) :
-toute donnée (lots, cartes suivies, favoris, paramètres) appartient à un `user_id`.
+toute donnée (lots, cartes suivies, favoris, paramètres) appartient à un `user_id`. Mots de
+passe en scrypt N=2^17 (un ancien hachage est refait à la connexion suivante). Hors de la
+boucle locale, l'inscription se ferme dès le premier compte (`MEKIKI_OPEN_REGISTRATION=1` pour
+l'ouvrir exprès). Les origines du serveur Nuxt (port 3000) ne sont acceptées qu'avec `--dev`
+(`npm run engine` le passe).
 
 ## Conventions
 
@@ -154,16 +158,27 @@ cd desktop && npm run lint && npm run format:check && npm run typecheck && npm r
 - `books.py` : livre des recettes et registre des achats (CSV pour Excel : `;`, virgule
   décimale, BOM), chiffre d'affaires et cotisations par mois ou trimestre, échéances URSSAF
   (dernier jour du mois suivant), seuils réglables dans `AppSettings.business`. Mekiki ne
-  déclare rien lui-même.
+  déclare rien lui-même. Rien n'est à déclarer avant `business.started_on`. Les ventes eBay
+  pas encore rapprochées sont montrées à part (à rapprocher avant de déclarer). Le registre des
+  achats date les frais du lot quand ils sont payés et marque la TVA encore estimée. Un lot ou
+  une carte vendus ne se suppriment pas (409) : leurs ventes resteraient déclarées.
+- Réglages : un document abîmé (valeur d'une ancienne version) se lit champ par champ, avec la
+  valeur par défaut à la place de ce qui ne se lit plus ; `load_settings` ne lève jamais.
 - `tasks.py` : la liste « À faire » (déclaration, ventes à expédier, lots en route, cartes à
-  mettre en vente, bonnes affaires, stock qui dort, sauvegarde en échec). `key` change à chaque
+  mettre en vente, bonnes affaires, stock qui dort, sauvegarde en échec, TVA d'import à saisir,
+  ventes eBay à rapprocher, configuration à terminer). `key` change à chaque
   nouveauté : l'app n'envoie qu'une notification Windows par clé (plugin notification de Tauri).
 
 ## Revente (`engine/mekiki_engine/resale/`, `browser/`)
 
 - `verdict.py` juge une carte (produit, annonce japonaise, carte en stock) sur Cardmarket et
-  eBay : ventes réussies d'abord, sinon médiane des annonces en cours (API Browse, clés du
-  compte). Les ventes réussies passent par l'API Marketplace Insights quand eBay en accorde la
+  eBay. eBay ne devient un débouché qu'avec au moins 3 ventes réussies de la carte (sans
+  erreur de lecture) ; les annonces en cours (API Browse, clés du compte) ne sont qu'une
+  information. Une vente compte seulement si elle porte le numéro (bornes de chiffres : « 025 »
+  n'est pas « 2025 »), le nom (sans les points : « Monkey.D.Luffy » est « Luffy ») et la même
+  version (parallèle, manga, miroir), jamais gradée (« PSA10 », « slab »), en lot (« x10 »,
+  « playset ») ou en anglais pour One Piece. Les ventes réussies passent par l'API Marketplace
+  Insights quand eBay en accorde la
   portée aux clés (accès restreint, demandé une fois par jeu de clés : `sold_allowed`), sinon
   par Chrome ; gardées 6 h dans les deux cas. Les ventes réussies, triées des plus récentes, donnent aussi la
   fréquence de vente (ventes sur 30 et 90 jours). Vinted reste un débouché (ventes, publication)
@@ -176,8 +191,16 @@ cd desktop && npm run lint && npm run format:check && npm run typecheck && npm r
   recherches d'une page au plus, 1,5 à 3,5 s d'écart, gardées 6 h et réaffichées sans rien
   charger) ; le bouton reste désactivé tant que Chrome n'est pas connu connecté à eBay (dernier
   état vu, `chrome/<user>-connections.json`) ou que l'API Marketplace Insights n'est pas
-  ouverte. La publication part d'un clic. Une page à la fois ; ne jamais contourner une
-  vérification anti-robot.
+  ouverte. Une lecture qui n'a montré ni résultats ni le bloc « aucun résultat » d'eBay est
+  une erreur, jamais gardée comme « aucune vente » ; une page inconnue ou une vérification
+  (`/splashui/`) affiche la fenêtre. La lecture se fait dans un onglet à elle (son id gardé
+  sur le disque), jamais dans le formulaire laissé à l'utilisateur. Chrome se ferme par
+  `Browser.close` avant d'être tué (les cookies d'une connexion récente sont écrits), sans
+  `--remote-allow-origins`. La publication part d'un clic : refusée (409) si la carte est déjà
+  en vente sur ce site ou y a déjà été publiée, sauf `force` ; un échec après le clic d'envoi
+  est « à vérifier », pas « échoué » ; un état de carte non reconnu ou vide bloque la
+  publication (jamais « Near Mint » par défaut). Une page à la fois ; ne jamais contourner
+  une vérification anti-robot.
 - Chaque compte saisit ses clés eBay (jeu Production) dans Paramètres : vérifiées auprès
   d'eBay avant d'être gardées (réglage `ebay:{user_id}`), le Cert ID n'est jamais renvoyé.
   Les clés de `engine/.env` servent aux comptes sans clés. Aucun secret dans le dépôt.
@@ -188,7 +211,11 @@ cd desktop && npm run lint && npm run format:check && npm run typecheck && npm r
   vendeur. Une ligne rejoint la carte dont Mekiki a publié l'annonce (`items.listing_ref`, numéro
   d'objet eBay) ; `sales.external_ref` (« ebay:commande:objet ») évite les doublons et un rapport
   plus récent ne complète que l'expédition et le suivi ; les autres lignes attendent dans
-  `pending_sales` (rapprochées à la main, ou écartées sans revenir à l'import suivant).
+  `pending_sales` (rapprochées à la main, ou écartées sans revenir à l'import suivant). Une
+  ligne de N exemplaires se rapproche carte par carte (prix, port et frais partagés par
+  `split_cents`). Une vente importée puis annulée (retour) devient une ligne écartée : le
+  rapport ne la revend pas. Frais eBay par défaut : 11 % du total port compris + 0,35 € par
+  commande, à vérifier par l'utilisateur.
 
 ## Releases
 
@@ -202,7 +229,11 @@ cd desktop && npm run lint && npm run format:check && npm run typecheck && npm r
   (`%APPDATA%\io.github.antoine-gourgue.mekiki`, base et photos), que les mises à jour
   conservent. Le changer ferait repartir chaque installation d'une base vide.
 - La clé privée de signature des mises à jour ne quitte pas la machine (`~/.tauri/`) et le
-  secret GitHub `TAURI_SIGNING_PRIVATE_KEY` ; ne jamais la committer.
+  secret GitHub `TAURI_SIGNING_PRIVATE_KEY` ; ne jamais la committer. Dans `release.yml`, seule
+  l'étape « Sign the update » la reçoit : `npm ci`, le moteur, `nuxt generate` et
+  `tauri build --no-sign` tournent avant, sans elle, et tauri-action ne fait que publier
+  (`--no-bundle`). Les actions sont épinglées par SHA et `actions/checkout` ne garde pas de
+  jeton (`persist-credentials: false`).
 - Les notes de version sont en français dans `desktop/release-notes.md` : la release et la
   fenêtre de mise à jour de l'app les affichent. Avant chaque push qui change l'app, les
   réécrire pour dire ce qui change pour l'utilisateur (titres `##`, puces `-`), sans jargon.
