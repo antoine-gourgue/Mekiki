@@ -248,6 +248,7 @@ def test_prices_read_in_chrome_join_the_verdict(client: TestClient, chrome: Fake
     assert set(queries) == {"ebay"}
 
     assert before["card_version"] == "regular"
+    chrome.tab.pages["ebay"] = [*EBAY_RAW, {**EBAY_RAW[0], "id": "377512481555"}]
     client.post(
         "/browser/ebay/sold",
         json={
@@ -261,7 +262,26 @@ def test_prices_read_in_chrome_join_the_verdict(client: TestClient, chrome: Fake
     outlets = {o["platform"]: o for o in after["outlets"]}
     assert set(outlets) == {"cardmarket", "ebay"}
     assert outlets["ebay"]["sale_cents"] == 35500
-    assert "ventes réussies eBay" in outlets["ebay"]["basis"]
+    assert "3 ventes réussies eBay" in outlets["ebay"]["basis"]
+
+
+def test_too_few_sales_do_not_make_ebay_an_outlet(client: TestClient, chrome: FakeSession) -> None:
+    client.post("/cardmarket/refresh", json={})
+    params = {"product_id": 719654, "label": "SV2a 201/165 · SAR"}
+    before = client.get("/resale/verdict", params=params).json()
+
+    client.post(
+        "/browser/ebay/sold",
+        json={
+            "query": before["market_queries"]["ebay"],
+            "card_number": before["card_number"],
+            "version": before["card_version"],
+        },
+    )
+    after = client.get("/resale/verdict", params=params).json()
+
+    assert [o["platform"] for o in after["outlets"]] == ["cardmarket"]
+    assert any("Seulement 2 ventes réussies eBay" in s["text"] for s in after["signals"])
 
 
 def test_other_cards_and_languages_sharing_the_number_are_left_out() -> None:

@@ -1,7 +1,8 @@
 """Whether a card is worth buying: every resale outlet, what it leaves, and a verdict.
 
-The Cardmarket price guide is the reference. eBay joins it: the median of its sold listings
-read in Chrome, else that of its live listings when the account has eBay keys.
+The Cardmarket price guide is the reference. eBay joins it with the median of the card's
+sold listings, once there are enough of them; its live listings are asking prices, shown for
+information only.
 """
 
 from __future__ import annotations
@@ -48,6 +49,8 @@ SUSPICIOUS_PRICE_SHARE = 0.2
 TREND_THRESHOLD = 0.10
 # Fewer eBay listings than this give a median too thin to trust alone.
 FEW_EBAY_LISTINGS = 5
+# Sales of the card it takes for eBay to count as an outlet: one sale is not a price.
+MIN_EBAY_SALES = 3
 # eBay sales over 30 days from which a card resells quickly, and over 90 days up to which
 # it may wait for a buyer.
 FAST_SALES_30_DAYS = 10
@@ -115,15 +118,17 @@ def _resale_prices(
     if reference is not None:
         label = REFERENCE_LABELS.get(reference[1], reference[1])
         found.append((SalePlatform.CARDMARKET, reference[0], f"Cote Cardmarket, {label}"))
-    # Sold listings beat asking prices: eBay's API only knows the listings still for sale.
+    # Only sales make a price: the live listings' asking prices would compete with
+    # Cardmarket's sales on the ROI without ever having sold.
     sold = market.get("ebay")
-    ebay = prices.ebay
-    if sold is not None and sold.median_cents is not None:
+    if (
+        sold is not None
+        and not sold.error
+        and sold.median_cents is not None
+        and len(sold.relevant) >= MIN_EBAY_SALES
+    ):
         basis = f"Médiane de {len(sold.relevant)} ventes réussies eBay"
         found.append((SalePlatform.EBAY, sold.median_cents, basis))
-    elif ebay.median_cents is not None:
-        basis = f"Médiane de {len(ebay.listings)} annonces eBay en cours"
-        found.append((SalePlatform.EBAY, ebay.median_cents, basis))
     return found
 
 
@@ -217,6 +222,13 @@ def _signals(
             signals.append(
                 VerdictSignal(tone="warning", text=f"Aucune des {label} ne correspond à la carte.")
             )
+        elif count < MIN_EBAY_SALES:
+            sales = "1 vente réussie eBay" if count == 1 else f"{count} {label}"
+            text = (
+                f"Seulement {sales} de cette carte : trop peu pour en tirer un prix, eBay ne "
+                "compte pas parmi les débouchés."
+            )
+            signals.append(VerdictSignal(tone="warning", text=text))
         elif count < FEW_EBAY_LISTINGS:
             signals.append(
                 VerdictSignal(tone="warning", text=f"Seulement {count} {label} : médiane fragile.")
@@ -250,13 +262,10 @@ def _signals(
     if not ebay.configured and not market:
         text = "Ajoutez vos clés eBay dans Paramètres pour voir aussi les annonces eBay en cours."
         signals.append(VerdictSignal(tone="neutral", text=text))
-    elif ebay.listings and len(ebay.listings) < FEW_EBAY_LISTINGS:
-        text = f"Seulement {len(ebay.listings)} annonces eBay : la médiane est fragile."
-        signals.append(VerdictSignal(tone="warning", text=text))
     elif ebay.listings:
         text = (
-            f"{ebay.total} annonces en vente sur eBay : vérifiez les ventes réussies avant "
-            "de fixer votre prix."
+            f"{ebay.total} annonces en vente sur eBay : des prix demandés, pas des ventes ; "
+            "vérifiez les ventes réussies avant de fixer votre prix."
         )
         signals.append(VerdictSignal(tone="neutral", text=text))
     return signals

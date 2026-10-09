@@ -149,15 +149,17 @@ def ebay_prices(
         search = ebay.search(query)
     except SourceError as error:
         return EbayPrices(configured=True, error=str(error))
-    listings = search.listings
-    # As for the listings read in Chrome, once the card's number is known only its own
-    # single, ungraded copies count: a search also brings other printings, lots and slabs.
-    if card_number:
-        listings = [
-            listing
-            for listing in listings
-            if markets.is_relevant(listing.title, card_number, names, version)
-        ]
+    # As for the listings read in Chrome, only single, ungraded copies count: a search also
+    # brings lots, slabs and other languages, and other printings once the number is known.
+    listings = [
+        listing
+        for listing in search.listings
+        if (
+            markets.is_relevant(listing.title, card_number, names, version)
+            if card_number
+            else markets.single_copy(listing.title)
+        )
+    ]
     prices = sorted(listing.price_cents for listing in listings)
     return EbayPrices(
         configured=True,

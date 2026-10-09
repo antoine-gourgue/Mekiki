@@ -264,6 +264,25 @@ def test_ebay_listings_count_only_the_card_once_its_number_is_known() -> None:
     assert prices.total == 5
 
 
+def test_lots_and_slabs_never_count_even_without_the_number() -> None:
+    from mekiki_engine.resale.service import ebay_prices
+
+    prices = ebay_prices(browse(FakeEbaySearch()), "Pikachu")
+
+    assert [listing.item_id for listing in prices.listings] == ["a", "b", "c"]
+
+
+def test_asking_prices_inform_but_never_make_an_outlet(client: TestClient) -> None:
+    client.app.state.ebay = browse(FakeEbaySearch())  # type: ignore[attr-defined]
+
+    result = client.get("/resale/verdict", params={"q": "Pikachu 201/165"}).json()
+
+    assert result["prices"]["ebay"]["median_cents"] == 4200
+    assert result["outlets"] == []
+    assert result["verdict"] == "unknown"
+    assert any("des prix demandés, pas des ventes" in s["text"] for s in result["signals"])
+
+
 def use_fake_ebay(client: TestClient, fake: object) -> None:
     client.app.state.http = PoliteClient(  # type: ignore[attr-defined]
         intervals_s={},
