@@ -175,4 +175,3 @@ def _french_date(iso: str | None) -> str:
         return ""
     day = date.fromisoformat(iso[:10])
     return day.strftime("%d/%m/%Y")
-
