@@ -93,21 +93,23 @@ cd desktop && npm run lint && npm run format:check && npm run typecheck && npm r
 
 ## Revente (`engine/mekiki_engine/resale/`, `browser/`)
 
-- `verdict.py` juge une carte (produit, annonce japonaise, carte en stock) sur chaque
-  débouché : cote Cardmarket, eBay (API Browse si clés, sinon ventes lues dans Chrome), Vinted.
-  Les ventes réussies eBay, triées des plus récentes, donnent aussi la fréquence de vente
-  (ventes sur 30 et 90 jours).
+- `verdict.py` juge une carte (produit, annonce japonaise, carte en stock) sur Cardmarket et
+  eBay : ventes réussies lues dans Chrome d'abord, sinon médiane des annonces en cours (API
+  Browse, clés du compte). Les ventes réussies, triées des plus récentes, donnent aussi la
+  fréquence de vente (ventes sur 30 et 90 jours). Vinted reste un débouché (ventes, publication)
+  mais ses prix ne sont plus lus.
 - `browser/` pilote une fenêtre Chrome hors écran (journal de ses étapes dans l'app), profil propre
   à Mekiki, par le protocole DevTools ; elle ne s'affiche que pour se connecter, finir un
   formulaire ou passer une vérification anti-robot. **Exception voulue par l'utilisateur** à la règle « jamais de connexion » : il s'y
-  connecte lui-même à Vinted et eBay (Mekiki ne voit jamais de mot de passe). Chaque action part
-  d'un clic dans l'app, une page à la fois ; ne jamais contourner une vérification anti-robot.
+  connecte lui-même à Vinted et eBay (Mekiki ne voit jamais de mot de passe). La lecture des
+  ventes eBay part de l'ouverture de la fiche d'une carte (trois recherches d'une page au plus,
+  1,5 à 3,5 s d'écart, gardées 6 h) ; la publication part d'un clic. Une page à la fois ; ne
+  jamais contourner une vérification anti-robot.
 - Chaque compte saisit ses clés eBay (jeu Production) dans Paramètres : vérifiées auprès
   d'eBay avant d'être gardées (réglage `ebay:{user_id}`), le Cert ID n'est jamais renvoyé.
   Les clés de `engine/.env` servent aux comptes sans clés. Aucun secret dans le dépôt.
-- Vinted bloque une adresse qui charge trop de recherches : une page par recherche, deux
-  recherches par carte au plus, 4 à 9 s entre deux pages, prix gardés 6 h, et 6 h sans
-  Vinted dès qu'il affiche son blocage (`SiteBlocked`). Ne jamais chercher à le contourner.
+- Vinted bloque l'adresse qui lit ses recherches (« Ta session a été bloquée ») : Mekiki ne les
+  lit plus du tout. Ne pas y revenir, ni chercher à contourner le blocage.
 
 ## Releases
 

@@ -1,6 +1,13 @@
+## Nouveautés
+
+- La fiche d'une carte montre ses ventes réussies sur eBay dès son ouverture, sans bouton :
+  médiane, fréquence de vente sur 30 et 90 jours, et chaque vente. Elles sont gardées six
+  heures, donc rouvrir la carte est immédiat.
+- Vinted n'est plus lu pour estimer les prix : il bloquait la fenêtre Chrome de Mekiki. Il
+  reste là pour mettre vos cartes en vente et enregistrer vos ventes.
+
 ## Corrections
 
-- « Trouver des cartes » ne propose plus de boosters. Un titre comme « バラ ×1パック
-  メガカイリューex MUR SAR » cite les cartes qu'on peut tirer du paquet, et Mekiki le prenait pour
-  la carte elle-même, à un prix bien trop beau. Les paquets et produits scellés sont maintenant
-  écartés, dans la recherche comme dans le suivi des cartes.
+- Les annonces et les cartes cliquables le montrent : curseur en main, survol visible, flèche
+  d'ouverture.
+- Barres de défilement fines et sombres, à la place de celles de Windows.
