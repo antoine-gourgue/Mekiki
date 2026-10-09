@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import threading
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
@@ -38,6 +39,11 @@ from mekiki_engine.schemas import (
     SearchResultOut,
 )
 from mekiki_engine.services.settings_service import load_settings
+
+logger = logging.getLogger(__name__)
+# A scan that crashed is tried again after this long, not at the next minute's tick: the same
+# crash would otherwise send every search of every card to the sites each minute.
+FAILED_SCAN_RETRY = timedelta(minutes=30)
 
 SOURCE_LABELS = {
     SourcePlatform.MERCARI: "Mercari",
@@ -335,18 +341,38 @@ class ScannerWorker:
 
     def _loop(self) -> None:
         while not self._stop.is_set():
-            with self._lock:
-                requested, self._requested = self._requested, set()
-            for user_id in sorted(requested | self._due_accounts()):
-                if self._stop.is_set():
-                    break
-                self._run(user_id)
-            with self._session_factory() as session:
-                # Prices still matter for the watch lists and the stock when no scan runs.
-                refresh_reference_data(session, self._client)
-            self._on_tick()
+            self.tick()
             self._wake.wait(self.TICK_S)
             self._wake.clear()
+
+    def tick(self) -> None:
+        """One round: the scans due, the reference data, the daily chores.
+
+        Each step is guarded: one failing must not end the thread, or scans, prices and the
+        daily backup would all stop silently until the app restarts.
+        """
+        with self._lock:
+            requested, self._requested = self._requested, set()
+        due = self._guarded("comptes à scanner", self._due_accounts) or set()
+        for user_id in sorted(requested | due):
+            if self._stop.is_set():
+                return
+            self._run(user_id)
+        # Prices still matter for the watch lists and the stock when no scan runs.
+        self._guarded("cotes et index des cartes", self._refresh_references)
+        self._guarded("tâches du jour", self._on_tick)
+
+    def _refresh_references(self) -> None:
+        with self._session_factory() as session:
+            refresh_reference_data(session, self._client)
+
+    @staticmethod
+    def _guarded[T](what: str, chore: Callable[[], T]) -> T | None:
+        try:
+            return chore()
+        except Exception:
+            logger.exception("Mekiki, %s : erreur inattendue", what)
+            return None
 
     def _due_accounts(self) -> set[int]:
         now = datetime.now(UTC)
@@ -378,7 +404,9 @@ class ScannerWorker:
             state.next_run_at = datetime.now(UTC) + timedelta(minutes=interval)
         # The worker thread must survive any failure, or scans would silently stop.
         except Exception as error:
+            logger.exception("Mekiki, scan du compte %s : erreur inattendue", user_id)
             state.last_error = f"Erreur inattendue : {error}"
+            state.next_run_at = datetime.now(UTC) + FAILED_SCAN_RETRY
         finally:
             state.running = False
             state.last_finished_at = utc_now()

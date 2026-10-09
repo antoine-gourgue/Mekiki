@@ -20,6 +20,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Literal
 
 from sqlalchemy import delete, func, select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from mekiki_engine.domain import Game
@@ -31,6 +32,8 @@ SPECIES_URL = (
 )
 STATE_KEY = "names:pokemon"
 MAX_AGE = timedelta(days=30)
+# After a failure, PokéAPI is not asked again before this long.
+RETRY_AFTER = timedelta(hours=1)
 # PokéAPI language ids; 1 is Japanese in kana, the script listing titles use.
 LANGUAGE_IDS = {"1": "ja", "9": "en", "5": "fr", "6": "de", "7": "es", "8": "it"}
 LATIN_LANGUAGES = ("en", "fr", "de", "es", "it")
@@ -272,6 +275,10 @@ def refresh(session: Session, client: PoliteClient, *, force: bool = False) -> s
     fetched_at = state.get("fetched_at")
     if not force and fetched_at and _age(fetched_at) < MAX_AGE and species_count(session):
         return None
+    # A failing PokéAPI is not asked again at each verdict, which would wait a minute each time.
+    failed_at = state.get("failed_at")
+    if not force and failed_at and _age(failed_at) < RETRY_AFTER:
+        return state.get("error")
     try:
         text = client.request("GET", SPECIES_URL, timeout=60).text
         rows = parse_species(text)
@@ -282,9 +289,10 @@ def refresh(session: Session, client: PoliteClient, *, force: bool = False) -> s
             PokemonSpecies(id=species_id, **names) for species_id, names in rows.items()
         )
         state = {"fetched_at": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"), "error": None}
-    except SourceError as error:
+    except (SourceError, ValueError, SQLAlchemyError) as error:
         session.rollback()
         state["error"] = f"Noms des Pokémon (PokéAPI) : {error}"
+        state["failed_at"] = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     _save_state(session, state)
     return state["error"]
 

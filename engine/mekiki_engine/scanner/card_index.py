@@ -13,6 +13,7 @@ from __future__ import annotations
 import io
 import json
 import re
+import threading
 import zipfile
 from collections import defaultdict
 from collections.abc import Iterator
@@ -20,6 +21,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import delete, func, select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from mekiki_engine.domain import Game
@@ -30,6 +32,13 @@ from mekiki_engine.scanner.sources.base import PoliteClient, SourceError
 ARCHIVE_URL = "https://codeload.github.com/tcgdex/cards-database/zip/refs/heads/master"
 COMMIT_URL = "https://api.github.com/repos/tcgdex/cards-database/commits/master"
 MAX_AGE = timedelta(days=7)
+# After a failure, the archive is not downloaded again before this long.
+RETRY_AFTER = timedelta(hours=1)
+# A new index this much smaller than the one in place means TCGdex changed its files: the old
+# one is kept rather than wiped.
+MIN_SHARE_KEPT = 0.5
+# The worker, a discovery and the "Mettre à jour" button may all ask for a rebuild at once.
+_refresh_lock = threading.Lock()
 STATE_KEY = "card_index:pokemon"
 # Bumped when the index stores something new: an index built before is rebuilt once.
 INDEX_FORMAT = "3"
@@ -89,10 +98,18 @@ class IndexedCard:
 
 def refresh(session: Session, client: PoliteClient, *, force: bool = False) -> str | None:
     """Rebuilds the index when it is older than a week; returns an error message, if any."""
+    with _refresh_lock:
+        return _refresh(session, client, force=force)
+
+
+def _refresh(session: Session, client: PoliteClient, *, force: bool) -> str | None:
     state = _load_state(session)
     fetched_at = state.get("fetched_at")
     if not force and fetched_at and _age(fetched_at) < MAX_AGE and not needs_rebuild(session):
         return None
+    failed_at = state.get("failed_at")
+    if not force and failed_at and _age(failed_at) < RETRY_AFTER:
+        return state.get("error")
     try:
         commit = client.request(
             "GET", COMMIT_URL, headers={"Accept": "application/vnd.github.sha"}
@@ -111,14 +128,21 @@ def refresh(session: Session, client: PoliteClient, *, force: bool = False) -> s
                     f"Index des cartes Pokémon : extensions complétées par TCGplayer "
                     f"indisponibles ({error})"
                 )
+            previous = indexed_count(session)
+            if not cards or len(cards) < previous * MIN_SHARE_KEPT:
+                raise SourceError(
+                    f"{len(cards)} cartes lues contre {previous} dans l'index : l'ancien est gardé"
+                )
             replace_index(session, cards)
             state["commit"] = commit
             state["format"] = INDEX_FORMAT
         state["fetched_at"] = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
         state["error"] = linking_error
-    except (SourceError, zipfile.BadZipFile) as error:
+        state["failed_at"] = None
+    except (SourceError, zipfile.BadZipFile, ValueError, KeyError, SQLAlchemyError) as error:
         session.rollback()
         state["error"] = f"Index des cartes Pokémon (TCGdex) : {error}"
+        state["failed_at"] = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     _save_state(session, state)
     return state["error"]
 

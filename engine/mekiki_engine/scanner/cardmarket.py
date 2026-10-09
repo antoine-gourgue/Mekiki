@@ -17,6 +17,7 @@ from typing import Any
 
 from sqlalchemy import func, select, update
 from sqlalchemy.dialects.sqlite import insert
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from mekiki_engine.costing.money import to_cents
@@ -40,6 +41,8 @@ BOOSTER_CATEGORIES = {Game.POKEMON: (52, 53), Game.ONE_PIECE: (1622, 1624)}
 
 CATALOG_MAX_AGE = timedelta(days=3)
 PRICES_MAX_AGE = timedelta(hours=6)
+# After a failure, the file is not asked again before this long.
+RETRY_AFTER = timedelta(minutes=30)
 
 PRICE_FIELDS = ("avg", "low", "trend", "avg1", "avg7", "avg30")
 
@@ -53,6 +56,8 @@ class SyncState:
     created_at: str | None = None
     fetched_at: str | None = None
     error: str | None = None
+    # The last failure: the file is not asked again before RETRY_AFTER.
+    failed_at: str | None = None
 
 
 def file_url(kind: str, game: Game) -> str:
@@ -62,7 +67,10 @@ def file_url(kind: str, game: Game) -> str:
 
 def load_state(session: Session, game: Game, kind: str) -> SyncState:
     row = session.get(SettingRow, _state_key(game, kind))
-    return SyncState(**json.loads(row.value)) if row else SyncState()
+    if row is None:
+        return SyncState()
+    saved = json.loads(row.value)
+    return SyncState(**{key: saved[key] for key in SyncState.__dataclass_fields__ if key in saved})
 
 
 def save_state(session: Session, game: Game, kind: str, state: SyncState) -> None:
@@ -92,6 +100,9 @@ def refresh(
             ("price_guide", PRICES_MAX_AGE),
         ):
             state = load_state(session, game, kind)
+            if not force and state.failed_at and not _older_than(state.failed_at, RETRY_AFTER, now):
+                errors += [state.error] if state.error else []
+                continue
             if force or state.fetched_at is None or _older_than(state.fetched_at, max_age, now):
                 errors += _sync(session, client, game, kind, state)
     return errors
@@ -263,9 +274,20 @@ def _sync(
             state.created_at = payload.get("createdAt")
         state.fetched_at = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
         state.error = None
-    except (SourceError, ValueError) as error:
+        state.failed_at = None
+    # A file Cardmarket changed ("avg30": "", a missing key) must cost this refresh, not the
+    # scanner thread.
+    except (
+        SourceError,
+        ValueError,
+        ArithmeticError,
+        KeyError,
+        TypeError,
+        SQLAlchemyError,
+    ) as error:
         session.rollback()
         state.error = f"Cardmarket ({kind}) : {error}"
+        state.failed_at = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     save_state(session, game, kind, state)
     return [state.error] if state.error else []
 
