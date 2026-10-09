@@ -73,7 +73,9 @@ cd desktop && npm run lint && npm run format:check && npm run typecheck && npm r
 - Une annonce à moins de 20 % de la cote est presque toujours une reproduction ou un
   accessoire : elle est signalée et n'entre jamais dans un colis proposé.
 - Une annonce réservée (« 様専用 », « 取り置き », « 即購入不可 »…) est écartée par `matching.py` :
-  l'achat par Neokyo serait annulé. L'état (`ListingCondition`, six niveaux des fripes
+  l'achat par Neokyo serait annulé. Les boosters aussi (« 1パック », « バラパック »…) : leur titre
+  cite les cartes à tirer (« メガカイリューex MUR »), lu comme celui d'une carte. « 拡張パック »
+  fait partie d'un nom d'extension et « ブースター » seul est Pyroli. L'état (`ListingCondition`, six niveaux des fripes
   japonaises) vient des résultats Mercari et Yahoo Fleamarket ; Rakuma ne le donne que sur la
   page de l'annonce : avec un état minimum, la découverte garde ses annonces et lit l'état sur
   la page de celles qui entrent dans le colis (`CONDITION_ON_PAGE`).
