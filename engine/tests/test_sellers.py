@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 from test_discovery import LISTINGS, discover, index_pokemon_cards
 
 from mekiki_engine.domain import SourcePlatform
-from mekiki_engine.scanner.sellers import seller_problem
+from mekiki_engine.scanner.sellers import ratings_note, seller_problem
 
 GOOD_SELLER = {"id": 7, "num_ratings": 1507, "ratings": {"good": 1506, "bad": 1}}
 
@@ -40,9 +40,15 @@ def test_ratings_and_suspended_accounts() -> None:
     def seller(**fields: object) -> dict[str, object]:
         return {"description": "", "seller": fields}
 
-    assert seller_problem(seller(num_ratings=100, ratings={"bad": 10})) == (
-        "trop d'évaluations négatives (10 sur 100)"
+    assert seller_problem(seller(num_ratings=100, ratings={"bad": 25})) == (
+        "trop d'évaluations négatives (25 sur 100)"
     )
+    # Neokyo bought from sellers with one bad rating out of 24: such a few are only shown.
+    assert seller_problem(seller(num_ratings=24, ratings={"bad": 1})) is None
+    assert ratings_note(1, 24) == "1 évaluation négative sur 24"
+    assert ratings_note(4, 80) == "4 évaluations négatives sur 80"
+    assert ratings_note(0, 80) is None
+    assert ratings_note(25, 100) is None
     # One bad rating out of two says little.
     assert seller_problem(seller(num_ratings=2, ratings={"bad": 1})) is None
     assert seller_problem(seller(is_inactive=True)) == "compte du vendeur suspendu ou inactif"
@@ -111,11 +117,17 @@ def test_rakuma_listings_name_their_seller_and_their_ratings(
     client: TestClient, marketplace: FakeMarketplace
 ) -> None:
     marketplace.rakuma_sellers[RAKUMA_ITEM] = (RAKUMA_SHOP, 90, 5, 6)
+    marketplace.rakuma_sellers["e" * 32] = ("bad", 10, 2, 4)
 
     checked = client.get(f"/listings/rakuma/{RAKUMA_ITEM}/availability").json()
+    bad = client.get(f"/listings/rakuma/{'e' * 32}/availability").json()
 
     assert checked["seller_id"] == RAKUMA_SHOP
-    assert checked["seller_warning"] == "trop d'évaluations négatives (6 sur 101)"
+    assert (checked["seller_warning"], checked["seller_note"]) == (
+        None,
+        "6 évaluations négatives sur 101",
+    )
+    assert bad["seller_warning"] == "trop d'évaluations négatives (4 sur 16)"
 
 
 def test_a_rakuma_seller_is_blocked_from_their_listing(
@@ -171,3 +183,22 @@ def test_opening_a_listing_of_a_blocked_seller_says_so(
     checked = client.get(f"/listings/rakuma/{RAKUMA_ITEM}/availability").json()
 
     assert checked["seller_warning"] == "est déjà dans vos vendeurs bloqués (bloqué par Neokyo)"
+
+
+def test_sellers_blocked_for_a_few_bad_ratings_are_unblocked() -> None:
+    import sqlite3
+
+    from mekiki_engine.migrations import m0012_lenient_ratings
+
+    db = sqlite3.connect(":memory:")
+    db.execute(
+        "CREATE TABLE blocked_sellers (source TEXT, seller_id TEXT, reason TEXT, blocked_at TEXT)"
+    )
+    db.executemany(
+        "INSERT INTO blocked_sellers VALUES ('mercari', ?, ?, '2026-10-09')",
+        [("1", "trop d'évaluations négatives (1 sur 24)"), ("2", "bloqué par Neokyo")],
+    )
+
+    db.executescript(m0012_lenient_ratings.SQL)
+
+    assert db.execute("SELECT seller_id FROM blocked_sellers").fetchall() == [("2",)]

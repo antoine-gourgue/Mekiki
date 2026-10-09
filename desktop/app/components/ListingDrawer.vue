@@ -172,6 +172,13 @@ const verdictQuery = computed(() => ({
           · prix actuel {{ formatYen(priceChanged) }}
         </span>
       </p>
+      <p
+        v-if="availability?.seller_note && !availability.seller_warning"
+        class="flex items-center gap-2 text-sm text-muted"
+      >
+        <UIcon name="i-lucide-star-half" class="size-4" />
+        Vendeur : {{ availability.seller_note }}
+      </p>
       <p v-else-if="availability" class="flex items-center gap-2 text-sm text-dimmed">
         <UIcon name="i-lucide-circle-help" class="size-4" />
         Disponibilité non vérifiée : {{ availability.status }}
@@ -207,7 +214,7 @@ const verdictQuery = computed(() => ({
       <UButton
         v-if="listing.source === 'mercari' || listing.source === 'rakuma'"
         icon="i-lucide-ban"
-        label="Vendeur bloqué sur Neokyo"
+        label="Bloquer ce vendeur (refusé par Neokyo)"
         color="neutral"
         variant="ghost"
         size="xl"
@@ -226,7 +233,8 @@ const verdictQuery = computed(() => ({
       <UButton
         v-if="listing.neokyo_url"
         trailing-icon="i-lucide-arrow-up-right"
-        label="Acheter via Neokyo"
+        :label="availability?.available === false ? 'Plus en vente' : 'Acheter via Neokyo'"
+        :disabled="availability?.available === false"
         size="xl"
         class="flex-[2] justify-center"
         @click="openExternal(listing.neokyo_url)"

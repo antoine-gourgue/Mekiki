@@ -28,9 +28,11 @@ PROXY_REFUSALS = (
     re.compile(rf"業者(?:様|さん)?(?:の|は|から|も|ご)*(?:購入|入札)?(?:は|も)?{_REFUSED}"),
     re.compile(rf"海外(?:から|の方|在住)[^。\n]{{0,12}}?{_REFUSED}"),
 )
-# Below this many ratings, a single bad one says little.
-MIN_RATINGS = 5
-MAX_BAD_SHARE = 0.03
+# Neokyo refuses sellers with "too many bad ratings" without saying how many. A bad rating
+# out of 24 is no such seller (Neokyo bought from several): only a share this bad, on this
+# many ratings, blocks one; fewer bad ratings are only shown.
+MIN_RATINGS = 10
+REFUSED_BAD_SHARE = 0.2
 
 
 def seller_problem(item: dict[str, Any]) -> str | None:
@@ -38,10 +40,15 @@ def seller_problem(item: dict[str, Any]) -> str | None:
     seller = item.get("seller") or {}
     if seller.get("is_blocked") or seller.get("is_inactive"):
         return "compte du vendeur suspendu ou inactif"
+    bad, total = mercari_ratings(item)
+    return refusal_in(str(item.get("description") or "")) or ratings_problem(bad, total)
+
+
+def mercari_ratings(item: dict[str, Any]) -> tuple[int, int]:
+    """(bad, total) ratings of a Mercari item's seller."""
+    seller = item.get("seller") or {}
     ratings = seller.get("ratings") or {}
-    return refusal_in(str(item.get("description") or "")) or ratings_problem(
-        int(ratings.get("bad") or 0), int(seller.get("num_ratings") or 0)
-    )
+    return int(ratings.get("bad") or 0), int(seller.get("num_ratings") or 0)
 
 
 def refusal_in(*texts: str) -> str | None:
@@ -55,9 +62,17 @@ def refusal_in(*texts: str) -> str | None:
 
 
 def ratings_problem(bad: int, total: int) -> str | None:
-    if total >= MIN_RATINGS and bad / total > MAX_BAD_SHARE:
+    if total >= MIN_RATINGS and bad / total >= REFUSED_BAD_SHARE:
         return f"trop d'évaluations négatives ({bad} sur {total})"
     return None
+
+
+def ratings_note(bad: int, total: int) -> str | None:
+    """The seller's bad ratings, to show, when there are some but not enough to block them."""
+    if not bad or ratings_problem(bad, total):
+        return None
+    plural = "s" if bad > 1 else ""
+    return f"{bad} évaluation{plural} négative{plural} sur {total}"
 
 
 def blocked(session: Session) -> dict[tuple[str, str], str]:

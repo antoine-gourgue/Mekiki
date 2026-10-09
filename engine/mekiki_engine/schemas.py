@@ -668,6 +668,8 @@ class ListingAvailability(BaseModel):
     seller_id: str | None = None
     # Why Neokyo would refuse this seller, when the listing gives it away.
     seller_warning: str | None = None
+    # Worth knowing without refusing the seller: "2 évaluations négatives sur 80".
+    seller_note: str | None = None
     # The seller's own description, in Japanese.
     description: str | None = None
 

@@ -154,7 +154,7 @@ function menu(deal: Deal): DropdownMenuItem[] {
     ...(deal.source === 'mercari' || deal.source === 'rakuma'
       ? [
           {
-            label: 'Vendeur bloqué sur Neokyo',
+            label: 'Bloquer ce vendeur (refusé par Neokyo)',
             icon: 'i-lucide-ban',
             onSelect: async () => {
               if (await blockSeller(deal)) await refresh()

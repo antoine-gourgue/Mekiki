@@ -158,7 +158,7 @@ function menu(pick: DiscoveryPick): DropdownMenuItem[] {
       : pick.source === 'mercari' || pick.source === 'rakuma'
         ? [
             {
-              label: 'Vendeur bloqué sur Neokyo',
+              label: 'Bloquer ce vendeur (refusé par Neokyo)',
               icon: 'i-lucide-ban',
               onSelect: () => blockPickSeller(pick),
             },

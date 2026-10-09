@@ -485,6 +485,8 @@ export interface ListingAvailability {
   seller_id?: string | null
   /** Why Neokyo would refuse this seller, when the listing gives it away. */
   seller_warning?: string | null
+  /** Worth knowing without refusing the seller: "2 évaluations négatives sur 80". */
+  seller_note?: string | null
   /** The seller's own description, in Japanese. */
   description?: string | null
 }

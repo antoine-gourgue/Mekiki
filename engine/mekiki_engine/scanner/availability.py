@@ -104,6 +104,7 @@ def _mercari(client: PoliteClient, item_id: str) -> ListingAvailability:
         checked_at=_now(),
         seller_id=str(seller) if seller else None,
         seller_warning=sellers.seller_problem(data),
+        seller_note=sellers.ratings_note(*sellers.mercari_ratings(data)),
         description=_clean(str(data.get("description") or "")),
     )
 
@@ -135,6 +136,7 @@ def _rakuma(client: PoliteClient, item_id: str) -> ListingAvailability:
         seller_id=shop[1] if shop else None,
         seller_warning=sellers.refusal_in(text or "", profile or "")
         or sellers.ratings_problem(ratings["rain"], sum(ratings.values())),
+        seller_note=sellers.ratings_note(ratings["rain"], sum(ratings.values())),
         description=text,
     )
 
