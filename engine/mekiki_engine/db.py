@@ -13,15 +13,24 @@ def create_db_engine(database_url: str) -> Engine:
     if database_url.startswith("sqlite:///"):
         Path(database_url.removeprefix("sqlite:///")).parent.mkdir(parents=True, exist_ok=True)
 
-    engine = create_engine(database_url, connect_args={"check_same_thread": False})
+    # A write waits up to 30 s for another one (a scan, a restore) instead of failing at once.
+    engine = create_engine(database_url, connect_args={"check_same_thread": False, "timeout": 30})
 
     @event.listens_for(engine, "connect")
     def _sqlite_pragmas(dbapi_connection, _record) -> None:  # type: ignore[no-untyped-def]
+        # pysqlite only opens a transaction before INSERT, UPDATE or DELETE: CREATE and ALTER
+        # would commit one by one, and a migration failing halfway would stay half applied,
+        # stopping the engine at every start. Transactions are opened by _begin instead.
+        dbapi_connection.isolation_level = None
         cursor = dbapi_connection.cursor()
         # SQLite ignores foreign keys (and thus ON DELETE CASCADE) unless asked per connection.
         cursor.execute("PRAGMA foreign_keys = ON")
         cursor.execute("PRAGMA journal_mode = WAL")
         cursor.close()
+
+    @event.listens_for(engine, "begin")
+    def _begin(connection) -> None:  # type: ignore[no-untyped-def]
+        connection.exec_driver_sql("BEGIN")
 
     with engine.begin() as connection:
         apply_migrations(connection)
